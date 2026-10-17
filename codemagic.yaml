@@ -75,8 +75,11 @@ workflows:
         submit_to_testflight: true
 
   android-apk:
-    name: Ninety Android → APK + AAB
-    max_build_duration: 40
+    name: Ninety Android → four apps (APK + AAB each)
+    # v7.94: one build makes the four Android apps - Ninety Fabrication (app.ninety.fabrication, the app already on the
+    # phones), Ninety Studioz, Ninety Construction and Ninety (all three systems). Files: out/Ninety-<variant>.apk / .aab,
+    # copied to the website by the factory Edge function "app-build".
+    max_build_duration: 120
     instance_type: mac_mini_m2
     working_directory: ios-app
     environment:
@@ -84,7 +87,7 @@ workflows:
       java: 21
     # Builds by itself when the app files change. The signing key is NOT in Codemagic or the
     # repo: the build asks the factory server for it (Edge "app-build", action signing), which checks with the Codemagic API
-    # that this exact build of this app is running before answering, once.
+    # that this exact build of this app is running before answering, once - so it is fetched once and used for all four.
     # v7.48: iOS-only files (the Apple Pencil plugin, the iOS project script) and this file do not rebuild the Android app —
     # a new APK makes every Android phone update, so it is built only when something Android actually changed.
     triggering:
@@ -106,35 +109,51 @@ workflows:
           - 'ios-app/scripts/share-signing.py'
     scripts:
       - name: Install
-        script: npm install --no-audit --no-fund
-      - name: Generate the Android project
         script: |
-          rm -rf android
-          npx cap add android
+          npm install --no-audit --no-fund
           python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
-          python3 scripts/make-assets.py
-          npx capacitor-assets generate --android --iconBackgroundColor '#171b1f' --splashBackgroundColor '#171b1f'
-          # v7.36b: capacitor-assets leaves Capacitor's default adaptive icon (the blue X) - draw the Ninety launcher icon over it
-          python3 scripts/android-icons.py
       - name: Signing key from the Ninety server
         script: |
           set +x
           curl -sS -X POST "https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/app-build" -H "content-type: application/json" -d "{\"action\":\"signing\",\"build\":\"$CM_BUILD_ID\"}" -o /tmp/signing.json
-          python3 scripts/configure-android.py
-          rm -f /tmp/signing.json
-      - name: Sync
-        script: npx cap sync android
-      - name: Build the app (.apk + .aab)
+          python3 -c "import json,sys; d=json.load(open('/tmp/signing.json')); sys.exit(0 if d.get('ok') else 'signing key not available (error: %s)' % d.get('error','none'))"
+      - name: Build the four apps
         script: |
-          # v7.61: a failed APK build must fail the step (build 106 compiled nothing yet showed «success»)
           set -e
-          cd android
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease
-          # v7.36: the Play Store bundle must not update itself - drop the self-update permission, then build the .aab
-          (cd .. && python3 scripts/store-variant.py)
-          ./gradlew --no-daemon bundleRelease || echo "AAB build failed - the website APK is fine"
-          rm -f app/ninety.jks keystore.properties
+          set +x
+          trap 'rm -f /tmp/signing.json android/app/ninety.jks android/keystore.properties' EXIT
+          cp capacitor.config.json /tmp/cap.pristine.json
+          rm -rf /tmp/www.pristine && cp -R www /tmp/www.pristine
+          rm -rf out && mkdir -p out
+          for V in fabrication studioz construction ninety; do
+            echo "===== $V ====="
+            cp /tmp/cap.pristine.json capacitor.config.json
+            rm -rf www && cp -R /tmp/www.pristine www
+            python3 scripts/android-variant.py "$V"
+            . /tmp/nf-variant.env
+            export NF_APPID NF_ICON_BG
+            rm -rf android assets
+            npx cap add android
+            python3 scripts/make-assets.py
+            npx capacitor-assets generate --android --iconBackgroundColor "$NF_ICON_BG" --splashBackgroundColor "$NF_ICON_BG"
+            # v7.36b: capacitor-assets leaves Capacitor's default adaptive icon (the blue X) - draw the Ninety launcher icon over it
+            python3 scripts/android-icons.py
+            python3 scripts/configure-android.py
+            npx cap sync android
+            # v7.61: a failed APK build must fail the build (build 106 compiled nothing yet showed «success»)
+            (cd android && chmod +x gradlew && ./gradlew --no-daemon assembleRelease)
+            cp "$(ls android/app/build/outputs/apk/release/*.apk | head -1)" "out/Ninety-$V.apk"
+            # v7.36: the Play Store bundle must not update itself - drop the self-update permission, then build the .aab
+            python3 scripts/store-variant.py
+            if (cd android && ./gradlew --no-daemon bundleRelease); then
+              cp "$(ls android/app/build/outputs/bundle/release/*.aab | head -1)" "out/Ninety-$V.aab"
+            else
+              echo "AAB build failed for $V - the website APK is fine"
+            fi
+            rm -f android/app/ninety.jks android/keystore.properties
+          done
+          cp /tmp/cap.pristine.json capacitor.config.json
+          ls -la out
     artifacts:
-      - android/app/build/outputs/apk/release/*.apk
-      - android/app/build/outputs/bundle/release/*.aab
+      - out/*.apk
+      - out/*.aab

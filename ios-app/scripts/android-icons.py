@@ -6,9 +6,14 @@
 from PIL import Image, ImageDraw
 import glob
 import os
+import re
 
 RES = 'android/app/src/main/res'
-BG = (23, 27, 31, 255)
+# v7.94 four apps: the background colour comes from NF_ICON_BG (each app has its own), default #171B1F
+BG_HEX = (os.environ.get('NF_ICON_BG') or '#171B1F').strip().upper()
+if not re.fullmatch(r'#[0-9A-F]{6}', BG_HEX):
+    BG_HEX = '#171B1F'
+BG = (int(BG_HEX[1:3], 16), int(BG_HEX[3:5], 16), int(BG_HEX[5:7], 16), 255)
 WHITE = (255, 255, 255, 255)
 CLEAR = (0, 0, 0, 0)
 DPI = {'mdpi': 1, 'hdpi': 1.5, 'xhdpi': 2, 'xxhdpi': 3, 'xxxhdpi': 4}
@@ -75,6 +80,6 @@ for d in sorted(anydpi):
 
 os.makedirs(os.path.join(RES, 'values'), exist_ok=True)
 with open(os.path.join(RES, 'values', 'ic_launcher_background.xml'), 'w') as fh:
-    fh.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#171B1F</color>\n</resources>\n')
+    fh.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">' + BG_HEX + '</color>\n</resources>\n')
 
 print('android icons ok:', ', '.join(sorted(os.path.basename(x) for x in anydpi)))

@@ -2,7 +2,12 @@
 from PIL import Image, ImageDraw
 import os
 os.makedirs('assets', exist_ok=True)
-BG = (23, 27, 31)
+# v7.94 four Android apps: NF_ICON_BG gives each app its own background (iOS leaves it unset -> #171b1f)
+_h = (os.environ.get('NF_ICON_BG') or '#171b1f').strip().lstrip('#')
+try:
+    BG = (int(_h[0:2], 16), int(_h[2:4], 16), int(_h[4:6], 16)) if len(_h) == 6 else (23, 27, 31)
+except ValueError:
+    BG = (23, 27, 31)
 def mark(size, scale):
     S = 4; W = size * S; im = Image.new('RGB', (W, W), BG); d = ImageDraw.Draw(im)
     k = scale * S; ox = (W - 300 * k) / 2; oy = (W - 192 * k) / 2

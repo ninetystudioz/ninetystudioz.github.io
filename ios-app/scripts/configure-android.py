@@ -18,11 +18,22 @@ if not sig.get('ok'):
     raise SystemExit('signing key not available (error: %s)' % sig.get('error', 'none'))
 open(APP + '/ninety.jks', 'wb').write(base64.b64decode(sig['keystore']))
 open('android/keystore.properties', 'w').write('storeFile=ninety.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' % (sig['storePass'], sig.get('alias', 'ninety'), sig['keyPass']))
-if sig.get('gservices'):
-    open(APP + '/google-services.json', 'w').write(sig['gservices'])
-    print('google-services.json added (Android notifications on)')
+# v7.94 four apps: google-services.json is written only when it holds a client for this app's package
+# (Gradle stops the build when the package is missing from it)
+app_id = json.load(open('capacitor.config.json')).get('appId', '')
+gs = sig.get('gservices') or ''
+has = bool(gs)
+if has:
+    try:
+        cl = json.loads(gs).get('client', [])
+        has = any(((x.get('client_info') or {}).get('android_client_info') or {}).get('package_name') == app_id for x in cl)
+    except Exception:
+        has = False
+if has:
+    open(APP + '/google-services.json', 'w').write(gs)
+    print('google-services.json added for %s (Android notifications on)' % app_id)
 else:
-    print('no google-services.json yet (Android notifications off until it is uploaded)')
+    print('no google-services.json for %s yet (Android notifications off until it is added in Firebase and uploaded)' % app_id)
 
 g = open(GRADLE).read()
 g = re.sub(r'versionCode\s+\d+', 'versionCode %d' % version_code, g)
