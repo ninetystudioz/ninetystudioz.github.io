@@ -1244,7 +1244,7 @@ function wirePoForm(f) {
   f.addEventListener('click', e => { const b = e.target.closest('[data-line]'); if (!b) return; e.preventDefault(); const box = $('#lines', f); if (b.dataset.line === 'add') box.insertAdjacentHTML('beforeend', poLineRows([{}])); else if ($$('.line', box).length > 1) b.closest('.line').remove(); recalc(); });
   f.addEventListener('input', recalc); f.addEventListener('change', recalc); recalc();
 }
-async function savePoBase(f, p) { const d = formData(f); const items = readPoLines(f); if (!d.supplier) { toast('اكتب اسم المورد', 'err'); return false; } if (!items.length) { toast('أضف بندًا واحدًا بكمية', 'err'); return false; } const doc = Object.assign({}, p, { id: p.id || uid(), number: d.number || nextPoNo(), supplier: d.supplier, date: d.date, expected: d.expected, orderId: d.orderId || null, items, notes: d.notes, status: p.status || 'draft' }); await Store.save('purchases', doc); toast('تم حفظ طلب الشراء'); if (!p.id) go('purchases/' + doc.id); }
+async function savePoBase(f, p) { const d = formData(f); const items = readPoLines(f); if (!d.supplier) { toast('اكتب اسم المورد', 'err'); return false; } if (!items.length) { toast('أضف بندًا واحدًا بكمية', 'err'); return false; } const doc = Object.assign({}, p, { id: p.id || uid(), number: d.number || nextPoNo(), supplier: d.supplier, date: d.date, expected: d.expected, orderId: d.orderId || null, items, notes: d.notes, status: p.status || 'draft' }); if (!doc.brandId && doc.orderId) { const ob = byId('orders', doc.orderId)?.brandId; if (ob) doc.brandId = ob; } await Store.save('purchases', doc); toast('تم حفظ طلب الشراء'); if (!p.id) go('purchases/' + doc.id); }
 ACTIONS.poNew = () => { if (!list('materials').length) { toast('أضف الخامات أولاً من صفحة المخزون', 'err'); return; } openModal({ title: 'طلب شراء جديد', wide: true, body: poForm({}), onOpen: wirePoForm, onSubmit: f => savePo(f, {}) }); };
 ACTIONS.poFromLow = () => { const low = list('materials').filter(isLow); openModal({ title: 'طلب شراء للخامات المنخفضة', wide: true, body: poForm({ items: low.map(m => ({ materialId: m.id, qty: Math.max(0, (+m.minQty || 0) * 2 - (+m.qty || 0)), cost: m.cost, unit: m.unit })) }), onOpen: wirePoForm, onSubmit: f => savePo(f, {}) }); };
 ACTIONS.poEdit = id => { const p = byId('purchases', id); if (!p) return; openModal({ title: `تعديل ${p.number}`, wide: true, body: poForm(p), onOpen: wirePoForm, onSubmit: f => savePo(f, p) }); };
@@ -2079,7 +2079,7 @@ function vRequests() {
   let arr = list('requests').filter(requestVisible); if (f.status !== 'all') arr = arr.filter(r => r.status === f.status);
   /* v7.82 (Mahmoud 16 Oct: «employees' advances on their own, project requests on their own, and every kind of request in a category»):
      category chips with their counts (for the chosen status), and inside a category the kinds it holds */
-  const byCat = {}; arr.forEach(r => { const c = reqCatOf(r.type); (byCat[c] ||= []).push(r); });
+  const byCat = {}; arr.forEach(r => { const c = reqCatOfR(r); (byCat[c] ||= []).push(r); });
   const cats = REQ_CATS.filter(c => byCat[c[0]] && byCat[c[0]].length);
   if (f.cat && f.cat !== 'all' && !byCat[f.cat]) f.cat = 'all';
   if (f.cat && f.cat !== 'all') arr = byCat[f.cat];
@@ -2092,9 +2092,13 @@ function vRequests() {
 }
 ACTIONS.reqFilter = arg => { const i = arg.indexOf(':'); const k = arg.slice(0, i), v = arg.slice(i + 1); const f = (S.ui.filter.requests ||= {}); f[k] = v; if (k === 'cat') f.type = ''; render(false); };
 /* v7.82: the request categories (unknown kinds fall in «Other») */
-const REQ_CATS = [['adv', 'سلف الموظفين'], ['proj', 'طلبات المشاريع والمشتريات'], ['money', 'عهد ومصروفات'], ['att', 'الحضور والإجازات'], ['fleet', 'النقل والمعدات'], ['admin', 'الإدارة والصلاحيات'], ['other', 'تانية']];
+const REQ_CATS = [['adv', 'سلف الموظفين'], ['proj', 'طلبات المشاريع والمشتريات'], ['meals', 'وجبات'], ['money', 'عهد ومصروفات'], ['att', 'الحضور والإجازات'], ['fleet', 'النقل والمعدات'], ['admin', 'الإدارة والصلاحيات'], ['other', 'تانية']];
 const REQ_CAT_OF = { advance: 'adv', abssettle: 'adv', estimate: 'proj', routeplan: 'proj', po: 'proj', need: 'proj', transfer: 'proj', pricecheck: 'proj', rfqtech: 'proj', rfqprice: 'proj', itemconfirm: 'proj', itemtech: 'proj', custody: 'proj', purchase_exception: 'proj', finedit: 'proj', finlock: 'proj', fund: 'money', opex: 'money', leave: 'att', permission: 'att', punch: 'att', outfix: 'att', attfix: 'att', attedit: 'att', siteout: 'att', trip: 'fleet', tripconfirm: 'fleet', equipout: 'fleet', equipret: 'fleet', wagechange: 'admin', regchange: 'admin', password: 'admin', priceopen: 'admin', quoteopen: 'admin', penalty_cancel: 'admin' };
 const reqCatOf = t => REQ_CAT_OF[t] || 'other';
+/* v7.99 (Mahmoud 17 Oct: «a category in the requests that reach me: meals»): the overtime meals custody requests (the day's request from the
+   Edge remind / otnight, and the «addition» ones from the app) are their own category (meals) */
+const reqIsMeals = r => !!r && r.type === 'fund' && (r.cat === 'meals' || !!r.otDay || !!r.otSummary || !!r.otAdd || r.source === 'otnight');
+const reqCatOfR = r => (reqIsMeals(r) ? 'meals' : reqCatOf(r && r.type));
 document.head.insertAdjacentHTML('beforeend', '<style>.rqcats,.rqkinds{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 0 8px;padding:2px 0}.rqcats::-webkit-scrollbar,.rqkinds::-webkit-scrollbar{display:none}.rqcats button,.rqkinds button{flex:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}.rqkinds button{height:28px;font-size:12px;background:transparent}.rqcats button span,.rqkinds button span{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--surface-2);font-size:11px;font-weight:700;display:inline-grid;place-items:center}.rqcats button.on,.rqkinds button.on{background:var(--ink);color:var(--surface);border-color:transparent}.rqcats button.on span,.rqkinds button.on span{background:rgba(255,255,255,.22);color:inherit}</style>');
 function requestFormBase(wid, forKiosk) {
   const ws = forKiosk ? [byId('workers', wid)] : hrWorkers(role() === 'head' ? '' : '').filter(w => w.status !== 'inactive'); const pol = S.settings.policy || {};
@@ -2810,7 +2814,7 @@ ACTIONS.selfPunch = async (arg, btn) => {
     const res = await kioskPunch(w, { method: 'self', faceScore: typeof verify.face === 'number' ? verify.face : undefined, verify: Object.keys(verify).length ? verify : undefined }); if (res && res.blocked) { toast(res.msg, 'err'); if (live) live.textContent = res.msg; }
   } finally { btn.disabled = false; }
 };
-const verifyBadge = r => { const v = r && (r.verify || r.verifyOut); if (!v) return ''; const parts = []; if (v.dev === 'other') parts.push('<span class="badge" title="دخل وبصم من جهاز غير جهازه المعتاد">من جهاز آخر</span>'); const sus = (v.suspect || []).filter(x => x !== 'gesture'); if (sus.length) parts.push(`<span class="badge crit" title="${esc(sus.map(x => (typeof SUSPECT_LABEL !== 'undefined' && SUSPECT_LABEL[x]) || x).join(' · '))}">مشتبه — للمراجعة</span>`); if (!v.live && !v.device && (v.nolive || (v.suspect || []).includes('gesture'))) parts.push('<span class="badge" title="الوش اتعرف بس حركة التحقق ما اكتملتش وبصمة الصباع ماكانتش متاحة">من غير حركة تحقق</span>'); if (v.live) parts.push('<span class="badge good" title="اجتاز فحص الحيوية">حي ✓</span>'); if (v.face === 'unavailable') parts.push('<span class="badge warn" title="لم تتوفر الكاميرا عند البصمة">بدون تحقق وجه</span>'); else if (v.face != null) parts.push('<span class="badge good">وجه ✓</span>'); if (v.device) parts.push('<span class="badge good">جهاز ✓</span>'); return parts.join(' '); };
+const verifyBadge = r => { const v = r && (r.verify || r.verifyOut); if (!v) return ''; const parts = []; /* v7.97: a punch from another person's phone (multi-account) */ if (v.via && v.via.name) { const vn = String(v.via.name).replace(/[<>&"]/g, ''); parts.push(`<span class="badge warn">${(typeof I18N !== 'undefined' && I18N.lang === 'en') ? 'From the phone of ' + vn : 'من موبايل ' + vn}</span>`); } if (v.dev === 'other') parts.push('<span class="badge" title="دخل وبصم من جهاز غير جهازه المعتاد">من جهاز آخر</span>'); const sus = (v.suspect || []).filter(x => x !== 'gesture'); if (sus.length) parts.push(`<span class="badge crit" title="${esc(sus.map(x => (typeof SUSPECT_LABEL !== 'undefined' && SUSPECT_LABEL[x]) || x).join(' · '))}">مشتبه — للمراجعة</span>`); if (!v.live && !v.device && (v.nolive || (v.suspect || []).includes('gesture'))) parts.push('<span class="badge" title="الوش اتعرف بس حركة التحقق ما اكتملتش وبصمة الصباع ماكانتش متاحة">من غير حركة تحقق</span>'); if (v.live) parts.push('<span class="badge good" title="اجتاز فحص الحيوية">حي ✓</span>'); if (v.face === 'unavailable') parts.push('<span class="badge warn" title="لم تتوفر الكاميرا عند البصمة">بدون تحقق وجه</span>'); else if (v.face != null) parts.push('<span class="badge good">وجه ✓</span>'); if (v.device) parts.push('<span class="badge good">جهاز ✓</span>'); return parts.join(' '); };
 /* =====================================================================
    Accounts: phone + self-set password · first-login activation (face / activation code) ·
    forgot-password with identity verification + HR approval · biometric-only attendance
@@ -7399,23 +7403,42 @@ ACTIONS.tripNew = arg => { const [k, id] = (arg || '').split(':'); if (k !== 'po
 async function tripApproved(t, direct) { await tripApprovedBase(t, direct); t = byId('trips', t.id) || t; if (!t.purchaseId) return; const pk = byId('tasks', `po_pickup_${t.purchaseId}`); if (pk && pk.status !== 'done') await Store.update('tasks', pk.id, { status: 'done', doneAt: nowISO(), doneByName: S.session?.name || '', proof: { note: `تحوّل إلى مشوار ${t.number}`, at: nowISO(), byName: S.session?.name || '' } }); const p = byId('purchases', t.purchaseId); if (p) await Store.update('purchases', p.id, { pickup: { tripId: t.id, number: t.number, at: nowISO() } }); }
 const _tripEnd0 = ACTIONS.tripEnd;
 ACTIONS.tripEnd = async id => {
-  await _tripEnd0(id); const t = byId('trips', id); if (!t || t.status !== 'done' || !t.purchaseId) return; const p = byId('purchases', t.purchaseId); if (!p || ['received', 'cancelled'].includes(p.status)) return;
-  await Store.update('purchases', p.id, { status: 'arrived', arrivedAt: nowISO(), arrivedTrip: t.number });
-  const h = poHead(p); const items = (p.pending || p.items || []).map(it => `${it.name || byId('materials', it.materialId)?.name || ''} × ${fmtNum(it.pendingQty ?? it.qty)}`).join('، ');
-  await Store.save('tasks', { id: `po_recv_head_${p.id}`, title: `استلام توريد ${p.number} — رئيس القسم`, desc: `وصل السائق بالتوريد من ${p.supplier || ''}: ${items}\nافحص البضاعة وسجّل استلامك (صورة + الكميات المقبولة/المرفوضة) من صفحة طلب الشراء. الاستلام يكتمل مع أمين المخزن.`, deptId: p.deptId || null, assigneeId: h ? h.id : null, orderId: p.orderId || null, dueDate: todayISO(), priority: 'urgent', status: 'open', kind: 'task', source: 'system', purchaseId: p.id, createdBy: null, createdByName: 'السيستم', createdAt: nowISO(), updatedAt: nowISO() }, { silent: true });
-  await notifyRole('store', `استلام توريد ${p.number} — أمين المخزن`, `وصل التوريد من ${p.supplier || ''}: ${items}\nسجّل استلامك (صورة + الكميات + الوجهة: المخزن أو أرضية المصنع) من صفحة طلب الشراء.`, { id: `po_recv_store_${p.id}`, priority: 'urgent', kind: 'task', fields: { purchaseId: p.id } });
+  await _tripEnd0(id); const t = byId('trips', id); if (!t || t.status !== 'done' || !t.purchaseId) return; const p = byId('purchases', t.purchaseId); if (!p) return;
+  await poMarkArrived(p, { via: 'trip', trip: t.number });
 };
+/* v7.96: one arrival path for a purchase order — the trip end (above), the chained trip that carries the goods home
+   (99zzZzZZzzp-trip-chain.js carryArrive) and «the supply arrived» on the pickup task without a trip (99zzZzZZzzzA-po-receive.js).
+   o.via: 'trip' | 'carry' | 'manual'; o.trip: the label kept in arrivedTrip; o.from / o.to: the two trips of a carry;
+   o.skip: extra statuses that block the arrival (carry and manual skip an order that already arrived). No amounts in the texts. */
+async function poMarkArrived(p, o = {}) {
+  p = (p && byId('purchases', p.id)) || p; if (!p || ['received', 'cancelled'].concat(o.skip || []).includes(p.status)) return false;
+  const me = S.session || {}; const now = nowISO();
+  const patch = { status: 'arrived', arrivedAt: now, arrivedTrip: o.trip || '' };
+  if (o.via === 'manual') patch.arrivedManual = { at: now, by: me.id || null, byName: me.name || '' };
+  await Store.update('purchases', p.id, patch);
+  const h = poHead(p); const items = (p.pending || p.items || []).map(it => `${it.name || byId('materials', it.materialId)?.name || ''} × ${fmtNum(it.pendingQty ?? it.qty)}`).join('، '); const sup = p.supplier || ''; const nm = me.name || '';
+  const headDesc = o.via === 'carry' ? `وصل السائق بالتوريد من ${sup} (اتشال في ${o.from || ''} ووصل مع ${o.to || ''}): ${items}\nالاستلام الفني: اتأكد إن الخامة مطابقة للمواصفات المطلوبة وصوّرها، وسجّل استلامك الفني من صفحة طلب الشراء. الاستلام يكتمل مع أمين المخزن (الكميات والأصناف).`
+    : o.via === 'manual' ? `وصل التوريد من ${sup} من غير مشوار (سجّله ${nm}): ${items}\nالاستلام الفني: اتأكد إن الخامة مطابقة للمواصفات المطلوبة وصوّرها، وسجّل استلامك الفني من صفحة طلب الشراء. الاستلام يكتمل مع أمين المخزن (الكميات والأصناف).`
+    : `وصل السائق بالتوريد من ${sup}: ${items}\nالاستلام الفني: اتأكد إن الخامة مطابقة للمواصفات المطلوبة وصوّرها، وسجّل استلامك الفني من صفحة طلب الشراء. الاستلام يكتمل مع أمين المخزن (الكميات والأصناف).`;
+  const storeDesc = o.via === 'carry' ? `وصل التوريد من ${sup} (مع ${o.to || ''}): ${items}\nعدّ الكميات وراجع الأصناف على أمر الشراء وصوّرها، وحدد الوجهة: المخزن (عهدة المخزن) أو أرضية المصنع (عهدة رئيس القسم) — من صفحة طلب الشراء.`
+    : o.via === 'manual' ? `وصل التوريد من ${sup} من غير مشوار (سجّله ${nm}): ${items}\nعدّ الكميات وراجع الأصناف على أمر الشراء وصوّرها، وحدد الوجهة: المخزن (عهدة المخزن) أو أرضية المصنع (عهدة رئيس القسم) — من صفحة طلب الشراء.`
+    : `وصل التوريد من ${sup}: ${items}\nعدّ الكميات وراجع الأصناف على أمر الشراء وصوّرها، وحدد الوجهة: المخزن (عهدة المخزن) أو أرضية المصنع (عهدة رئيس القسم) — من صفحة طلب الشراء.`;
+  await Store.save('tasks', { id: `po_recv_head_${p.id}`, title: `استلام فني — ${p.number} — رئيس القسم`, desc: headDesc, deptId: p.deptId || null, assigneeId: h ? h.id : null, orderId: p.orderId || null, dueDate: todayISO(), priority: 'urgent', status: 'open', kind: 'task', source: 'system', purchaseId: p.id, createdBy: null, createdByName: 'السيستم', createdAt: now, updatedAt: now }, { silent: true });
+  await notifyRole('store', `استلام كميات ومراجعة أصناف — ${p.number} — أمين المخزن`, storeDesc, { id: `po_recv_store_${p.id}`, priority: 'urgent', kind: 'task', fields: { purchaseId: p.id } });
+  return true;
+}
 /* ---------------- dual receipt ---------------- */
 const poReceiptItems = p => (p.pending && p.pending.length ? p.pending : (p.items || []).map(it => Object.assign({}, it, { pendingQty: it.qty })));
 function receiptDialog(p, who) {
-  const items = poReceiptItems(p); const label = who === 'head' ? 'استلام رئيس القسم' : 'استلام أمين المخزن'; const other = p.receipts && p.receipts[who === 'head' ? 'store' : 'head'];
+  const items = poReceiptItems(p); const label = who === 'head' ? 'الاستلام الفني — رئيس القسم' : 'استلام كميات ومراجعة أصناف — أمين المخزن'; const other = p.receipts && p.receipts[who === 'head' ? 'store' : 'head'];
+  const intro = who === 'head' ? 'الاستلام الفني: اتأكد إن الخامة مطابقة للمواصفات المطلوبة (النوع، المقاس، الجودة) وصوّرها. اكتب المقبول والمرفوض فنيًا لكل بند.' : 'استلام الكميات ومراجعة الأصناف: عدّ كل بند وراجعه على أمر الشراء وصوّره، واكتب المقبول والمرفوض، وحدد الوجهة: المخزن (عهدة المخزن) أو أرضية المصنع (عهدة رئيس القسم).';
   return new Promise(resolve => {
     let settled = false; const done = v => { if (settled) return; settled = true; clearInterval(iv); resolve(v); };
-    openModal({ title: `${label} — ${p.number}`, wide: true, submitLabel: 'تسجيل الاستلام', body: `<div class="form"><div class="banner info full" style="margin:0">${icon('info')}<span>افحص كل بند: اكتب الكمية المقبولة والمرفوضة، وحدد هل يدخل المخزن أم ينزل مباشرة لأرضية المصنع. الاستلام يكتمل عند تسجيل الطرفين (رئيس القسم + أمين المخزن).${other ? ` الطرف الآخر سجّل: ${esc(other.byName || '')} — ${other.status === 'ok' ? 'سليم' : 'به مشكلة'}` : ''}</span></div>
-      <div class="field full"><div class="tablewrap"><table><thead><tr><th>البند</th><th class="n">المطلوب</th><th class="n">المقبول</th><th class="n">المرفوض</th><th>الوجهة</th><th>ملاحظة</th></tr></thead><tbody>${items.map((it, i) => { const q = +(it.pendingQty ?? it.qty) || 0; const oth = other && other.items ? other.items[i] : null; return `<tr><td>${esc(it.name || byId('materials', it.materialId)?.name || '')}<div class="tiny muted">${esc(it.unit || '')}</div></td><td class="n">${fmtNum(q)}</td><td class="n"><input class="inp num" name="acc-${i}" type="number" step="any" min="0" max="${q}" value="${oth ? oth.accepted : q}" style="width:84px;padding:4px 8px" data-rq="${q}" data-i="${i}"></td><td class="n"><input class="inp num" name="rej-${i}" type="number" step="any" min="0" max="${q}" value="${oth ? oth.rejected : 0}" style="width:84px;padding:4px 8px" data-i="${i}"></td><td><select class="sel" name="dest-${i}" style="padding:4px 8px"><option value="store" ${!oth || oth.dest !== 'floor' ? 'selected' : ''}>المخزن</option><option value="floor" ${oth && oth.dest === 'floor' ? 'selected' : ''}>أرضية المصنع مباشرة</option></select></td><td><input class="inp" name="note-${i}" placeholder="سبب الرفض / ملاحظة" style="padding:4px 8px;min-width:140px" value="${esc(oth && oth.note || '')}"></td></tr>`; }).join('')}</tbody></table></div></div>
-      <div class="field full"><label>الحالة العامة</label><div class="seg" id="pf-status"><button type="button" class="on" data-st="ok">مطابق — سليم</button><button type="button" data-st="issue">توجد مشكلة / رفض</button></div><input type="hidden" name="status" value="ok"></div>
-      <div class="field full"><label>صورة التوريد عند الاستلام (مطلوبة)</label><input type="file" id="pf-file" name="file" accept="image/*,application/pdf" capture="environment" multiple></div>
-      ${field('تقرير الاستلام', `<textarea id="pf-note" name="note" placeholder="العدد، الحالة، أي ملاحظات"></textarea>`, 'full')}</div>`,
+    openModal({ title: who === 'head' ? `الاستلام الفني — رئيس القسم — ${p.number}` : `استلام كميات ومراجعة أصناف — أمين المخزن — ${p.number}`, wide: true, submitLabel: 'تسجيل الاستلام', body: `<div class="form"><div class="banner info full" style="margin:0">${icon('info')}<span>${intro} الاستلام يكتمل عند تسجيل الطرفين (الاستلام الفني لرئيس القسم + استلام الكميات لأمين المخزن).${other ? ` الطرف الآخر سجّل: ${esc(other.byName || '')} — ${other.status === 'ok' ? 'سليم' : 'به مشكلة'}` : ''}</span></div>
+      <div class="field full"><div class="tablewrap"><table><thead><tr><th>البند</th><th class="n">المطلوب</th><th class="n">المقبول</th><th class="n">المرفوض</th><th>الوجهة</th><th>ملاحظة</th></tr></thead><tbody>${items.map((it, i) => { const q = +(it.pendingQty ?? it.qty) || 0; const oth = other && other.items ? other.items[i] : null; return `<tr><td>${esc(it.name || byId('materials', it.materialId)?.name || '')}<div class="tiny muted">${esc(it.unit || '')}</div></td><td class="n">${fmtNum(q)}</td><td class="n"><input class="inp num" name="acc-${i}" type="number" step="any" min="0" max="${q}" value="${oth ? oth.accepted : q}" style="width:84px;padding:4px 8px" data-rq="${q}" data-i="${i}"></td><td class="n"><input class="inp num" name="rej-${i}" type="number" step="any" min="0" max="${q}" value="${oth ? oth.rejected : 0}" style="width:84px;padding:4px 8px" data-i="${i}"></td><td><select class="sel" name="dest-${i}" style="padding:4px 8px"><option value="store" ${!oth || oth.dest !== 'floor' ? 'selected' : ''}>المخزن (عهدة المخزن)</option><option value="floor" ${oth && oth.dest === 'floor' ? 'selected' : ''}>أرضية المصنع (عهدة رئيس القسم)</option></select></td><td><input class="inp" name="note-${i}" placeholder="سبب الرفض / ملاحظة" style="padding:4px 8px;min-width:140px" value="${esc(oth && oth.note || '')}"></td></tr>`; }).join('')}</tbody></table></div></div>
+      <div class="field full"><label>الحالة العامة</label><div class="seg" id="pf-status">${who === 'head' ? '<button type="button" class="on" data-st="ok">مطابق للمواصفات</button><button type="button" data-st="issue">غير مطابق / رفض</button>' : '<button type="button" class="on" data-st="ok">الكميات والأصناف مطابقة</button><button type="button" data-st="issue">نقص / صنف مختلف / رفض</button>'}</div><input type="hidden" name="status" value="ok"></div>
+      <div class="field full"><label>${who === 'head' ? 'صورة الخامة للاستلام الفني (مطلوبة)' : 'صورة التوريد — الكميات والأصناف (مطلوبة)'}</label><input type="file" id="pf-file" name="file" accept="image/*,application/pdf" capture="environment" multiple></div>
+      ${who === 'head' ? field('تقرير الاستلام الفني', `<textarea id="pf-note" name="note" placeholder="المطابقة للمواصفات، الجودة، أي ملاحظات"></textarea>`, 'full') : field('تقرير استلام الكميات', `<textarea id="pf-note" name="note" placeholder="العدد، الأصناف، الحالة، أي ملاحظات"></textarea>`, 'full')}</div>`,
       onOpen: f => { const seg = $('#pf-status', f); seg.addEventListener('click', ev => { const b = ev.target.closest('[data-st]'); if (!b) return; ev.preventDefault(); $$('button', seg).forEach(x => x.classList.toggle('on', x === b)); $('[name=status]', f).value = b.dataset.st; }); f.addEventListener('input', ev => { const el = ev.target; if (!el.name) return; const m = /^(acc|rej)-(\d+)$/.exec(el.name); if (!m) return; const i = m[2]; const q = +$(`[name=acc-${i}]`, f).dataset.rq; if (m[1] === 'acc') { const a = Math.max(0, Math.min(q, num(el.value))); $(`[name=rej-${i}]`, f).value = r2(q - a); } else { const rj = Math.max(0, Math.min(q, num(el.value))); $(`[name=acc-${i}]`, f).value = r2(q - rj); } const anyRej = items.some((_, k) => num($(`[name=rej-${k}]`, f).value) > 0); const b = $(`#pf-status [data-st=${anyRej ? 'issue' : 'ok'}]`, f); if (b) { $$('#pf-status button', f).forEach(x => x.classList.toggle('on', x === b)); $('[name=status]', f).value = anyRej ? 'issue' : 'ok'; } }); },
       onSubmit: async f => {
         const d = formData(f); const files = Array.from($('#pf-file', f)?.files || []); if (!files.length) { toast('صورة التوريد مطلوبة لتوثيق الاستلام', 'err'); return false; }
@@ -7433,7 +7456,7 @@ function receiptDialog(p, who) {
 ACTIONS.poReceiveAs = async arg => {
   const [id, who] = arg.split(':'); const p = byId('purchases', id); if (!p || !writable()) return;
   if (!['approved', 'ordered', 'arrived', 'partial'].includes(p.status)) { toast('الطلب ليس في مرحلة الاستلام', 'err'); return; }
-  if (who === 'head' ? !poIsHeadActor(p) : !poIsStoreActor()) { toast(who === 'head' ? 'استلام رئيس القسم يسجّله رئيس القسم الطالب (أو مدير المصنع)' : 'استلام أمين المخزن يسجّله أمين المخازن', 'err'); return; }
+  if (who === 'head' ? !poIsHeadActor(p) : !poIsStoreActor()) { toast(who === 'head' ? 'الاستلام الفني يسجّله رئيس القسم الطالب (أو مدير المصنع)' : 'استلام الكميات ومراجعة الأصناف يسجّله أمين المخازن', 'err'); return; }
   const s = supplierOf(p); if (!s) { toast('اربط الطلب بمورد مسجّل أولًا', 'err'); return; }
   if (s.taxType === 'nontax' && !supplierIdCard(s) && !(p.exception && p.exception.status === 'approved')) {
     if (p.exception && p.exception.status === 'pending') { toast('طلب الاستثناء بانتظار مدير المصنع', 'err'); return; }
@@ -7444,16 +7467,16 @@ ACTIONS.poReceiveAs = async arg => {
   const pr = await receiptDialog(p, who); if (!pr) return;
   const receipts = Object.assign({}, p.receipts || {}, { [who]: pr }); await Store.update('purchases', p.id, { receipts, status: p.status === 'approved' || p.status === 'ordered' ? 'arrived' : p.status });
   const tk = byId('tasks', who === 'head' ? `po_recv_head_${p.id}` : `po_recv_store_${p.id}`); if (tk && tk.status !== 'done') await Store.update('tasks', tk.id, { status: 'done', doneAt: nowISO(), doneByName: S.session?.name || '', proof: pr });
-  toast(`تم تسجيل ${who === 'head' ? 'استلام رئيس القسم' : 'استلام أمين المخزن'}`);
+  toast(who === 'head' ? 'تم تسجيل الاستلام الفني' : 'تم تسجيل استلام الكميات ومراجعة الأصناف');
   if (receipts.head && receipts.store) await poFinalizeReceipt(byId('purchases', p.id)); else { const h = who === 'head' ? null : poHead(p); await notifyRole(who === 'head' ? 'store' : (poHeadRole(p) === 'head' ? 'head' : poHeadRole(p)), `${p.number}: سجّل ${who === 'head' ? 'رئيس القسم' : 'أمين المخزن'} استلامه — بانتظار استلامك`, `${pr.status === 'ok' ? 'مطابق' : 'به مشكلة'} — ${pr.note || ''}`, { id: `po_recv_wait_${p.id}`, priority: 'high', fields: Object.assign({ purchaseId: p.id, deptId: who === 'head' ? null : p.deptId }, h ? { assigneeId: h.id, toRole: null } : {}) }); }
 };
 /* keep the old button working: route the single "confirm receipt" to the role's own receipt */
 ACTIONS.poReceive = id => { const p = byId('purchases', id); if (!p) return; if (isAdmin() && !(p.receipts && p.receipts.head)) return ACTIONS.poReceiveAs(`${id}:head`); return ACTIONS.poReceiveAs(`${id}:${poIsStoreActor() && !isAdmin() ? 'store' : 'head'}`); };
 async function poFinalizeReceipt(p) {
   const H = p.receipts.head, St = p.receipts.store; const rows = H.items.map((h, i) => { const s = St.items[i] || h; const accepted = Math.min(+h.accepted || 0, +s.accepted || 0); const rejected = Math.max(+h.rejected || 0, +s.rejected || 0, r2(h.qty - accepted)); return Object.assign({}, h, { accepted, rejected: Math.min(rejected, h.qty), dest: s.dest || h.dest, note: [h.note, s.note].filter(Boolean).join(' / '), mismatch: Math.abs((+h.accepted || 0) - (+s.accepted || 0)) > 0.001 }); });
-  for (const r of rows) { if (r.accepted > 0 && r.materialId) { await addMovement({ materialId: r.materialId, type: 'in', qty: r.accepted, cost: r.cost || null, purchaseId: p.id, note: `استلام ${p.number} — ${p.supplier || ''}${r.dest === 'floor' ? ' (نزل للأرضية مباشرة)' : ''}` }); if (r.dest === 'floor') await addMovement({ materialId: r.materialId, type: 'out', qty: r.accepted, cost: r.cost || null, orderId: p.orderId || null, purchaseId: p.id, note: `صرف مباشر لأرضية المصنع — ${p.number}${p.orderId ? ' — ' + (byId('orders', p.orderId)?.code || '') : ''}` }); } }
+  for (const r of rows) { if (r.accepted > 0 && r.materialId) { await addMovement({ materialId: r.materialId, type: 'in', qty: r.accepted, cost: r.cost || null, purchaseId: p.id, note: `استلام ${p.number} — ${p.supplier || ''}${r.dest === 'floor' ? ' (نزل للأرضية مباشرة)' : ''}` }); if (r.dest === 'floor') await addMovement({ materialId: r.materialId, type: 'out', qty: r.accepted, cost: r.cost || null, orderId: p.orderId || null, purchaseId: p.id, custody: true, deptId: p.deptId || (poDept(p) || {}).id || null, note: `صرف مباشر لأرضية المصنع — عهدة رئيس القسم — ${p.number}${p.orderId ? ' — ' + (byId('orders', p.orderId)?.code || '') : ''}` }); } }
   const rejected = rows.filter(r => r.rejected > 0); const acceptedAny = rows.some(r => r.accepted > 0); const mismatch = rows.some(r => r.mismatch);
-  const patch = { receipt: Object.assign({}, St, { note: `رئيس القسم: ${H.note || '—'} · أمين المخزن: ${St.note || '—'}`, status: rejected.length ? 'issue' : 'ok' }), receivedItems: (p.receivedItems || []).concat(rows.filter(r => r.accepted > 0).map(r => ({ materialId: r.materialId, name: r.name, qty: r.accepted, dest: r.dest, at: nowISO() }))), pending: null };
+  const patch = { receipt: Object.assign({}, St, { note: `رئيس القسم: ${H.note || '—'} · أمين المخزن: ${St.note || '—'}`, status: rejected.length ? 'issue' : 'ok' }), receivedItems: (p.receivedItems || []).concat(rows.filter(r => r.accepted > 0).map(r => Object.assign({ materialId: r.materialId, name: r.name, qty: r.accepted, dest: r.dest, at: nowISO() }, r.dest === 'floor' ? { custody: 'head', deptId: p.deptId || (poDept(p) || {}).id || null } : { custody: 'store' }))), pending: null };
   if (rejected.length) {
     patch.status = acceptedAny ? 'partial' : 'rejected'; patch.rejection = { at: nowISO(), byName: `${H.byName} + ${St.byName}`, items: rejected.map(r => ({ materialId: r.materialId, name: r.name, unit: r.unit, cost: r.cost, rejected: r.rejected, note: r.note })), reason: [H.status === 'issue' ? H.note : '', St.status === 'issue' ? St.note : ''].filter(Boolean).join(' / '), resolution: null, count: ((p.rejection && p.rejection.count) || 0) + 1 };
     await Store.update('purchases', p.id, patch);
@@ -7507,12 +7530,12 @@ function poApprovalCard(p) {
 function poReceiptCard(p) {
   if (['draft', 'approval', 'cancelled'].includes(p.status)) return '';
   const R = p.receipts || {}; const pk = p.pickup; const trip = pk && pk.tripId ? byId('trips', pk.tripId) : null; const pkTask = byId('tasks', `po_pickup_${p.id}`);
-  const box = (who, label, actor) => { const r = R[who]; const can = writable() && ['approved', 'ordered', 'arrived', 'partial'].includes(p.status) && actor; return `<div class="recbox ${r ? (r.status === 'ok' ? 'ok' : 'issue') : ''}"><h4>${label}</h4>${r ? `<div class="small">${badge({ ok: ['مطابق — سليم', 'good'], issue: ['به مشكلة / مرفوض', 'crit'] }, r.status)} <span class="muted">${esc(r.byName || '')} · ${fmtDate((r.at || '').slice(0, 10))} ${fmtAtTm(r.at)}</span></div><div class="small" style="margin-top:4px;white-space:pre-wrap">${esc(r.note || '')}</div><div style="margin-top:6px">${proofChip(r, `ext:${p.id}:receipts.${who}`, 'صورة الاستلام')}</div><div class="tiny muted" style="margin-top:4px">${(r.items || []).filter(it => it.rejected > 0).map(it => `${esc(it.name)}: مرفوض ${fmtNum(it.rejected)}`).join(' · ') || 'كل البنود مقبولة'}${(r.items || []).some(it => it.dest === 'floor') ? ' · بنود لأرضية المصنع مباشرة' : ''}</div>` : `<div class="small muted">لم يُسجَّل بعد</div>${can ? `<button class="btn sm p" style="margin-top:8px" data-action="poReceiveAs" data-arg="${p.id}:${who}">${icon('check')}سجّل استلامك (صورة + الكميات)</button>` : ''}`}</div>`; };
+  const box = (who, label, actor) => { const r = R[who]; const can = writable() && ['approved', 'ordered', 'arrived', 'partial'].includes(p.status) && actor; return `<div class="recbox ${r ? (r.status === 'ok' ? 'ok' : 'issue') : ''}"><h4>${label}</h4><div class="tiny muted recrole">${who === 'head' ? 'رئيس القسم: يتأكد إن الخامة مطابقة للمواصفات المطلوبة — بصورة' : 'أمين المخزن: يعدّ الكميات ويراجع الأصناف على الأمر — بصورة'}</div>${r ? `<div class="small">${badge({ ok: ['مطابق — سليم', 'good'], issue: ['به مشكلة / مرفوض', 'crit'] }, r.status)} <span class="muted">${esc(r.byName || '')} · ${fmtDate((r.at || '').slice(0, 10))} ${fmtAtTm(r.at)}</span></div><div class="small" style="margin-top:4px;white-space:pre-wrap">${esc(r.note || '')}</div><div style="margin-top:6px">${proofChip(r, `ext:${p.id}:receipts.${who}`, 'صورة الاستلام')}</div><div class="tiny muted" style="margin-top:4px">${(r.items || []).filter(it => it.rejected > 0).map(it => `${esc(it.name)}: مرفوض ${fmtNum(it.rejected)}`).join(' · ') || 'كل البنود مقبولة'}${(r.items || []).some(it => it.dest === 'floor') ? ' · بنود لأرضية المصنع (عهدة رئيس القسم)' : ''}</div>` : `<div class="small muted">لم يُسجَّل بعد</div>${can ? `<button class="btn sm p" style="margin-top:8px" data-action="poReceiveAs" data-arg="${p.id}:${who}">${icon('check')}${who === 'head' ? 'سجّل الاستلام الفني (صورة + المطابقة)' : 'سجّل استلام الكميات (صورة + العدد والأصناف)'}</button>` : ''}`}</div>`; };
   return `<div class="card"><div class="cardhead"><h3>النقل والاستلام الثنائي</h3><span class="muted small">السائق يسلّم لرئيس القسم وأمين المخزن معًا</span></div>
     <div class="small" style="margin-bottom:10px">${trip ? `مشوار النقل: <a href="#/fleet/${trip.id}"><span class="code">${esc(trip.number)}</span></a> ${badge(TRIP_STATUS, trip.status)} · ${esc(assigneeName(trip.driverId))} · ${esc(vehicleName(trip.vehicleId))}` : pkTask && pkTask.status !== 'done' ? `<span class="badge warn">بانتظار تكليف عربية من حركة النقل</span> ${canFleet() ? `<button class="btn xs p" data-action="tripNew" data-arg="po:${p.id}">${icon('plus')}تكليف عربية</button>` : ''}` : p.status === 'arrived' || p.status === 'received' ? '<span class="badge good">وصل التوريد</span>' : '<span class="muted">لم يُكلَّف مشوار بعد</span>'}${p.arrivedTrip ? ` <span class="tiny muted">وصل بالمشوار ${esc(p.arrivedTrip)}</span>` : ''}</div>
     ${p.pending && p.pending.length ? `<div class="banner info" style="margin-bottom:10px">${icon('info')}<span>استلام ثانٍ للبديل: ${p.pending.map(it => `${esc(it.name)} × ${fmtNum(it.pendingQty)}`).join('، ')}</span></div>` : ''}
-    <div class="recgrid">${box('head', 'استلام رئيس القسم', poIsHeadActor(p))}${box('store', 'استلام أمين المخزن', poIsStoreActor())}</div>
-    ${p.receivedItems && p.receivedItems.length ? `<div class="tiny muted" style="margin-top:8px">دخل المخزون: ${p.receivedItems.map(it => `${esc(it.name)} × ${fmtNum(it.qty)}${it.dest === 'floor' ? ' (أرضية)' : ''}`).join(' · ')}</div>` : ''}</div>`;
+    <div class="recgrid">${box('head', 'الاستلام الفني — رئيس القسم', poIsHeadActor(p))}${box('store', 'استلام كميات ومراجعة أصناف — أمين المخزن', poIsStoreActor())}</div>
+    ${p.receivedItems && p.receivedItems.length ? `<div class="tiny muted po-custody" style="margin-top:8px"><span>دخل المخزون:</span> ${p.receivedItems.map(it => `<span>${esc(it.name)} × ${fmtNum(it.qty)}</span> ${it.dest === 'floor' ? `<span>(أرضية المصنع — عهدة رئيس القسم)</span>${it.deptId || p.deptId ? ` <span>${esc(deptName(it.deptId || p.deptId))}</span>` : ''}` : '<span>(المخزن — عهدة المخزن)</span>'}`).join(' · ')}</div>` : ''}</div>`;
 }
 function poRejectionCard(p) {
   const rj = p.rejection; if (!rj) return ''; const res = rj.resolution;
@@ -11312,7 +11335,7 @@ function orderDirectInMonth(o, ym) {
   let c = 0;
   list('movements').forEach(m => Object.values(m.items || {}).forEach(it => { if (it.orderId === o.id && it.type === 'out' && ymOf(it.date) === ym) c += (+it.qty || 0) * (+it.cost || 0); }));
   list('attendance').forEach(doc => { if (doc.month !== ym) return; Object.entries(doc.rows || {}).forEach(([date, rows]) => Object.entries(rows).forEach(([wid, r]) => (r.alloc || []).forEach(al => { if (al.orderId !== o.id) return; const w = byId('workers', wid); c += (+al.h || 0) * (w ? hourlyRate(w) : 0); }))); });
-  list('expenses').forEach(e => { if (e.orderId === o.id && ymOf(e.date) === ym) c += +e.amount || 0; });
+  list('expenses').forEach(e => { if (e.orderId === o.id && !e.extId && ymOf(e.date) === ym) c += +e.amount || 0; });
   list('trips').forEach(t => { if (t.status === 'done' && t.orderId === o.id && ymOf(t.date) === ym && typeof tripCost === 'function') c += +(tripCost(t).total || 0); });
   return r2(c);
 }
@@ -11540,8 +11563,9 @@ const waDay = d => { const t = todayISO(); if (d === t) return 'اليوم'; con
 const WA_COLORS = ['#e542a3', '#1f7aec', '#00a884', '#e3a300', '#8e44ad', '#d35400', '#16a085'];
 const whoColor = id => WA_COLORS[Math.abs(String(id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % WA_COLORS.length];
 function chatHTML(t) {
-  const th = taskThread(t); let last = null, lastBy = null; const rows = [];
+  const th = taskThread(t); let last = null, lastBy = null; const rows = []; const hideEsc = typeof escHideOwner === 'function' && escHideOwner(t);
   th.forEach((m, mi) => {
+    if (m.sys && hideEsc && (/^esc/.test(String(m.id || '')) || /^⚠️ المكلَّف/.test(String(m.text || '')))) return;   /* v7.99: the «not seen — escalated» line is not shown to the owner */
     const mid = m.id || ('i' + mi); const d = (m.at || '').slice(0, 10), tm = fmtAtTm(m.at);
     if (d !== last) { rows.push(`<div class="day">${waDay(d)}</div>`); last = d; lastBy = null; }
     if (m.sys) { rows.push(`<div class="sysl">${esc(m.text || '')}</div>`); lastBy = null; return; }
@@ -11730,35 +11754,46 @@ ACTIONS.taskRemind = async id => {
   pushSend(to, `🔔 تذكير: ${t.title}`.slice(0, 100), `${S.session?.name || ''} بيفكّرك — ${TASK_PRIORITY[t.priority] ? TASK_PRIORITY[t.priority][0] : ''}${t.dueDate ? ' · ' + fmtDate(t.dueDate) : ''}`, `/#/tasks/${id}`, 'task-' + id);
   toast('تم إرسال التذكير'); render(false);
 };
-taskItem = (base => (t, o) => { let h = base(t, o); if (IMPORTANT(t) && ['open', 'doing'].includes(t.status) && writable() && taskVisible(t)) h = h.replace('<a class="iconbtn camicon"', `<button class="iconbtn camicon rembtn ${t.remindedAt ? 'sent' : ''}" data-action="taskRemind" data-arg="${t.id}" title="إرسال تذكير">${icon('bell')}</button><a class="iconbtn camicon"`); if (t.escalation && t.escalation.level) h = h.replace('<div class="title">', `<div class="title"><span class="esc-badge">تصعيد ${t.escalation.level}</span> `); return h; })(taskItem);
+taskItem = (base => (t, o) => { let h = base(t, o); if (IMPORTANT(t) && ['open', 'doing'].includes(t.status) && writable() && taskVisible(t)) h = h.replace('<a class="iconbtn camicon"', `<button class="iconbtn camicon rembtn ${t.remindedAt ? 'sent' : ''}" data-action="taskRemind" data-arg="${t.id}" title="إرسال تذكير">${icon('bell')}</button><a class="iconbtn camicon"`); if (t.escalation && t.escalation.level && !escHideOwner(t)) h = h.replace('<div class="title">', `<div class="title"><span class="esc-badge">تصعيد ${t.escalation.level}</span> `); return h; })(taskItem);
 RENDER_HOOKS.push(() => {
   if (S.route.view !== 'tasks' || !S.route.id) return; const t = byId('tasks', S.route.id); if (!t) return; const v = document.getElementById('view'); if (!v) return;
   const head = v.querySelector('.card .cardhead'); if (head && IMPORTANT(t) && ['open', 'doing'].includes(t.status) && writable() && !head.querySelector('.rembtn')) head.insertAdjacentHTML('beforeend', `<button class="btn xs rembtn" data-action="taskRemind" data-arg="${t.id}" title="تذكير المكلَّف والأطراف">${icon('bell')}تذكير${t.remindedAt ? ' ✓' : ''}</button>`);
-  if (t.escalation && t.escalation.level && head && !head.querySelector('.esc-badge')) head.insertAdjacentHTML('beforeend', `<span class="esc-badge" title="${esc(t.escalation.note || '')}">صُعِّدت (${t.escalation.level}) — لم يشاهدها المكلَّف</span>`);
+  if (t.escalation && t.escalation.level && !escHideOwner(t) && head && !head.querySelector('.esc-badge')) head.insertAdjacentHTML('beforeend', `<span class="esc-badge" title="${esc(t.escalation.note || '')}">صُعِّدت (${t.escalation.level}) — لم يشاهدها المكلَّف</span>`);
   /* the assignee opening the task = seen */
   const me = myIds(); if (t.assigneeId && me.includes(t.assigneeId) && !(t.seenAt || {})[t.assigneeId]) { Store.update('tasks', t.id, { seenAt: Object.assign({}, t.seenAt || {}, { [t.assigneeId]: nowISO() }) }, { silent: true }).catch(() => { }); }
 });
 /* opening from the list (tap) also counts */
 document.addEventListener('click', e => { const a = e.target.closest('a[href^="#/tasks/"]'); if (!a || !S.session) return; const id = a.getAttribute('href').slice(8).split('/')[0]; const t = byId('tasks', id); const me = myIds(); if (t && t.assigneeId && me.includes(t.assigneeId) && !(t.seenAt || {})[t.assigneeId]) Store.update('tasks', id, { seenAt: Object.assign({}, t.seenAt || {}, { [t.assigneeId]: nowISO() }) }, { silent: true }).catch(() => { }); });
-/* client-side escalation while the app is open (the server does the same when it is closed) */
+/* client-side escalation while the app is open (the server does the same when it is closed)
+   v7.99 (brief owner-chains, PIN 17 Oct): head / direct manager → factory manager and STOP — never the owner; a direct manager who is the
+   factory manager (or nobody at level 1) = straight to the factory manager; a financial task (finConf) goes to the factory manager at once
+   with a text without amounts and no link into it; the accounts manager's tasks are never escalated (they reach the owner after 48 h —
+   Edge «remind»); the escalation line and the «escalated» chip are not shown to the owner. Same rules as server/remind/esc.ts. */
+const escOwnerIds = () => { const s0 = new Set(['admin', 'role:admin', 'local-admin']); list('workers').filter(w => w.role === 'admin').forEach(w => { s0.add(w.id); s0.add('w:' + w.id); }); list('staff').filter(x => x.role === 'admin').forEach(x => s0.add(String(x.id))); return s0; };
+const escIsAccMgr = id => { try { const a = typeof window.nfAccMgr === 'function' ? window.nfAccMgr() : null; return !!(a && id && String(id).replace(/^w:/, '') === a.id); } catch (e) { return false; } };
+/* the owner sees no escalation line / chip — unless an old escalation reached him (level 3, before v7.99) */
+const escHideOwner = t => isAdmin() && !(t && t.escalation && t.escalation.level >= 3);
 function escalationTargets(t, level) {
-  const w = t.assigneeId ? byId('workers', t.assigneeId) : null;
-  if (level === 1) { const ids = new Set(); if (w && w.managerId && w.managerId !== 'role:admin') ids.add(w.managerId); if (w) deptHeads(w.deptId).forEach(h => ids.add(h.id)); if (t.deptId) deptHeads(t.deptId).forEach(h => ids.add(h.id)); ids.delete(t.assigneeId); return { ids: Array.from(ids), label: 'المدير المباشر / رئيس القسم' }; }
-  if (level === 2) return { ids: list('workers').filter(x => x.role === 'manager' && x.status !== 'inactive').map(x => x.id).concat(list('staff').filter(s => s.role === 'manager' && s.active !== false).map(s => s.id)).concat(['role:manager']), label: 'مدير المصنع' };
-  return { ids: ['role:admin'], label: 'المالك' };
+  const w = t.assigneeId ? byId('workers', t.assigneeId) : null; const own = escOwnerIds();
+  if (level === 1) { const ids = new Set(); if (w && w.managerId && w.managerId !== 'role:admin') ids.add(w.managerId); if (w) deptHeads(w.deptId).forEach(h => ids.add(h.id)); if (t.deptId) deptHeads(t.deptId).forEach(h => ids.add(h.id)); ids.delete(t.assigneeId); return { ids: Array.from(ids).filter(x => !own.has(String(x)) && !own.has('w:' + x)), label: 'المدير المباشر / رئيس القسم' }; }
+  return { ids: list('workers').filter(x => x.role === 'manager' && x.status !== 'inactive').map(x => x.id).concat(list('staff').filter(s => s.role === 'manager' && s.active !== false).map(s => s.id)).concat(['role:manager']).filter(x => x !== t.assigneeId), label: 'مدير المصنع' };
 }
 async function escalateTick() {
   if (!S.session || !writable() || !(isAdmin() || ['manager', 'hr', 'head', 'office'].includes(role()))) return; // only a supervisor's open app runs it
-  const now = Date.now(); const pol = +(S.settings.policy && S.settings.policy.escalateMinutes) || 10;
+  const now = Date.now(); const pol = +(S.settings.policy && S.settings.policy.escalateMinutes) || 10; const own = escOwnerIds();
   for (const t of list('tasks')) {
     if (!IMPORTANT(t) || t.status !== 'open' || !t.assigneeId || t.kind === 'update') continue;
+    if (escIsAccMgr(t.assigneeId) || own.has(String(t.assigneeId))) continue;   /* v7.99: the accounts manager's (and the owner's) tasks are not chased here */
     if (taskThread(t).some(m => m && !m.sys && (m.by === t.assigneeId || m.by === 'w:' + t.assigneeId))) continue;   /* v7.54: in progress / answered = seen (the cleanup clears the alert — escalating it again looped every few minutes) */
-    if ((t.seenAt || {})[t.assigneeId]) continue; const lvl = (t.escalation && t.escalation.level) || 0; if (lvl >= (t.finConf ? 3 : 2)) continue; /* v7.53 (Mahmoud): «not seen» stops at the factory manager — it never reaches the owner (only financial confirmations do) */
+    if ((t.seenAt || {})[t.assigneeId]) continue; const lvl = (t.escalation && t.escalation.level) || 0; if (lvl >= 2) continue; /* v7.99: the factory manager is the end */
     const since = new Date(lvl ? t.escalation.at : (t.assignedAt || t.createdAt || 0)).getTime(); if (!since || now - since < pol * 60000) continue;
-    const next = lvl + 1; const tg = escalationTargets(t, next); const note = `المكلَّف ${assigneeName(t.assigneeId)} لم يشاهد المهمة خلال ${pol} دقيقة — صُعِّدت إلى ${tg.label}`;
+    const fin = !!t.finConf; let next = fin ? 2 : lvl + 1; let tg = escalationTargets(t, next);
+    if (next === 1) { const mg = escalationTargets(t, 2).ids; if (!tg.ids.length) { next = 2; tg = escalationTargets(t, 2); } else if (tg.ids.some(x => mg.includes(x))) { next = 2; tg = { ids: tg.ids, label: tg.ids.every(x => mg.includes(x)) ? 'مدير المصنع' : 'المدير المباشر / رئيس القسم — مدير المصنع' }; } }
+    const note = `المكلَّف ${assigneeName(t.assigneeId)} لم يشاهد المهمة خلال ${pol} دقيقة — صُعِّدت إلى ${tg.label}`;
     try { await Store.update('tasks', t.id, { escalation: { level: next, at: nowISO(), note }, thread: taskThread(t).concat([{ id: uid(), at: nowISO(), by: null, byName: 'السيستم', sys: true, text: `⚠️ ${note}` }]) }, { silent: true }); } catch (e) { continue; }
-    pushSend(tg.ids, `⚠️ مهمة مهمة لم تُشاهد: ${t.title}`.slice(0, 100), note, `/#/tasks/${t.id}`, 'esc-' + t.id);
-    for (const id of tg.ids) { if (id.startsWith('role:')) await notifyRole(id.slice(5), `⚠️ مهمة مهمة لم تُشاهد: ${t.title}`, note, { id: `esc${next}_${t.id}_${id.slice(5)}`, priority: 'urgent', fields: { link: `#/tasks/${t.id}` } }); else await Store.save('tasks', { id: `esc${next}_${t.id}_${id}`, title: `⚠️ مهمة مهمة لم تُشاهد: ${t.title}`, desc: note, assigneeId: id, kind: 'update', priority: 'urgent', status: 'open', source: 'system', createdAt: nowISO(), updatedAt: nowISO(), link: `#/tasks/${t.id}` }, { silent: true }); }
+    const title = fin ? `⚠️ فيه مهمة لسه ماحدش شافها — ${assigneeName(t.assigneeId)}` : `⚠️ مهمة مهمة لم تُشاهد: ${t.title}`; const link = fin ? null : `#/tasks/${t.id}`;
+    pushSend(tg.ids, title.slice(0, 100), note, fin ? '/#/tasks' : `/#/tasks/${t.id}`, 'esc-' + t.id);
+    for (const id of tg.ids) { const extra = fin ? { escNoMoney: true } : {}; if (id.startsWith('role:')) await notifyRole(id.slice(5), title, note, { id: `esc${next}_${t.id}_${id.slice(5)}`, priority: 'urgent', fields: Object.assign({ link }, extra) }); else await Store.save('tasks', Object.assign({ id: `esc${next}_${t.id}_${id}`, title, desc: note, assigneeId: id, kind: 'update', priority: 'urgent', status: 'open', source: 'system', createdAt: nowISO(), updatedAt: nowISO(), link }, extra), { silent: true }); }
   }
 }
 setInterval(escalateTick, 60000);
@@ -12229,7 +12264,7 @@ function purchOptionsCard(p) {
     ${op((p.splitTo || []).length ? 'done' : '', '٢ · المورد معندوش كل الأصناف', (p.splitTo || []).length ? `اتفصل ${(p.splitTo || []).length} طلب لمورد آخر` : 'افصل الأصناف الناقصة في طلب تاني وكمّل الأمر باللي عنده', `<button class="btn xs" data-action="poSplit" data-arg="${p.id}">${icon('arrow')}فصل أصناف</button>`)}
     ${op(ic.status === 'approved' || p.supplierConfirmed ? 'done' : ic.status === 'pending' ? 'wait' : '', '٣ · صنف مكوَّد عند مورد جديد', ic.status === 'approved' || p.supplierConfirmed ? 'المورد مؤكَّد على الأصناف ✓' : ic.status === 'pending' ? `بانتظار: رئيس القسم ← مدير المصنع ← الحسابات` : ic.status === 'rejected' ? `مرفوض: ${esc(ic.note || '')} — دوّر على مورد تاني` : unc.length ? `${unc.length} صنف أول مرة عند ${s ? esc(s.name) : 'المورد'} — اطلب تأكيد الصنف` : 'لا يوجد أصناف تحتاج تأكيدًا', unc.length && ic.status !== 'pending' && !p.supplierConfirmed ? `<button class="btn xs p" data-action="itemConfirmAsk" data-arg="${p.id}">${icon('check')}طلب تأكيد الصنف</button>` : '')}
     ${op('', '٤ · خامة جديدة غير مكوَّدة', 'تُطلب بـ«طلب عرض سعر» من رئيس القسم: مورد + سعر + صورة ← اعتماد فني ← اعتماد السعر ← تكويد + أمر شراء تلقائي', `<button class="btn xs" data-action="rfqNew">${icon('plus')}طلب عرض سعر</button>`)}
-    ${op('', '٥ · الاستلام', 'أمين المخزن يسجّل الاستلام (صورة + كميات) ثم رئيس القسم يعتمد دائمًا إن الخامة جت مطابقة — لا يكتمل الاستلام بدونه. وجهة كل بند: المخزن الرئيسي أو أرضية المصنع للتشغيل (= عهدة القسم). الصرف لاحقًا من «المخزون ← صرف لأرضية المصنع».')}
+    ${op('', '٥ · الاستلام', 'أمين المخزن: استلام كميات ومراجعة أصناف (عدّ + مراجعة على الأمر + صورة). رئيس القسم: استلام فني (الخامة مطابقة للمواصفات + صورة) — لا يكتمل الاستلام بدون الاثنين. وجهة كل بند: المخزن (عهدة المخزن) أو أرضية المصنع (عهدة رئيس القسم). الصرف لاحقًا من «المخزون ← صرف لأرضية المصنع».')}
   </div></div>`;
 }
 function rfqCard(p) {
@@ -23891,6 +23926,13 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
   const mine = p => isAdmin() || (!!myWid() && (p.payerId ? p.payerId === myWid() : isPayer()));
   const canAdvPay = () => !!S.session && !stu() && (isAdmin() || ['hr', 'acc'].includes(role()) || isPayer());
   const canWalletAdmin = () => !!S.session && !stu() && (isAdmin() || role() === 'hr');
+  /* v7.99 (brief owner-chains, PIN 17 Oct): a transfer that did not match is reviewed by the accounts manager (Saeed — window.nfAccMgr);
+     the owner sees it only after it waited more than 48 hours (the server «remind» also sends him one notice then) */
+  const isAccMgr = () => typeof window.nfIsAccMgr === 'function' && window.nfIsAccMgr();
+  const canReview = () => isAdmin() || isAccMgr();
+  const revLate = p => Date.now() - (Date.parse(p.proofAt || p.updatedAt || p.createdAt || '') || 0) > 48 * 36e5;
+  const revOwner = p => p.status === 'review' && (typeof window.nfAccMgr !== 'function' || !window.nfAccMgr() || revLate(p));
+  const accName = () => { const a = typeof window.nfAccMgr === 'function' ? window.nfAccMgr() : null; return (a && a.name) || L('مدير الحسابات', 'the accounts manager'); };
   const walletOf = wid => byId('wallets', wid);
   const wShow = w => !w ? '' : (w.number || w.ipa || (w.last4 ? `•••• ${w.last4}` : ''));
   const wLabel = w => w ? `${(WT[w.type] || [''])[0]} ${wShow(w)}${w.type === 'card' && w.holder ? ' — ' + w.holder : ''}`.trim() : '';
@@ -24025,7 +24067,7 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
   window.nfAdvPending = a => a && ['topay', 'review'].includes(a.payStatus);
   /* ------------ the page ------------ */
   VIEW_TITLES.advpay = 'تحويل السلف';
-  (() => { const i = NAV.findIndex(n => n.id === 'payroll'); const entry = { id: 'advpay', label: 'تحويل السلف', icon: 'money', count: () => canAdvPay() ? list('advpay').filter(p => (p.status === 'topay' && mine(p) && !isAdmin()) || (p.status === 'review' && isAdmin())).length + list('advbatch').filter(b => (b.status === 'open' && role() === 'hr' && (b.items || []).length) || (['sent', 'review'].includes(b.status) && isAdmin())).length : 0, countCls: 'warn' }; if (i >= 0) NAV.splice(i + 1, 0, entry); else NAV.push(entry); })();
+  (() => { const i = NAV.findIndex(n => n.id === 'payroll'); const entry = { id: 'advpay', label: 'تحويل السلف', icon: 'money', count: () => canAdvPay() ? list('advpay').filter(p => (p.status === 'topay' && mine(p) && !isAdmin()) || (p.status === 'review' && (isAdmin() ? revOwner(p) : isAccMgr()))).length + list('advbatch').filter(b => (b.status === 'open' && role() === 'hr' && (b.items || []).length) || (['sent', 'review'].includes(b.status) && isAdmin())).length : 0, countCls: 'warn' }; if (i >= 0) NAV.splice(i + 1, 0, entry); else NAV.push(entry); })();
   ['hr', 'acc', 'purch'].forEach(r => { if (Array.isArray(ROLE_VIEWS[r]) && !ROLE_VIEWS[r].includes('advpay')) ROLE_VIEWS[r].push('advpay'); });
   canSee = (base => function (v) { if (v === 'advpay') return canAdvPay(); return base.apply(this, arguments); })(canSee);
   const TABS = [['batches', 'الدفعات'], ['topay', 'مستني تحويل'], ['review', 'مراجعة'], ['paid', 'اتحولت'], ['wallets', 'أرقام الموظفين']];
@@ -24035,7 +24077,7 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
     const st = { await: ['مستنية تمويل الدفعة', ''], topay: ['مستني تحويل', 'warn'], review: ['مراجعة', 'serious'], paid: ['اتحولت', 'good'], cancelled: ['ملغية', ''] }[p.status] || [p.status, ''];
     const acts = [];
     if (p.status === 'topay' && mine(p) && writable()) acts.push(wl ? `<label class="btn p sm">${icon('camera')}ارفع صورة التحويل<input type="file" accept="image/*" hidden data-apup="${esc(p.id)}"></label>` : `<span class="badge crit">الموظف لسه ماسجلش رقمه</span>${canWalletAdmin() ? `<button class="btn sm" data-action="walletSet" data-arg="${esc(p.workerId)}">سجّل له الرقم</button>` : ''}`);
-    if (p.status === 'review' && isAdmin() && writable()) acts.push(`<button class="btn p sm" data-action="apApprove" data-arg="${esc(p.id)}">${icon('check')}اعتمد التحويل يدوي</button><button class="btn sm" data-action="apRetry" data-arg="${esc(p.id)}">يرفع صورة تانية</button>`);
+    if (p.status === 'review' && canReview() && writable()) acts.push(`<button class="btn p sm" data-action="apApprove" data-arg="${esc(p.id)}">${icon('check')}اعتمد التحويل يدوي</button><button class="btn sm" data-action="apRetry" data-arg="${esc(p.id)}">يرفع صورة تانية</button>`);
     if (p.status === 'paid') { if (p.waPhone && typeof waLink === 'function') acts.push(`<a class="btn sm p" target="_blank" rel="noopener" href="${esc(waLink(p.waPhone, msgFor(p)))}">${icon('wa')}ابعت للموظف واتساب</a>`); if (navigator.share) acts.push(`<button class="btn sm" data-action="apShare" data-arg="${esc(p.id)}">مشاركة الصورة</button>`); }
     const rdg = window.nfTrf && nfTrf.reading(p) ? `<span class="nftrdg"><i class="apspin" aria-hidden="true"></i>${esc(L('الصورة بتتراجع…', 'The picture is being checked…'))}</span>` : '';
     if (rdg) { acts.length = 0; }
@@ -24074,7 +24116,7 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
   const ownerSets = () => {
     const bs = list('advbatch');
     return {
-      you: { b: sortBy(bs.filter(b => ['sent', 'review'].includes(b.status)), b => b.sentAt || b.createdAt || ''), p: sortBy(list('advpay').filter(p => p.status === 'review'), p => p.createdAt || '') },
+      you: { b: sortBy(bs.filter(b => ['sent', 'review'].includes(b.status)), b => b.sentAt || b.createdAt || ''), p: sortBy(list('advpay').filter(revOwner), p => p.createdAt || '') },
       held: sortBy(bs.filter(b => b.status === 'funded' && !bDone(b)), b => b.fundedAt || ''),
       queued: sortBy(bs.filter(b => b.status === 'queued' || (b.status === 'open' && (b.items || []).length)), b => b.releaseAt || b.createdAt || ''),
       closed: sortBy(bs.filter(b => b.status === 'funded' && bDone(b)), b => b.fundedAt || b.createdAt || '', true),
@@ -24171,18 +24213,23 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
         try { const bb = p.batchId ? byId('advbatch', p.batchId) : null; if (bb && bb.status === 'funded') { const left = (bb.items || []).filter(i => i !== p.id).map(i => byId('advpay', i)).filter(x => x && x.status !== 'paid' && x.status !== 'cancelled'); if (!left.length) { pushTo(['role:admin'], `${S.session?.name || ''} خلّص توزيع دفعة سلف ${bb.code}`.trim(), `${(bb.items || []).length} سلفة اتحوّلت وكل واحدة بصورتها`, bb.id); try { const t = byId('tasks', `abf_${bb.id}`); if (t && t.status !== 'done') await Store.update('tasks', t.id, { status: 'done', doneAt: nowISO() }, { silent: true }); } catch (e3) { /* ignore */ } } } } catch (e2) { /* ignore */ }
         if (late) { if (!quiet) toast(L(`تحويل سلفة ${p.workerName || ''} مطابق ✓ — اتقفلت «اتحولت»`, `The advance transfer for ${p.workerName || ''} matches ✓ — closed «transferred»`)); return; }
         const q = Object.assign({}, p, { status: 'paid', ref: r.ref, paidAmount: r.amount, proofUrl: r.proofUrl, walletShown: r.walletShown || p.walletShown });
-        openModal({ title: 'التحويل مطابق ✓', submitLabel: 'تمام', body: `<div class="form"><div class="full">الرقم والمبلغ مطابقين — السلفة اتقفلت «اتحولت».<br>المبلغ: <b>${fmtMoney(r.amount)} ${CUR()}</b> · رقم العملية: <b class="ltr">${esc(r.ref)}</b></div>${q.waPhone && typeof waLink === 'function' ? `<div class="full"><a class="btn p" target="_blank" rel="noopener" href="${esc(waLink(q.waPhone, msgFor(q)))}">${icon('wa')}ابعت للموظف واتساب</a></div>` : '<div class="full muted small">مفيش رقم واتساب مسجّل للموظف</div>'}</div>`, onSubmit: () => { } });
+        /* v7.98: the owner transferred this one himself — «Paid from» (the server books it on the payer's custody / 'owner_wallet') */
+        const pf = isAdmin() && window.nfPayFrom && window.nfPayFrom.owner() ? window.nfPayFrom : null;
+        openModal({ title: 'التحويل مطابق ✓', submitLabel: 'تمام', body: `<div class="form"><div class="full">الرقم والمبلغ مطابقين — السلفة اتقفلت «اتحولت».<br>المبلغ: <b>${fmtMoney(r.amount)} ${CUR()}</b> · رقم العملية: <b class="ltr">${esc(r.ref)}</b></div>${pf ? pf.field('from', true) : ''}${q.waPhone && typeof waLink === 'function' ? `<div class="full"><a class="btn p" target="_blank" rel="noopener" href="${esc(waLink(q.waPhone, msgFor(q)))}">${icon('wa')}ابعت للموظف واتساب</a></div>` : '<div class="full muted small">مفيش رقم واتساب مسجّل للموظف</div>'}</div>`, onSubmit: f => { if (pf) pf.apSet(id, formData(f).from || pf.def()); } });
       } else {
-        try { await Store.save('tasks', { id: `apr_${id}_${Date.now().toString(36)}`, title: `تحويل سلفة محتاج مراجعتك — ${p.workerName || ''}`, desc: 'افتح «تحويل السلف» ← مراجعة (التفاصيل هناك)', toRole: 'admin', assigneeId: null, priority: 'high', status: 'open', kind: 'update', source: 'advpay', createdBy: S.session?.id || null, createdByName: S.session?.name || '', createdAt: nowISO(), updatedAt: nowISO() }, { silent: true }); } catch (e2) { /* ignore */ }
-        if (late) { if (!quiet) toast(L(`تحويل سلفة ${p.workerName || ''} مش مطابق — راح لمحمود يراجعه`, `The advance transfer for ${p.workerName || ''} does not match — sent to the owner to review`), 'err'); return; }
-        openModal({ title: 'التحويل مش مطابق', submitLabel: 'تمام', body: `<div class="form"><div class="full banner warn">${((r && r.issues) || ['مش واضح']).map(esc).join('<br>')}</div><div class="full small muted">الطلب راح لمحمود يراجعه. لو الصورة غلط، استنى لما يرجّعه وارفع الصح.</div></div>`, onSubmit: () => { } });
+        /* v7.99: the review goes to the accounts manager (his task → push «w:<id>» from 94-reminders-chat), not the owner; no accounts manager → the owner as before */
+        const am = typeof window.nfAccMgr === 'function' ? window.nfAccMgr() : null;
+        try { await Store.save('tasks', { id: `apr_${id}_${Date.now().toString(36)}`, title: `تحويل سلفة محتاج مراجعتك — ${p.workerName || ''}`, desc: 'افتح «تحويل السلف» ← مراجعة (التفاصيل هناك)', toRole: am ? null : 'admin', assigneeId: am ? am.id : null, priority: 'high', status: 'open', kind: 'update', source: 'advpay', createdBy: S.session?.id || null, createdByName: S.session?.name || '', createdAt: nowISO(), updatedAt: nowISO() }, { silent: true }); } catch (e2) { /* ignore */ }
+        const who = am ? accName() : L('محمود', 'the owner');
+        if (late) { if (!quiet) toast(L(`تحويل سلفة ${p.workerName || ''} مش مطابق — راح لـ${who} يراجعه`, `The advance transfer for ${p.workerName || ''} does not match — sent to ${who} to review`), 'err'); return; }
+        openModal({ title: L('التحويل مش مطابق', 'The transfer does not match'), submitLabel: L('تمام', 'OK'), body: `<div class="form"><div class="full banner warn">${((r && r.issues) || ['مش واضح']).map(esc).join('<br>')}</div><div class="full small muted">${esc(L(`الطلب راح لـ${who} يراجعه. لو الصورة غلط، استنى لما يرجّعه وارفع الصح.`, `The request went to ${who} to review. If the picture is wrong, wait until it comes back and upload the right one.`))}</div></div>`, onSubmit: () => { } });
       }
   }
   if (window.nfTrf) nfTrf.on('apverify', (r, ctx) => apVerifyDone(ctx.id, r, true));
   window.nfApDone = apVerifyDone;
   /* v7.57 (Mahmoud on «تحويل سلفة محتاج مراجعتك»: «bring me what you want me to review in the same link / notification») — the
      task page shows this very card (picture, what did not match, the buttons) instead of «open the advances page» */
-  window.nfAp = { card: p => cardHTML(p), can: () => canAdvPay(), mine: p => mine(p) };
+  window.nfAp = { card: p => cardHTML(p), can: () => canAdvPay(), mine: p => mine(p), canReview: () => canReview() };
   ACTIONS.apUpPick = id => { const i = document.querySelector(`input[data-apup="${CSS.escape(String(id || ''))}"]`); if (i) i.click(); else go('advpay'); };
   window.nfWallet = { of: walletOf, label: wLabel, full: wFull };
   document.addEventListener('change', async e => {
@@ -24196,8 +24243,9 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
       await apVerifyDone(id, r, false);
     } catch (err) { upBusy(''); toast('مقدرتش أقرأ الصورة: ' + (err.message || err), 'err'); } finally { upBusy(''); inp.value = ''; }
   });
-  ACTIONS.apApprove = id => { const p = byId('advpay', id); if (!p || !isAdmin()) return; openModal({ title: `اعتماد التحويل يدوي — ${p.workerName || ''}`, submitLabel: 'اعتمد', body: `<div class="form"><div class="full small">${(p.issues || []).map(esc).join('<br>')}</div>${field('رقم العملية', inp('ref', (p.ai && p.ai.reference) || '', 'class="ltr"'))}${field(`المبلغ (${CUR()})`, inp('amount', p.amount, 'type="number" step="any"'))}</div>`, onSubmit: async f => { const d = formData(f); if (!d.ref) { toast('اكتب رقم العملية', 'err'); return false; } try { await callFn({ action: 'approve', id, ref: d.ref, amount: num(d.amount) }); toast('اتعتمد'); } catch (e) { toast(e.message, 'err'); return false; } } }); };
-  ACTIONS.apRetry = async id => { try { await callFn({ action: 'retry', id }); toast('رجعت لبهاء يرفع صورة تانية'); } catch (e) { toast(e.message, 'err'); } };
+  ACTIONS.apApprove = id => { const p = byId('advpay', id); if (!p || !canReview()) return; const pf = p.uploadedBy === 'admin' && window.nfPayFrom && window.nfPayFrom.owner() ? window.nfPayFrom : null;   /* v7.98: his own picture → «Paid from» */
+    openModal({ title: `اعتماد التحويل يدوي — ${p.workerName || ''}`, submitLabel: 'اعتمد', body: `<div class="form"><div class="full small">${(p.issues || []).map(esc).join('<br>')}</div>${field('رقم العملية', inp('ref', (p.ai && p.ai.reference) || '', 'class="ltr"'))}${field(`المبلغ (${CUR()})`, inp('amount', p.amount, 'type="number" step="any"'))}${pf ? pf.field('from', true) : ''}</div>`, onSubmit: async f => { const d = formData(f); if (!d.ref) { toast('اكتب رقم العملية', 'err'); return false; } try { await callFn({ action: 'approve', id, ref: d.ref, amount: num(d.amount) }); toast('اتعتمد'); } catch (e) { toast(e.message, 'err'); return false; } if (pf) pf.apSet(id, d.from || pf.def()); } }); };
+  ACTIONS.apRetry = async id => { if (!canReview()) return; try { await callFn({ action: 'retry', id }); toast('رجعت لبهاء يرفع صورة تانية'); } catch (e) { toast(e.message, 'err'); } };
   /* ------------ batches (v4.97) ------------ */
   const bTotal = b => Math.round(sum((b.items || []).map(i => byId('advpay', i)).filter(Boolean), p => +p.amount || 0) * 100) / 100;
   function nextBatchCode() { const yy = todayISO().slice(2, 4); const pre = `SB-${yy}-`; const n = list('advbatch').reduce((m, b) => { const c = String(b.code || ''); if (!c.startsWith(pre)) return m; const k = parseInt(c.slice(pre.length), 10); return isNaN(k) ? m : Math.max(m, k); }, 0) + 1; return pre + String(n).padStart(3, '0'); }
@@ -24261,13 +24309,24 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
       if (r && (r.queued || r.pending)) { nfTrf.notice(r); return; }
       if (r && r.status === 'funded') {
         await notifyFunded(b, r.to, r.ref);
-        openModal({ title: `اتبعتت لـ${r.toName || 'المحوِّل'} ✓`, submitLabel: 'تمام', body: `<div class="form"><div class="full">التحويل مطابق: <b>${fmtMoney(r.amount)} ${CUR()}</b> لـ <b>${esc(r.toName || '')}</b> — رقم العملية <b class="ltr">${esc(r.ref)}</b>.</div><div class="full banner info small" style="margin:0">${icon('send')}<span>وصله إشعار إن التحويل تم، وهيحوّل لكل واحد على رقمه ويرفع صورة تحويله. هتتابع مين اتحوّل له من كارت الدفعة.</span></div></div>`, onSubmit: () => { } });
+        openModal({ title: `اتبعتت لـ${r.toName || 'المحوِّل'} ✓`, submitLabel: 'تمام', body: `<div class="form"><div class="full">التحويل مطابق: <b>${fmtMoney(r.amount)} ${CUR()}</b> لـ <b>${esc(r.toName || '')}</b> — رقم العملية <b class="ltr">${esc(r.ref)}</b>.</div>${fromField()}<div class="full banner info small" style="margin:0">${icon('send')}<span>وصله إشعار إن التحويل تم، وهيحوّل لكل واحد على رقمه ويرفع صورة تحويله. هتتابع مين اتحوّل له من كارت الدفعة.</span></div></div>`, onSubmit: async f => { await advFrom([id], (formData(f).from || 'personal')); } });
       } else { window.nfAdvLock(id, false); openModal({ title: 'التحويل مش مطابق للدفعة', submitLabel: 'تمام', body: `<div class="form"><div class="full banner warn">${((r && r.issues) || ['مش واضح']).map(esc).join('<br>')}</div><div class="full small muted">تقدر ترفع صورة تانية أو تعتمد يدوي من كارت الدفعة.</div></div>`, onSubmit: () => { } }); }
     } catch (err) { upBusy(''); window.nfAdvLock(id, false); toast('مقدرتش أقرأ الصورة: ' + (err.message || err), 'err'); } finally { upBusy(''); inp.value = ''; }
   });
   window.nfAbFunded = (b, to, ref) => notifyFunded(b, to, ref);
-  if (window.nfTrf) nfTrf.on('abfund', async (r, ctx) => { const b = byId('advbatch', ctx.id); if (!b) return; if (r && r.status === 'funded') { await notifyFunded(b, r.to, r.ref); toast(L(`دفعة السلف ${b.code || ''} اتبعتت لـ${r.toName || ''} ✓`, `Advance batch ${b.code || ''} sent to ${r.toName || ''} ✓`)); } else toast(L(`تحويل دفعة السلف ${b.code || ''} مش مطابق — افتح الدفعة`, `The transfer for advance batch ${b.code || ''} does not match — open the batch`), 'err'); });
-  ACTIONS.abApprove = id => { const b = byId('advbatch', id); if (!b || !isAdmin()) return; const ps = payerIds(); openModal({ title: `اعتماد يدوي وإرسال للمحوِّل — ${b.code}`, submitLabel: 'اعتمد وابعت', body: `<div class="form"><div class="full small">${(b.issues || []).map(esc).join('<br>')}</div>${field('اتحوّلت لمين', `<select name="to">${ps.map(p => `<option value="${esc(p)}">${esc((walletOf(p) || {}).workerName || p)}</option>`).join('')}</select>`)}${field('رقم العملية', inp('ref', (b.ai && b.ai.reference) || '', 'class="ltr"'))}</div>`, onSubmit: async f => { const d = formData(f); if (!d.ref) { toast('اكتب رقم العملية', 'err'); return false; } try { const r = await callFn({ action: 'fundapprove', id, to: d.to, ref: d.ref }); await notifyFunded(b, (r && r.to) || d.to, d.ref); toast(`اتبعتت لـ${(r && r.toName) || ''} — وصله إشعار`); } catch (e) { toast(e.message, 'err'); return false; } } }); };
+  /* v7.95 (Mahmoud, 17 Oct: «I made the transfer but it never asked me whether it was from my personal account») — «Paid from» after an advance batch is funded */
+  function fromField() { return field(L('حوّلت من', 'Paid from'), `<select name="from">${typeof srcOptions === 'function' ? srcOptions('personal', false) : '<option value="personal">personal</option>'}</select>`, 'full'); }
+  async function advFrom(ids, from) {
+    if (!from) return;
+    for (const bid of ids || []) {
+      try { const b = byId('advbatch', bid); if (b && b.fundFrom !== from) await Store.update('advbatch', bid, { fundFrom: from }, { silent: true }); } catch (e) { /* ignore */ }
+      let m = byId('money', 'advb_' + bid); for (let i = 0; !m && i < 8; i++) { await new Promise(r => setTimeout(r, 700)); m = byId('money', 'advb_' + bid); }
+      if (m && m.from !== from) { try { await Store.update('money', m.id, { from }, { silent: true }); } catch (e) { /* ignore */ } }
+    }
+  }
+  window.nfAdvFrom = advFrom;
+  if (window.nfTrf) nfTrf.on('abfund', async (r, ctx) => { const b = byId('advbatch', ctx.id); if (!b) return; if (r && r.status === 'funded') { await notifyFunded(b, r.to, r.ref); toast(L(`دفعة السلف ${b.code || ''} اتبعتت لـ${r.toName || ''} ✓`, `Advance batch ${b.code || ''} sent to ${r.toName || ''} ✓`)); if (isAdmin() && !document.getElementById('mform')) openModal({ title: L(`دفعة السلف ${b.code || ''} اتبعتت ✓`, `Advance batch ${b.code || ''} sent ✓`), submitLabel: L('تمام', 'OK'), body: `<div class="form">${fromField()}</div>`, onSubmit: async f => { await advFrom([ctx.id], (formData(f).from || 'personal')); } }); } else toast(L(`تحويل دفعة السلف ${b.code || ''} مش مطابق — افتح الدفعة`, `The transfer for advance batch ${b.code || ''} does not match — open the batch`), 'err'); });
+  ACTIONS.abApprove = id => { const b = byId('advbatch', id); if (!b || !isAdmin()) return; const ps = payerIds(); openModal({ title: `اعتماد يدوي وإرسال للمحوِّل — ${b.code}`, submitLabel: 'اعتمد وابعت', body: `<div class="form"><div class="full small">${(b.issues || []).map(esc).join('<br>')}</div>${field('اتحوّلت لمين', `<select name="to">${ps.map(p => `<option value="${esc(p)}">${esc((walletOf(p) || {}).workerName || p)}</option>`).join('')}</select>`)}${field('رقم العملية', inp('ref', (b.ai && b.ai.reference) || '', 'class="ltr"'))}${fromField()}</div>`, onSubmit: async f => { const d = formData(f); if (!d.ref) { toast('اكتب رقم العملية', 'err'); return false; } try { const r = await callFn({ action: 'fundapprove', id, to: d.to, ref: d.ref }); await notifyFunded(b, (r && r.to) || d.to, d.ref); toast(`اتبعتت لـ${(r && r.toName) || ''} — وصله إشعار`); } catch (e) { toast(e.message, 'err'); return false; } advFrom([id], d.from || 'personal'); } }); };   /* v7.98: «Paid from» here too (the server writes «personal») */
   ACTIONS.abRetry = async id => { try { await callFn({ action: 'fundretry', id }); toast('ارفع صورة تانية'); } catch (e) { toast(e.message, 'err'); } };
   function batchCard(b) {
     const items = (b.items || []).map(i => byId('advpay', i)).filter(Boolean); const total = b.status === 'open' ? bTotal(b) : +b.total || bTotal(b);
@@ -24359,7 +24418,7 @@ start لكل مرحلة: {"mode":"after"} = بعد ما كل اللي قبلها
   const luhn = n => { let t = 0; for (let i = 0; i < n.length; i++) { let d = +n[n.length - 1 - i]; if (i % 2) { d *= 2; if (d > 9) d -= 9; } t += d; } return t % 10 === 0; };
   const remaining = p => r2(poPayable(p) - (+p.paid || 0));
   /* v7.73 (Mahmoud 15 Oct: «أنا بحوّل من الحسابات بتاعتي — شخصي ولا LOF ولا Ninety») — «paid from» is in the transfer window itself; the last choice on this device is the default */
-  const lastSrc = () => { try { return localStorage.getItem('nf.poSrc') || 'personal'; } catch (e) { return 'personal'; } };
+  const lastSrc = () => { try { return localStorage.getItem('nf.payFrom') || localStorage.getItem('nf.poSrc') || 'personal'; } catch (e) { return 'personal'; } };   /* v7.98: one «last account» for every owner transfer */
   const keepSrc = v => { try { if (v) localStorage.setItem('nf.poSrc', v); } catch (e) { /* ignore */ } };
   window.nfSupPayOf = payOf;
   (document.body || document.head).insertAdjacentHTML('beforeend', `<style>
@@ -30029,7 +30088,8 @@ form:not(.lofqf) [data-line="lcat"],form:not(.lofqf) [data-line="lprj"]{display:
    v5.78 — محادثات/مهام التعاقدات والدفعات (finConf): المالك + الحسابات (hr) + آلاء (bdd) بس
    · السيرفر (nf_conf_ok): مهمة عليها finConf=true مابتوصلش لأي دور تاني — حتى لو كتب فيها قبل كده.
    · هنا: أي مهمة جديدة رايحة للمالك/الحسابات/آلاء بس وكلامها عن شيك/دفعة/تحويل/حوالة/عقد/PO بتتعلّم finConf تلقائيًا.
-   · التصعيد («مهمة مهمة لم تُشاهد») لمهمة finConf بيروح للمالك بس — مش لمدير المصنع ولا رؤساء الأقسام — ونسخة التصعيد بتاخد finConf.
+   · v7.99 (brief owner-chains): the «not seen» escalation of a finConf task goes to the factory manager at once (never the owner) — a notice
+     without amounts and without a link into the task; that copy is not marked finConf (escNoMoney) so the factory manager can see it.
    ===================================================================== */
 (function () {
   if (window.__NF_FINCONF__) return; window.__NF_FINCONF__ = 1;
@@ -30041,14 +30101,16 @@ form:not(.lofqf) [data-line="lcat"],form:not(.lofqf) [data-line="lprj"]{display:
   window.nfFinOnlyTask = finOnly;
   Store.save = (base => function (col, doc, opts) {
     if (col === 'tasks' && doc && typeof doc === 'object' && !doc.finConf) {
-      if (finTaskOf(doc.id)) doc = Object.assign({}, doc, { finConf: true });
+      if (finTaskOf(doc.id) && !doc.escNoMoney) doc = Object.assign({}, doc, { finConf: true });   /* v7.99: the factory manager's «not seen» copy (no amounts, no link) stays visible to him */
       else if (finOnly(doc) && RE.test(`${doc.title || ''} ${doc.desc || ''}`)) doc = Object.assign({}, doc, { finConf: true });
     }
     return base.call(this, col, doc, opts);
   })(Store.save);
   /* نسخة قديمة محفوظة على الجهاز: متبانش برضه لغير المصرّح لهم */
   if (typeof listScope === 'function') listScope = (base => function (col, arr) { const out = base.apply(this, arguments); if (col === 'tasks' && Array.isArray(out) && S.session && !FIN_ROLES.includes(role())) return out.filter(t => !(t && t.finConf)); return out; })(listScope);
-  if (typeof escalationTargets === 'function') escalationTargets = (base => function (t, level) { if (t && t.finConf) return { ids: ['role:admin'], label: 'المالك' }; return base.apply(this, arguments); })(escalationTargets);
+  /* v7.99 (brief owner-chains, PIN 17 Oct): a finConf task no longer escalates to the owner — it goes to the factory manager (level 2) with a
+     text without amounts and no link into it (95-chat-mentions-escalation); this override only keeps every level of it at the factory manager */
+  if (typeof escalationTargets === 'function') escalationTargets = (base => function (t, level) { if (t && t.finConf) return base.call(this, t, 2); return base.apply(this, arguments); })(escalationTargets);
 })();
 /* =====================================================================
    v5.79 — شيل / ضيف طرف في أي محادثة (بـ«ابدأ» من محمود)
@@ -33404,7 +33466,8 @@ if (STU_ON) {
 /* =====================================================================
    Ninety Fabrication v6.52 — overtime approval in two steps (PIN approved 5 Oct; v6.46 had owner + factory manager):
    · step 1: the factory manager approves (otMgrOk) · step 2: HR (Saeed) approves (otOk) — only then it counts in payroll.
-     The owner can still approve at any step (it completes both) but is not asked to.
+     The owner can still approve at any step (it completes both) but is not asked to. v7.99: the owner is no longer a step at all —
+     the factory manager signs, then the accounts manager approves and that is the end; extra hours approved by the head count as covered.
    · HR and the department head still enter the hours; the «approved» box in the day form is no longer ticked by hand —
      approvals are the buttons, so nobody can skip a step.
    · each pending overtime shows where it waits (with the factory manager / with Saeed) and the button for whoever's turn it is;
@@ -33416,11 +33479,12 @@ if (STU_ON) {
    ===================================================================== */
 if (typeof STU_ON === 'undefined' || !STU_ON) {
   const isMgr = () => role() === 'manager';
-  const isHr = () => role() === 'hr';
+  const isHr = () => role() === 'hr' || (typeof window.nfIsAccMgr === 'function' && window.nfIsAccMgr());
   const canOtAny = () => isAdmin() || isMgr() || isHr();
   const needsOk = () => !(S.settings.policy && S.settings.policy.otNeedsApproval === false);
   const stageOf = r => !r || !(+r.ot > 0) ? null : r.otOk ? 'ok' : r.otMgrOk ? 'hr' : 'mgr';
-  const myTurn = st => (st === 'mgr' || st === 'hr') && (isAdmin() || (st === 'mgr' && isMgr()) || (st === 'hr' && isHr()));
+  /* v7.99 (brief owner-chains, PIN 17 Oct): factory manager → accounts manager and done — the owner is not a step (he sees where it waits) */
+  const myTurn = st => (st === 'mgr' || st === 'hr') && ((st === 'mgr' && isMgr()) || (st === 'hr' && isHr()));
   const STAGE_TXT = { mgr: 'عند مدير المصنع', hr: 'عند مدير الحسابات', ok: 'معتمد' };
   const rowsOn = date => { const att = attendanceFor(date) || {}; return list('workers').filter(w => w.status !== 'inactive').map(w => ({ w, r: att[w.id] || {} })).filter(x => +x.r.ot > 0); };
   const pendingOn = (date, st) => rowsOn(date).filter(x => st ? stageOf(x.r) === st : !x.r.otOk);
@@ -34162,9 +34226,9 @@ if (typeof STU_ON !== 'undefined' && STU_ON) {
         /* v6.63: overtime with no overtime task is the department head's delay; with a task it waits for the manager */
         const tf = typeof window.nfOtTaskFor === 'function' ? window.nfOtTaskFor : null;
         const pend = Object.entries(rows).filter(([wid, r]) => r && +r.ot > 0 && !r.otOk);
-        const n = pend.filter(([wid, r]) => !r.otMgrOk && (!tf || tf(d, wid))).length;
+        const n = pend.filter(([wid, r]) => !r.otMgrOk && (!tf || r.otDeptOk || tf(d, wid))).length;   /* v7.99: extra hours the head approved wait for the manager */
         if (n) toMgr({ title: (en() ? `Overtime ${fmtDate(d)} — ${n} people waiting` : `إضافي ${fmtDate(d)} — ${n} موظف مستني الاعتماد`), hours: dayHours(d), href: 'attendance', act: 'attOtOnly', arg: d + ':mgr' });
-        if (tf) { const byDept = {}; pend.filter(([wid]) => !tf(d, wid)).forEach(([wid]) => { const w = byId('workers', wid); const k = (w && w.deptId) || ''; byDept[k] = (byDept[k] || 0) + 1; });
+        if (tf) { const byDept = {}; pend.filter(([wid, r]) => !r.otDeptOk && !tf(d, wid)).forEach(([wid]) => { const w = byId('workers', wid); const k = (w && w.deptId) || ''; byDept[k] = (byDept[k] || 0) + 1; });
           Object.entries(byDept).forEach(([dep, m]) => toDept(dep, { title: en() ? `Overtime ${fmtDate(d)} without an overtime task — ${m} people` : `إضافي ${fmtDate(d)} من غير مهمة إضافي — ${m} موظف`, hours: dayHours(d), href: 'attendance', act: 'attOtOnly', arg: d + ':notask' })); }
       }
     }
@@ -34256,8 +34320,8 @@ if (typeof STU_ON !== 'undefined' && STU_ON) {
   const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
   const L = (a, b) => (en() ? b : a);
   const pend = (r, st, wid, date) => r && +r.ot > 0 && !r.otOk && (st !== 'mgr' || !r.otMgrOk) && (st !== 'hr' || !!r.otMgrOk)
-    && (st !== 'notask' || !(typeof window.nfOtTaskFor === 'function' && window.nfOtTaskFor(date, wid)))
-    && (!['mgr', 'hr'].includes(st) || typeof window.nfOtTaskFor !== 'function' || !!window.nfOtTaskFor(date, wid));
+    && (st !== 'notask' || !(r.otDeptOk || (typeof window.nfOtTaskFor === 'function' && window.nfOtTaskFor(date, wid))))
+    && (!['mgr', 'hr'].includes(st) || typeof window.nfOtTaskFor !== 'function' || !!r.otDeptOk || !!window.nfOtTaskFor(date, wid));   /* v7.99: extra hours approved by the head = covered */
   visibleWorkers = (base => function (deptFilter) {
     const arr = base.apply(this, arguments);
     const f = S.ui && S.ui.filter && S.ui.filter.att;
@@ -34454,7 +34518,7 @@ if (typeof STU_ON !== 'undefined' && STU_ON) {
 if (typeof STU_ON === 'undefined' || !STU_ON) (function () {
   if (typeof RENDER_HOOKS === 'undefined' || typeof setAtt !== 'function') return;
   const OT_PFX = 'إضافي: ';
-  const isMgr = () => role() === 'manager'; const isHr = () => role() === 'hr'; const isHead = () => role() === 'head' || (typeof window.nfHeadDepts === 'function' && window.nfHeadDepts().length > 0);   /* v7.78: + a department led on top of the person's role */
+  const isMgr = () => role() === 'manager'; const isHr = () => role() === 'hr' || (typeof window.nfIsAccMgr === 'function' && window.nfIsAccMgr()); const isHead = () => role() === 'head' || (typeof window.nfHeadDepts === 'function' && window.nfHeadDepts().length > 0);   /* v7.78: + a department led on top of the person's role */
   const needsOk = () => !(S.settings.policy && S.settings.policy.otNeedsApproval === false);
   const otTasks = () => list('tasks').filter(t => t && t.ot && t.ot.date && t.status !== 'cancelled' && t.ot.status !== 'rejected');
   const taskFor = (date, wid) => otTasks().find(t => t.ot.date === date && (t.ot.workerIds || []).includes(wid) && t.ot.status === 'ok') || null;
@@ -34468,7 +34532,7 @@ if (typeof STU_ON === 'undefined' || !STU_ON) (function () {
   setAtt = (base => async function (date, w, patch) {
     if (patch && typeof patch === 'object' && w && needsOk()) {
       const cur = (attendanceFor(date) || {})[w.id] || {}; const p = Object.assign({}, patch); const ot = +(p.ot != null ? p.ot : cur.ot) || 0;
-      const t = taskFor(date, w.id);
+      const t = taskFor(date, w.id) || ((cur.otDeptOk || p.otDeptOk) ? { id: 'otDeptOk' } : null);   /* v7.99: extra hours the head approved count as covered */
       const stepping = (p.otMgrOk && !cur.otMgrOk) || (p.otOk && !cur.otOk);
       if (stepping && ot > 0 && !t && !isAdmin()) {
         p.otMgrOk = !!cur.otMgrOk; p.otMgrBy = cur.otMgrBy || null; p.otMgrAt = cur.otMgrAt || null; p.otOk = !!cur.otOk; p.otOkBy = cur.otOkBy || null; p.otOkAt = cur.otOkAt || null;
@@ -34489,16 +34553,17 @@ if (typeof STU_ON === 'undefined' || !STU_ON) (function () {
 
   /* 2) approve buttons: one row + approve-all (only rows with a task) */
   const stageOf = r => !r || !(+r.ot > 0) ? null : r.otOk ? 'ok' : r.otMgrOk ? 'hr' : 'mgr';
-  const myTurn = st => (st === 'mgr' || st === 'hr') && (isAdmin() || (st === 'mgr' && isMgr()) || (st === 'hr' && isHr()));
+  const myTurn = st => (st === 'mgr' || st === 'hr') && ((st === 'mgr' && isMgr()) || (st === 'hr' && isHr()));   /* v7.99: never the owner */
+  const deptOk = (date, wid) => !!(((attendanceFor(date) || {})[wid] || {}).otDeptOk);
   if (typeof ACTIONS.otApprove === 'function') ACTIONS.otApprove = (base => async function (arg) {
     const [date, wid] = String(arg || '').split(':');
-    if (!isAdmin() && needsOk() && !taskFor(date, wid)) { const w = byId('workers', wid); toast(`إضافي ${w ? w.name : ''} من غير مهمة إضافي — مستني رئيس القسم`, 'err'); return; }
+    if (!isAdmin() && needsOk() && !taskFor(date, wid) && !deptOk(date, wid)) { const w = byId('workers', wid); toast(`إضافي ${w ? w.name : ''} من غير مهمة إضافي — مستني رئيس القسم`, 'err'); return; }
     return base.apply(this, arguments);
   })(ACTIONS.otApprove);
   ACTIONS.otApproveAll = async date => {
     const att = attendanceFor(date) || {};
     const rows = list('workers').filter(w => w.status !== 'inactive').map(w => ({ w, r: att[w.id] || {} })).filter(x => +x.r.ot > 0 && myTurn(stageOf(x.r)));
-    const ok = rows.filter(x => isAdmin() || taskFor(date, x.w.id)); const miss = rows.length - ok.length;
+    const ok = rows.filter(x => isAdmin() || taskFor(date, x.w.id) || x.r.otDeptOk); const miss = rows.length - ok.length;
     if (!ok.length) { toast(miss ? `${miss} موظف إضافيهم من غير مهمة إضافي — مستنيين رئيس القسم` : 'مفيش إضافي مستني اعتمادك', miss ? 'err' : undefined); return; }
     const hrs = Math.round(ok.reduce((a, x) => a + (+x.r.ot || 0), 0) * 100) / 100;
     if (!(await confirmDlg(`اعتماد الإضافي لـ ${ok.length} موظف (${hrs} ساعة) ليوم ${fmtDate(date)}؟${miss ? ` — ${miss} من غير مهمة هيستنّوا` : ''}`, 'اعتمد الكل'))) return;
@@ -34920,7 +34985,7 @@ if (typeof STU_ON === 'undefined' || !STU_ON) (function () {
     const multi = pdfOk(inp) || inp.multiple; const pages = []; let src = null, quad = null, flat = null, mode = 'color', drag = -1;
     const ov = document.createElement('div'); ov.className = 'nfscan'; document.body.appendChild(ov);
     const close = () => ov.remove();
-    const pick = cam => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.dataset.noscan = '1'; if (cam) i.setAttribute('capture', 'environment'); i.onchange = async () => { const f = i.files && i.files[0]; if (!f) return; try { src = toCanvas(await loadImg(f), 2400); quad = detect(src); crop(); } catch (e) { toast(L('تعذّر قراءة الصورة', 'Could not read the photo'), 'err'); } }; i.__nfBypass = true; i.click(); };
+    const pick = cam => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.dataset.noscan = '1'; i.dataset.nopick = '1'; if (cam) i.setAttribute('capture', 'environment'); i.onchange = async () => { const f = i.files && i.files[0]; if (!f) return; try { src = toCanvas(await loadImg(f), 2400); quad = detect(src); crop(); } catch (e) { toast(L('تعذّر قراءة الصورة', 'Could not read the photo'), 'err'); } }; i.__nfBypass = true; i.click(); };
     const head = t => `<div class="nfs-h"><b>${t}</b><div class="grow"></div><button type="button" class="nfs-x" data-s="x">✕</button></div>`;
     function shoot() {
       ov.innerHTML = `<div class="nfs-card">${head(L('مسح مستند', 'Scan document'))}<div class="nfs-body nfs-start"><div class="nfs-ic">📄</div><p>${L('حط الورقة على حاجة غامقة وصوّرها من فوق في نور كويس.', 'Put the paper on a dark surface and shoot from above in good light.')}</p>
@@ -37216,6 +37281,8 @@ html body .fmd-l2{display:flex;flex-wrap:wrap;gap:1px 8px;font-size:12px;line-he
     vmaint: () => ({ l: L('صيانة عربية', 'Vehicle maintenance'), ic: 'settings', a: 'maintLog', pick: 'vehicle', ok: typeof canFleet === 'function' && canFleet() }),
     order: () => ({ l: L('أمر تشغيل', 'Job order'), ic: 'orders', a: 'orderNew', ok: W() && can('orders.edit') }),
     need: () => ({ l: L('طلب خامات', 'Materials request'), ic: 'purchase', a: 'needNew', ok: typeof canNeed === 'function' && canNeed() }),
+    /* v7.95: internal manufacturing order to another department (parts/99zzZzZZzzz7-int-orders.js) — asks for the project first */
+    imo: () => ({ l: L('أمر تصنيع داخلي', 'Internal manufacturing order'), ic: 'layers', a: 'imoNew', pick: 'imoOrder', ok: typeof window.nfImoCanCreate === 'function' && window.nfImoCanCreate() }),
     issue: () => ({ l: L('إذن صرف خامات', 'Materials issue'), ic: 'inventory', a: 'issueNew', pick: 'order', ok: W() && (admin() || ['head', 'manager', 'tech', 'office', 'purch'].includes(R())) }),
     mat: () => ({ l: L('خامة جديدة', 'New material'), ic: 'inventory', a: 'materialNew', ok: W() && ((typeof window.canMatStore === 'function' && window.canMatStore()) || admin() || R() === 'office') }),
     move: () => ({ l: L('حركة مخزن', 'Stock movement'), ic: 'inventory', a: 'moveNew', ok: W() && can('inventory.edit') }),
@@ -37239,17 +37306,17 @@ html body .fmd-l2{display:flex;flex-wrap:wrap;gap:1px 8px;font-size:12px;line-he
   /* what each role's «+» offers (the brief's table) */
   const MENU = {
     driver: ['drvtrip', 'fuel'],
-    fleet: ['trip', 'place', 'vmaint'],
-    manager: ['order', 'trip', 'need'],
+    fleet: ['trip', 'place', 'vmaint', 'imo'],
+    manager: ['order', 'trip', 'need', 'imo'],
     vice: ['order', 'trip', 'need'],
-    head: ['need', 'issue'],
+    head: ['need', 'issue', 'imo'],
     store: ['mat', 'move'],
     purch: ['po', 'rfq', 'sup'],
     acc: ['exp', 'supPay'],
     hr: ['exp', 'chqIn', 'supPay', 'worker', 'adv'],
     tech: ['product', 'need'],
     bdd: ['lead', 'quote', 'client'],
-    office: ['order', 'client', 'quote'],
+    office: ['order', 'client', 'quote', 'imo'],
     employee: ['req'],
     admin: ['errand', 'order', 'trip'],
   };
@@ -37262,6 +37329,7 @@ html body .fmd-l2{display:flex;flex-wrap:wrap;gap:1px 8px;font-size:12px;line-he
   /* pickers for items that need a record */
   const PICK = {
     order: () => ({ t: L('اختار أمر التشغيل', 'Pick the job order'), rows: sortBy(list('orders').filter(o => (typeof isOpen === 'function' ? isOpen(o) : true)), o => o.code || '').map(o => [o.id, `${o.code || ''} — ${o.title || ''}`]) }),
+    imoOrder: () => ({ t: L('اختار المشروع', 'Pick the project'), rows: (typeof window.nfImoOrders === 'function' ? window.nfImoOrders() : []).map(o => [o.id, `${o.code || ''} — ${o.title || ''}`]) }),
     supplier: () => ({ t: L('اختار المورد', 'Pick the supplier'), rows: sortBy(list('suppliers'), s => s.name || '').map(s => [s.id, s.name || '']) }),
     vehicle: () => ({ t: L('اختار العربية', 'Pick the vehicle'), rows: sortBy(list('vehicles'), v => v.name || '').map(v => [v.id, `${v.name || ''}${v.plate ? ` (${v.plate})` : ''}`]) }),
   };
@@ -40285,8 +40353,14 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   const nights = date => list('tasks').filter(t => t && t.ot && t.ot.night && t.status !== 'cancelled' && (!date || t.ot.date === date));
   const liveIds = t => (t.ot.workerIds || []).filter(Boolean);
   const nightOf = (date, wid) => nights(date).find(t => liveIds(t).includes(wid)) || null;
-  window.nfOtNightOf = nightOf;
-  const given = (t, wid) => !!(t && t.ot && t.ot.night && ((t.ot.night.paid || {})[wid] || (t.ot.night.food && t.ot.night.food.at)));
+  /* v7.95: check-out cover — a night rejected by the factory manager does not cover (pending = provisional cover) */
+  window.nfOtNightOf = (date, wid) => nights(date).find(t => liveIds(t).includes(wid) && !(t.ot.night.mgr === 'rej')) || null;
+  /* v7.95: full (with a meal) or partial (no meal) — older entries without a kind are full and approved */
+  const kindOf = t => (t && t.ot && t.ot.night && t.ot.night.kind === 'partial') ? 'partial' : 'full';
+  const mgrOf = t => (t && t.ot && t.ot.night && t.ot.night.mgr) || '';
+  const mealOn = t => !!(t && t.ot && t.ot.night) && kindOf(t) === 'full' && mgrOf(t) !== 'pending' && mgrOf(t) !== 'rej';
+  window.nfOtKind = { kindOf, mgrOf, mealOn };
+  const given = (t, wid) => !!(t && t.ot && t.ot.night && mealOn(t) && ((t.ot.night.paid || {})[wid] || (t.ot.night.food && t.ot.night.food.at)));
   const myDeptsAll = () => isHead() ? myDepts() : (S.settings.departments || []).map(d => d.id);
   const visibleNight = t => !isHead() || myDepts().includes(t.deptId) || liveIds(t).some(id => { const w = byId('workers', id); return w && myDepts().includes(w.deptId); });
   const payerWallet = () => (typeof wallets === 'function' ? wallets().find(w => String(w.holder) === payerId()) : null) || null;
@@ -40400,6 +40474,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
       ${depts.length > 1 && !t ? field(L('القسم', 'Department'), `<select name="dept" id="otn-dept">${depts.map(id => `<option value="${esc(id)}" ${id === d0 ? 'selected' : ''}>${esc(deptName(id))}</option>`).join('')}</select>`, 'full') : `<input type="hidden" name="dept" value="${esc(d0 || '')}"><div class="full small"><b>${esc(deptName(d0))}</b></div>`}
       <div class="field full"><label>${esc(L('المشروع', 'Project'))}</label><div class="otn-tiles">${(lockOP ? os.filter(o => o.id === o0).concat(os.some(o => o.id === o0) ? [] : [byId('orders', o0)].filter(Boolean)) : os).map(o => `<label class="otn-t"><input type="radio" name="oid" value="${esc(o.id)}" ${o.id === o0 ? 'checked' : ''}><span><b>${esc(o.code || '')}</b><small>${esc(o.title || '')}</small></span></label>`).join('')}</div></div>
       <div class="field full"><label>${esc(L('فين', 'Where'))}</label><div class="otn-tiles two">${['factory', 'site'].map(p => `<label class="otn-t" data-pl="${p}"><input type="radio" name="place" value="${p}" ${p === p0 ? 'checked' : ''} ${lockOP && p !== p0 ? 'disabled' : ''}><span><b>${esc(PLACE()[p])}</b><small class="otn-psub"></small></span></label>`).join('')}</div></div>
+      ${typeof window.nfOtKindField === 'function' ? window.nfOtKindField(t) : ''}
       <div class="field full"><div class="row" style="align-items:center;gap:8px"><label style="margin:0">${esc(L('مين هيسهر', 'Who stays'))}</label><div class="grow"></div><button type="button" class="btn xs" data-otnall="1">${esc(L('كل المتأكد منهم', 'All confirmed'))}</button></div><div class="otn-people" id="otn-people"></div></div>
       <label class="check full otn-conf" id="otn-conf" hidden><input type="checkbox" name="otnconf" value="1"> ${esc(L('أنا متأكد إن اللي باللون الأحمر موجودين — تأكيدي هيتسجّل باسمي ويظهر للمالك', 'I am sure the people in red are here — my confirmation is saved with my name and shows to the owner'))}</label>
       ${field(L('الشغل المطلوب', 'The work'), `<textarea name="work" required placeholder="${esc(L('مثال: لحام هيكل 4 كراسي + تجليخ', 'e.g. welding 4 chair frames + grinding'))}">${esc(work0)}</textarea>`, 'full')}
@@ -40437,6 +40512,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
     const o = byId('orders', d.oid || ''); if (!o) { toast(L('اختار المشروع', 'Choose the project'), 'err'); return false; }
     const place = d.place === 'site' ? 'site' : 'factory'; if (place === 'site' && !oSite(o)) { toast(L('المشروع ملوش لوكيشن — اختار المصنع', 'The project has no location — choose the factory'), 'err'); return false; }
     const work = String(d.work || '').trim(); if (work.length < 4) { toast(L('اكتب الشغل المطلوب', 'Write the work'), 'err'); return false; }
+    const kind = d.otkind === 'partial' ? 'partial' : d.otkind === 'full' ? 'full' : ''; if (!kind) { toast(L('اختار: سهر كامل ولا جزئي', 'Choose: full or partial overtime'), 'err'); return false; }
     const boxes = Array.from(f.querySelectorAll('input[name="otnw"]:checked')); const wids = boxes.map(x => x.value);
     if (!wids.length && !t0) { toast(L('علّم على اللي هيسهروا', 'Tick who stays'), 'err'); return false; }
     const unsure = boxes.filter(x => x.dataset.ok !== '1').map(x => ({ id: x.value, why: x.dataset.why || '' }));
@@ -40448,19 +40524,23 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
     const amt = place === 'site' ? mealSite() : mealFactory();
     const ws = wids.map(x => byId('workers', x)).filter(Boolean);
     const night = Object.assign({}, n0, { place, amt: n0.amt || amt, checks, removed, edits: (n0.edits || 0) + (ex ? 1 : 0) });
+    Object.assign(night, typeof window.nfOtKindState === 'function' ? window.nfOtKindState(kind, n0, ex, prev, wids) : { kind });
     const doc = Object.assign({}, ex || {}, { id, kind: 'task', source: 'ot', title: OT_PFX + work.slice(0, 80), desc: `${work}\n${L('العمال', 'Staff')}: ${ws.map(w => w.name).join('، ')}\n${oName(o)} — ${PLACE()[place]}`, deptId: d.dept || (ws[0] && ws[0].deptId) || null, assigneeId: ws.length === 1 ? ws[0].id : null, orderId: o.id, dueDate: date, priority: 'normal', status: wids.length ? (ex && ex.status === 'done' ? 'done' : 'open') : 'cancelled',
       ot: Object.assign({}, (ex && ex.ot) || {}, { date, workerIds: wids, hours: (ex && ex.ot && ex.ot.hours) || null, oldProject: '', status: wids.length ? 'ok' : 'rejected', retro: false, by: (ex && ex.ot && ex.ot.by) || me.id || null, byName: (ex && ex.ot && ex.ot.byName) || me.name || '', at: (ex && ex.ot && ex.ot.at) || now, okBy: me.name || '', okAt: now, night }),
       createdBy: (ex && ex.createdBy) || me.id || null, createdByName: (ex && ex.createdByName) || me.name || '', createdAt: (ex && ex.createdAt) || now, updatedAt: now });
     await Store.save('tasks', doc);
     try { await afterSave(doc, prev, o); } catch (e) { console.warn('otnight send', e); }
-    toast(wids.length ? L(`اتسجّل سهر ${wids.length} شخص — وصل ${payerName()}`, `${wids.length} people registered — sent to ${payerName()}`) : L('اتلغى السهر ده', 'This overtime night was cancelled')); render(false); return true;
+    try { if (typeof window.nfOtKindAfter === 'function') await window.nfOtKindAfter(doc, n0); } catch (e) { console.warn('otnight kind', e); }
+    toast(!wids.length ? L('اتلغى السهر ده', 'This overtime night was cancelled') : kindOf(doc) === 'partial' ? (mgrOf(doc) === 'pending' ? L(`اتسجّل سهر جزئي ${wids.length} شخص — مستني اعتماد مدير المصنع`, `Partial overtime for ${wids.length} people — waiting for the factory manager`) : L(`اتسجّل سهر جزئي ${wids.length} شخص — من غير وجبة`, `Partial overtime for ${wids.length} people — no meal`)) : mgrOf(doc) === 'pending' ? L(`اتسجّل سهر كامل ${wids.length} شخص — مستني اعتماد مدير المصنع`, `Full overtime for ${wids.length} people — waiting for the factory manager`) : L(`اتسجّل سهر ${wids.length} شخص — وصل ${payerName()}`, `${wids.length} people registered — sent to ${payerName()}`)); render(false); return true;
   }
   /* to Bahaa (names) + a custody request to the owner (the amount lives in the request only) */
-  async function afterSave(t, prev, o) {
+  async function afterSave(t, prev, o, force) {
     const n = t.ot.night; const wids = liveIds(t); const added = wids.filter(x => !prev.includes(x)); const me = S.session || {}; const now = nowISO();
     const names = wids.map(x => (byId('workers', x) || {}).name || '').filter(Boolean);
     const pid = payerId(); const head = me.name || '';
-    if (pid) {
+    /* v7.95: no meal on this night (partial / waiting for the factory manager / rejected) — Bahaa has nothing to pay; an open note is withdrawn */
+    if (pid && !mealOn(t)) { const had = byId('tasks', `otb_${t.id}`); if (had && ['open', 'doing'].includes(had.status)) await Store.update('tasks', had.id, { status: 'cancelled', updatedAt: now }, { silent: true }); }
+    else if (pid) {
       const nid = `otb_${t.id}`; const title = wids.length ? `🌙 سهر النهارده: ${wids.length} شخص — ${o.code || ''}` : `🌙 اتلغى سهر ${o.code || ''} — ${deptName(t.deptId)}`;
       const desc = wids.length ? `${oName(o)} (${placeShort(n.place)}) — ${deptName(t.deptId)}\n${names.join('، ')}\nمن ${head}` : `${deptName(t.deptId)} — من ${head}`;
       const had = byId('tasks', nid);
@@ -40476,12 +40556,14 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
     const legacy = (n.fundReqIds || []).length && !reqs.length ? wids.length : 0;
     const counted = reqs.reduce((a, r) => a + cnt(r), 0) + legacy;
     const sent = list('requests').some(r => live(r) && r.otSummary && r.otDay === date);
-    const want = wids.length - counted;
-    if (want > 0 && sent && added.length) {
+    const want = (mealOn(t) ? wids.length : 0) - counted;
+    /* v7.95: an approval by the factory manager (force) after the day's request — or after its deadline — goes as an «addition» */
+    const late = force && !sent && typeof window.nfOtSumPassed === 'function' && window.nfOtSumPassed();
+    if (want > 0 && (sent || late) && (added.length || force)) {
       const r = { id: uid(), type: 'fund', walletId: wl.id, amount: want * amt, cat: 'meals', reason: `إضافة على وجبات سهر ${fmtDate(date)} — ${oName(o)} (${placeShort(n.place)}) — ${deptName(t.deptId)} — ${want} شخص`, otDay: date, otAdd: true, otTasks: { [t.id]: { n: want, amt } }, otCount: want, requesterId: me.workerId || me.id, requesterName: me.name || '', workerId: null, deptId: null, status: 'pending', chain: ['admin'], step: 0, stepAt: now, createdBy: me.id || null, createdByName: me.name || '', createdAt: now, thread: [{ id: uid(), at: now, by: me.id || null, byName: me.name || '', role: role(), kind: 'system', text: `إضافة وجبات سهر — ${want} شخص — ${o.code || ''}` }] };
       await Store.save('requests', r, { silent: true });
       if (typeof notifyOwner === 'function') await notifyOwner(`إضافة على وجبات سهر النهارده — عهدة ${wl.name}`, `${o.code || ''} — ${want} شخص (${placeShort(n.place)}) — ${deptName(t.deptId)} — من ${me.name || ''}`, { id: `fund_${r.id}`, reqId: r.id });
-    } else if (want < 0) {
+    } else if (want < 0 && !(kindOf(t) === 'full' && mgrOf(t) === 'pending')) { /* v7.95: a night back to «waiting for the factory manager» keeps what was already counted */
       const pend = reqs.filter(r => r.status === 'pending' && !r.paidAt && r.otTasks && r.otTasks[t.id]).sort((x, y) => String(y.createdAt || '').localeCompare(String(x.createdAt || '')))[0];
       if (pend) {
         const ot = Object.assign({}, pend.otTasks); const nn = Math.max(0, cnt(pend) + want); if (nn) ot[t.id] = Object.assign({}, ot[t.id], { n: nn }); else delete ot[t.id];
@@ -40498,7 +40580,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   const offToday = w => { try { return typeof isOffDay === 'function' && isOffDay(w, todayISO()); } catch (e) { return false; } };
   const prodDepts = () => (typeof isHoliday === 'function' && isHoliday(todayISO())) ? [] : (S.settings.departments || []).filter(d => d && d.id && !d.admin && !ADMIN_D.includes(d.id) && list('workers').some(w => w.deptId === d.id && w.status !== 'inactive' && w.status !== 'suspended' && w.role !== 'admin' && !offToday(w))).map(d => d.id);
   const noneOf = (date, d) => byId('tasks', `otnone_${date}_${d}`);
-  const deptState = (date, d) => { const es = nights(date).filter(t => t.deptId === d); if (es.length) return { k: 'reg', n: es.reduce((a, t) => a + liveIds(t).length, 0) }; const x = noneOf(date, d); return x && x.status !== 'cancelled' ? { k: 'none', by: x.createdByName || '' } : { k: 'open' }; };
+  const deptState = (date, d) => { const es = nights(date).filter(t => t.deptId === d); if (es.length) return { k: 'reg', n: es.reduce((a, t) => a + liveIds(t).length, 0), pend: es.filter(t => mgrOf(t) === 'pending').length, part: es.every(t => kindOf(t) === 'partial') }; const x = noneOf(date, d); return x && x.status !== 'cancelled' ? { k: 'none', by: x.createdByName || '' } : { k: 'open' }; };
   ACTIONS.otnNone = async arg => {
     if (!canReg()) return; const date = todayISO(); const me = S.session || {};
     if (isHead() && nowTm() >= editUntil()) { toast(L(`التسجيل لحد الساعة ${editUntil()}`, `Registering is until ${editUntil()}`), 'err'); return; }
@@ -40512,6 +40594,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
     if (!(await confirmDlg(L(`مفيش سهر النهارده في ${ds.map(deptName).join('، ')}؟`, `No overtime tonight in ${ds.map(deptName).join(', ')}?`), L('أيوه', 'Yes'), false))) return;
     await saveNone(date, ds, me);
   };
+  window.nfOtMealSync = async (t, prev) => { const o = byId('orders', t.orderId) || {}; await afterSave(t, prev || liveIds(t), o, true); };
   async function saveNone(date, ds, me) {
     const now = nowISO();
     for (const d of ds) await Store.save('tasks', { id: `otnone_${date}_${d}`, title: `مفيش سهر النهارده — ${deptName(d)}`, desc: `من ${me.name || ''}`, deptId: d, assigneeId: null, toRole: null, kind: 'update', source: 'otnone', priority: 'normal', status: 'done', dueDate: date, doneAt: now, doneByName: me.name || '', createdBy: me.id || null, createdByName: me.name || '', createdAt: now, updatedAt: now }, { silent: true });
@@ -40523,7 +40606,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   const wlOf = wid => byId('wallets', wid) || null;
   const wlShow = x => !x ? '' : (x.number || x.ipa || (x.last4 ? `•••• ${x.last4}` : ''));
   async function pay(tid, mode) {
-    const t = byId('tasks', tid); if (!t || !t.ot || !t.ot.night || !(isPayer() || isAdmin()) || !writable()) return;
+    const t = byId('tasks', tid); if (!t || !t.ot || !t.ot.night || !mealOn(t) || !(isPayer() || isAdmin()) || !writable()) return;
     const n = t.ot.night; const o = byId('orders', t.orderId) || {}; const wl = payerWallet(); if (!wl) { toast(L('مفيش عهدة متسجّلة لبهاء', 'No custody wallet is set for Bahaa'), 'err'); return; }
     const att = attendanceFor(t.ot.date) || {}; const until = tmToMin(mealUntil());
     let wids;
@@ -40552,11 +40635,11 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   /* ---------- the page ---------- */
   function entryCard(t) {
     const o = byId('orders', t.orderId) || {}; const n = t.ot.night; const wids = liveIds(t); const att = attendanceFor(t.ot.date) || {}; const until = tmToMin(mealUntil());
-    const payer = isPayer() || isAdmin(); const today = t.ot.date === todayISO(); const food = n.food && n.food.at;
+    const payer = (isPayer() || isAdmin()) && mealOn(t); const today = t.ot.date === todayISO(); const food = n.food && n.food.at;
     const reqs = (n.fundReqIds || []).map(id => byId('requests', id)).filter(Boolean);
     const fund = reqs.length ? (reqs.some(r => r.status === 'pending') ? ['warn', L('طلب العهدة مستني المالك', 'Custody request waiting for the owner')] : ['good', L('المالك حوّل لعهدة بهاء', 'The owner transferred to the custody')]) : null;
     const paidN = wids.filter(x => (n.paid || {})[x]).length;
-    const status = food ? ['good', L('طلب الأكل', 'Food ordered')] : paidN && paidN === wids.length ? ['good', L('اتحوّل للكل', 'Transferred to all')] : paidN ? ['warn', L(`اتحوّل لـ ${paidN} من ${wids.length}`, `Transferred to ${paidN} of ${wids.length}`)] : ['', L('لسه ماتصرفش', 'Not paid yet')];
+    const status = !mealOn(t) ? ['', L('من غير وجبة', 'No meal')] : food ? ['good', L('طلب الأكل', 'Food ordered')] : paidN && paidN === wids.length ? ['good', L('اتحوّل للكل', 'Transferred to all')] : paidN ? ['warn', L(`اتحوّل لـ ${paidN} من ${wids.length}`, `Transferred to ${paidN} of ${wids.length}`)] : ['', L('لسه ماتصرفش', 'Not paid yet')];
     const row = id => {
       const w = byId('workers', id) || { name: id }; const c = (n.checks || {})[id] || {}; const r = att[id] || {}; const p = (n.paid || {})[id]; const x = wlOf(id);
       const early = r.out && until != null && tmToMin(r.out) < until;
@@ -40566,15 +40649,16 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
       return `<div class="otn-r">${can ? `<input type="checkbox" data-otnpay="${esc(t.id)}" value="${esc(id)}" ${early ? '' : ''}>` : ''}<b>${esc(w.name)}</b>${info}<div class="grow"></div>${pay1}</div>`;
     };
     const rem = Object.keys(n.removed || {}).filter(x => !wids.includes(x));
-    return `<div class="card otn-e" id="otn-${esc(t.id)}"><div class="cardhead"><h3 class="ltr-num">${esc(o.code || '')}</h3><span class="badge acc">${esc(placeShort(n.place))}</span><div class="grow"></div><span class="badge ${status[0]}">${esc(status[1])}</span></div>
+    return `<div class="card otn-e" id="otn-${esc(t.id)}"><div class="cardhead"><h3 class="ltr-num">${esc(o.code || '')}</h3><span class="badge acc">${esc(placeShort(n.place))}</span>${typeof window.nfOtKindPill === 'function' ? window.nfOtKindPill(t) : ''}<div class="grow"></div><span class="badge ${status[0]}">${esc(status[1])}</span></div>
       <div class="small otn-ot">${esc(o.title || '')}</div>
-      <div class="tiny muted">${esc(deptName(t.deptId))} · ${esc(L(`${wids.length} شخص`, `${wids.length} people`))} · ${esc(t.ot.byName || '')} ${esc(hmOf(t.ot.at))}${seesMoney() ? ` · ${esc(L('الوجبة', 'Meal'))} ${esc(money(n.amt || 0))}` : ''}${fund && (seesMoney() || isMgr()) ? ` · <span class="badge ${fund[0]}">${esc(fund[1])}</span>` : ''}</div>
+      <div class="tiny muted">${esc(deptName(t.deptId))} · ${esc(L(`${wids.length} شخص`, `${wids.length} people`))} · ${esc(t.ot.byName || '')} ${esc(hmOf(t.ot.at))}${seesMoney() && mealOn(t) ? ` · ${esc(L('الوجبة', 'Meal'))} ${esc(money(n.amt || 0))}` : ''}${fund && (seesMoney() || isMgr()) ? ` · <span class="badge ${fund[0]}">${esc(fund[1])}</span>` : ''}</div>
       <div class="small otn-work">${esc(String(t.title || '').replace(OT_PFX, ''))}</div>
       <div class="otn-rows">${wids.map(row).join('') || `<div class="muted small">${esc(L('مفيش حد', 'Nobody'))}</div>`}</div>
       ${rem.length ? `<div class="tiny muted">${esc(L('اتشال', 'Removed'))}: ${rem.map(x => esc((byId('workers', x) || {}).name || '')).join('، ')}</div>` : ''}
+      ${typeof window.nfOtKindBar === 'function' ? window.nfOtKindBar(t) : ''}
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
         ${today && canReg() && (!isHead() || nowTm() < editUntil()) ? `<button type="button" class="btn sm" data-action="otnEdit" data-arg="${esc(t.id)}">${icon('edit')}${esc(L('تعديل', 'Edit'))}</button>` : ''}
-        ${(isPayer() || isAdmin()) && today && !food && writable() ? `<button type="button" class="btn sm p" data-action="otnPay" data-arg="${esc(t.id)}">${esc(L('اتحوّل للمحددين', 'Transferred to the ticked'))}</button>${!paidN ? `<button type="button" class="btn sm" data-action="otnFood" data-arg="${esc(t.id)}">${esc(L('طلبت الأكل للمجموعة', 'I ordered the food'))}</button>` : ''}` : ''}
+        ${(isPayer() || isAdmin()) && mealOn(t) && today && !food && writable() ? `<button type="button" class="btn sm p" data-action="otnPay" data-arg="${esc(t.id)}">${esc(L('اتحوّل للمحددين', 'Transferred to the ticked'))}</button>${!paidN ? `<button type="button" class="btn sm" data-action="otnFood" data-arg="${esc(t.id)}">${esc(L('طلبت الأكل للمجموعة', 'I ordered the food'))}</button>` : ''}` : ''}
       </div></div>`;
   }
   function todayHTML(date) {
@@ -40583,7 +40667,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
     /* v7.78: every production department and where it stands — registered / no overtime / not yet */
     const ds = prodDepts().filter(d => !isHead() || myDepts().includes(d));
     const st = ds.map(d => ({ d, x: deptState(date, d) }));
-    const chip = ({ d, x }) => `<span class="otn-chip otn-st ${x.k}"><b>${esc(deptName(d))}</b> ${esc(x.k === 'reg' ? L(`${x.n} شخص`, `${x.n} people`) : x.k === 'none' ? L('مفيش سهر', 'No overtime') : L('لسه', 'Not yet'))}</span>`;
+    const chip = ({ d, x }) => `<span class="otn-chip otn-st ${x.k}${x.pend ? ' pend' : ''}"><b>${esc(deptName(d))}</b> ${esc(x.k === 'reg' ? L(`${x.n} شخص`, `${x.n} people`) : x.k === 'none' ? L('مفيش سهر', 'No overtime') : L('لسه', 'Not yet'))}${x.k === 'reg' && x.pend ? ` <small class="otk-cs">${esc(L('مستني مدير المصنع', 'waiting for the factory manager'))}</small>` : x.k === 'reg' && x.part ? ` <small class="otk-cs">${esc(L('جزئي', 'partial'))}</small>` : ''}</span>`;
     const open = st.filter(y => y.x.k === 'open').length;
     const sum = list('requests').filter(r => r && r.type === 'fund' && r.otDay === date && !['cancelled', 'rejected'].includes(r.status));
     const sumLine = (seesMoney() || isMgr()) ? (sum.length ? `<div class="tiny" style="margin-top:8px">${sum.map(r => `<span class="badge ${r.paidAt || r.status === 'approved' ? 'good' : 'warn'}">${esc((r.otSummary ? L('طلب الوجبات', 'Meals request') : L('إضافة', 'Addition')) + ' — ' + L(`${r.otCount || 0} شخص`, `${r.otCount || 0} people`) + ' — ' + (r.paidAt || r.status === 'approved' ? L(`اتحوّل لـ ${payerName()}`, `transferred to ${payerName()}`) : L('مستني المالك', 'waiting for the owner')))}</span>`).join(' ')}</div>` : `<div class="tiny muted" style="margin-top:8px">${esc(L('طلب الوجبات بيروح للمالك مرة واحدة أول ما كل الأقسام ترد، أو الساعة 3 بالكتير.', 'The meals request goes to the owner once, as soon as every department answered, or at 3 pm at the latest.'))}</div>`) : '';
@@ -40604,7 +40688,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
       meals += giv; amount += a; deducted += early.length;
       const dk = t.deptId || '—'; byDept[dk] = byDept[dk] || { n: 0, a: 0 }; byDept[dk].n += giv; byDept[dk].a += a;
       const pk = o.id || t.orderId || '—'; byProj[pk] = byProj[pk] || { n: 0, a: 0, name: oName(o) }; byProj[pk].n += giv; byProj[pk].a += a;
-      const how = n.food && n.food.at ? L('أكل', 'Food') : Object.keys(n.paid || {}).length ? L('تحويل', 'Transfer') : L('لسه', 'Not yet');
+      const how = !mealOn(t) ? (kindOf(t) === 'partial' ? (mgrOf(t) === 'rej' ? L('جزئي — اترفض', 'Partial — rejected') : L('جزئي — من غير وجبة', 'Partial — no meal')) : mgrOf(t) === 'rej' ? L('الوجبة اترفضت', 'Meal rejected') : L('مستني مدير المصنع', 'Waiting for the factory manager')) : n.food && n.food.at ? L('أكل', 'Food') : Object.keys(n.paid || {}).length ? L('تحويل', 'Transfer') : L('لسه', 'Not yet');
       return `<tr><td>${esc(fmtDate(t.ot.date))}</td><td>${esc(deptName(t.deptId))}</td><td><a href="#/orders/${esc(t.orderId || '')}">${esc(o.code || '')}</a></td><td>${esc(placeShort(n.place))}</td><td class="n">${wids.length}</td><td>${esc(how)}</td><td class="n">${early.length ? `<span class="badge crit" title="${esc(early.map(x => (byId('workers', x) || {}).name || '').join('، '))}">${early.length}</span>` : '0'}</td>${showMoney ? `<td class="n">${esc(fmtMoney(a))}</td>` : ''}</tr>`;
     });
     const sumT = (obj, label) => `<div class="card"><div class="cardhead"><h3>${esc(label)}</h3></div><div class="tablewrap"><table><thead><tr><th></th><th class="n">${esc(L('وجبات', 'Meals'))}</th>${showMoney ? `<th class="n">${esc(L('المبلغ', 'Amount'))}</th>` : ''}</tr></thead><tbody>${Object.entries(obj).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => `<tr><td>${esc(v.name || deptName(k))}</td><td class="n">${v.n}</td>${showMoney ? `<td class="n">${esc(fmtMoney(v.a))}</td>` : ''}</tr>`).join('')}</tbody></table></div></div>`;
@@ -40616,7 +40700,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   }
   const canReport = () => isAdmin() || isHr() || isPayer() || isMgr();
   VIEW_TITLES.otnight = 'سهر النهارده';
-  (() => { const i = NAV.findIndex(n => n.id === 'attendance'); const entry = { id: 'otnight', label: 'سهر النهارده', icon: 'moon', count: () => { try { if (!canOtn()) return 0; const es = nights(todayISO()); if (isPayer()) return es.filter(t => !(t.ot.night.food && t.ot.night.food.at) && liveIds(t).some(x => !(t.ot.night.paid || {})[x])).length; return 0; } catch (e) { return 0; } }, countCls: 'warn' }; if (i >= 0) NAV.splice(i + 1, 0, entry); else NAV.push(entry); })();
+  (() => { const i = NAV.findIndex(n => n.id === 'attendance'); const entry = { id: 'otnight', label: 'سهر النهارده', icon: 'moon', count: () => { try { if (!canOtn()) return 0; const es = nights(todayISO()); if (isPayer()) return es.filter(t => mealOn(t) && !(t.ot.night.food && t.ot.night.food.at) && liveIds(t).some(x => !(t.ot.night.paid || {})[x])).length; return 0; } catch (e) { return 0; } }, countCls: 'warn' }; if (i >= 0) NAV.splice(i + 1, 0, entry); else NAV.push(entry); })();
   canSee = (base => function (v) { if (v === 'otnight') return canOtn(); return base.apply(this, arguments); })(canSee);
   EXTRA_VIEWS.otnight = () => {
     if (!canOtn()) return `<div class="empty"><b>${esc(L('مش متاحة', 'Not available'))}</b></div>`;
@@ -46101,7 +46185,7 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
     const r = await dialog({ title: L(`تحويل واحد — ${money(total)} لعهدة ${short(P.nameOf(payer))}`, `One transfer — ${money(total)} to ${short(P.nameOf(payer))}'s custody`), submitLabel: L('حوّلت — ارفع الصورة', 'Transferred — upload it'),
       body: `<div class="form"><div class="full pblist">${lines}<div class="pbli tot"><span>${esc(L('المجموع', 'Total'))}</span><b class="num">${esc(money(total))}</b></div></div>
         <div class="full"><div class="tiny muted" style="margin-bottom:4px">${esc(L(`حوّل المجموع على رقم ${P.nameOf(payer)}:`, `Transfer the total to ${P.nameOf(payer)}'s number:`))}</div>${P.payerNumbers(payer)}</div>
-        ${items.length ? field(L('حوّلت من', 'Paid from'), `<select name="from">${typeof srcOptions === 'function' ? srcOptions('personal', false) : '<option value="personal">personal</option>'}</select>`) : ''}
+        ${field(L('حوّلت من', 'Paid from'), `<select name="from">${typeof srcOptions === 'function' ? srcOptions('personal', false) : '<option value="personal">personal</option>'}</select>`)}
         <div class="field full"><label>${esc(L('صورة التحويل', 'Transfer screenshot'))}</label><input type="file" id="omf-file" accept="image/*"></div>
         <div class="full tiny muted">${esc(L('صورة واحدة للتحويل كله: السيستم بيقراها ويتأكد إن المستلم المحوِّل والمبلغ = المجموع، ودفعات السلف بتتبعت له على طول، والباقي بيدخل عهدته في دفعة تحويل يوزّعها.', 'One screenshot for the whole transfer: it is read and checked (recipient = the payer, amount = the total); the advance batches go to him at once and the rest goes into his custody as a pay batch he pays out.'))}</div></div>`,
       onSubmit: async f => { const file = (f.querySelector('#omf-file') || {}).files?.[0]; if (!file) { toast(L('صورة التحويل مطلوبة', 'The screenshot is needed'), 'err'); return false; } return { file, from: (formData(f).from || 'personal') }; } });
@@ -46121,6 +46205,8 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
     const P = window.nfPb; const pb = ctx.pb ? byId('money', ctx.pb) : null;
     if (res && res.status === 'funded') {
       for (const id of ctx.ids || []) { const b = byId('advbatch', id); if (b && window.nfAbFunded) { try { await window.nfAbFunded(b, res.to, res.ref); } catch (e) { /* ignore */ } } }
+      /* v7.95: the advance part of the one transfer leaves the account picked in «Paid from» (the server writes «personal») */
+      if (ctx.from && ctx.from !== 'personal' && window.nfAdvFrom) { try { await window.nfAdvFrom(ctx.ids || [], ctx.from); } catch (e) { /* ignore */ } }
       if (pb && pb.status === 'sent') { if (res.to && String(pb.payerId) !== String(res.to)) { const w = P.custodyOf(res.to); await Store.update('money', pb.id, { payerId: res.to, workerId: res.to, walletId: w ? w.id : pb.walletId }, { silent: true }); } await P.fundBatch(byId('money', pb.id), { from: ctx.from, thumb: ctx.thumb, fileIds: ctx.fileIds, ref: res.ref, proofUrl: res.proofUrl }); }
       if (late) toast(L(`التحويل الواحد اتراجع ✓ — اتبعت لـ${res.toName || ''}`, `The one transfer is checked ✓ — sent to ${res.toName || ''}`));
       else openModal({ title: L(`اتبعت لـ${res.toName || ''} ✓`, `Sent to ${res.toName || ''} ✓`), submitLabel: L('تمام', 'OK'), body: `<div class="form"><div class="full">${esc(L(`التحويل مطابق: ${money(res.amount)} — رقم العملية`, `The transfer matches: ${money(res.amount)} — reference`))} <b class="ltr">${esc(res.ref || '')}</b></div><div class="full small muted">${esc(L(`${(ctx.ids || []).length} دفعة سلف اتبعتت له — وصله إشعار.`, `${(ctx.ids || []).length} advance batch(es) sent to him — he was notified.`))}${pb ? esc(L(` + دفعة تحويل ${pb.code || ''} في عهدته`, ` + pay batch ${pb.code || ''} into his custody`)) : ''}</div></div>`, onSubmit: () => { } });
@@ -46133,6 +46219,7 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
     let ref = (res && res.ref) || ''; if (!ref) ref = String((await dialog({ title: L('رقم العملية', 'Reference'), submitLabel: L('سجّل', 'Record'), body: `<div class="form">${field(L('رقم العملية من الصورة', 'The reference from the screenshot'), inp('ref', '', 'class="ltr"'), 'full')}</div>`, onSubmit: async f => (formData(f).ref || '').trim() || false })) || ''); if (!ref) return;
     const to = (res && res.to) || window.nfPb.defaultPayer();
     for (const id of ctx.ids || []) { try { const rr = await window.nfAdvPayCall({ action: 'fundapprove', id, to, ref }); const b = byId('advbatch', id); if (b && window.nfAbFunded) await window.nfAbFunded(b, (rr && rr.to) || to, ref); } catch (e) { toast((e && e.message) || String(e), 'err'); } }
+    if (ctx.from && ctx.from !== 'personal' && window.nfAdvFrom) { try { await window.nfAdvFrom(ctx.ids || [], ctx.from); } catch (e) { /* ignore */ } }   /* v7.98: recorded by hand — the advances leave «Paid from» too */
     if (pb && pb.status === 'sent') await window.nfPb.fundBatch(byId('money', pb.id), { from: ctx.from, thumb: ctx.thumb, fileIds: ctx.fileIds, ref });
     toast(L('اتسجّل يدوي ✓', 'Recorded by hand ✓'));
   }
@@ -48764,7 +48851,7 @@ function oxFlow(k) {
     if (L.k === 'fuel') return { label: T('افتح التموين', 'Open the refuel'), action: 'go', arg: 'go/fuel/' + L.x.id, pending: false };
     if (L.k === 'ap') {
       const x = L.x; const ap = window.nfAp;
-      if (x.status === 'review' && isAdmin()) return { label: T('اعتمد التحويل', 'Approve the transfer'), action: 'apApprove', arg: x.id, pending: true, hint: T('أو «يرفع صورة تانية» — المهمة بتتقفل لوحدها بعد ما تقرر', 'Or «another picture» — the task closes by itself once you decide') };
+      if (x.status === 'review' && (isAdmin() || (ap && ap.canReview && ap.canReview()))) return { label: T('اعتمد التحويل', 'Approve the transfer'), action: 'apApprove', arg: x.id, pending: true, hint: T('أو «يرفع صورة تانية» — المهمة بتتقفل لوحدها بعد ما تقرر', 'Or «another picture» — the task closes by itself once you decide') };
       if (x.status === 'topay' && ap && ap.mine(x) && !isAdmin()) return { label: T('ارفع صورة التحويل', 'Upload the transfer picture'), action: 'apUpPick', arg: x.id, pending: true, hint: T('المهمة بتتقفل لوحدها لما التحويل يتطابق', 'The task closes by itself once the transfer matches') };
       return { label: T('افتح تحويل السلف', 'Open advance transfers'), action: 'go', arg: 'advpay', pending: false };
     }
@@ -49231,6 +49318,8 @@ function oxFlow(k) {
    · the time after 17:00 that is not approved yet = «extra hours waiting» (otPend): a task to his department head (push), a
      page «extra hours» (#/otpend) with approve / reject; approved → it becomes overtime and goes on through the existing
      overtime approval (factory manager → accounts manager) before payroll. Rejected → the 8 hours stay.
+   · v7.99 (brief owner-chains, PIN 17 Oct): the owner no longer decides extra hours (no «waiting for you» card, read-only page); old rows
+     still waiting from before the change can also be decided by the accounts manager.
    · the real punch times are kept as they are (in / out), plus hrsRaw / countFrom / countTo for the screens.
    · v7.79 (go-ahead 16 Oct, Mahmoud on the «extra hours waiting» card: «add a box so I can edit the time»): next to «approve» a box
      with the computed hours — whoever may approve can change it (quarter-hour steps, not more than from the shift end to the
@@ -49245,7 +49334,14 @@ function oxFlow(k) {
   const MIN_PEND = 15;
   const hpd = () => +(S.settings && S.settings.hoursPerDay) || 8;
   const xh = () => (typeof window.nfHeadDepts === 'function' ? window.nfHeadDepts() : []);   /* v7.78: a department led on top of the person's role */
-  const canDecide = w => !!S.session && (isAdmin() || role() === 'manager' || ((role() === 'head' || xh().includes(w && w.deptId)) && w && myDepts().includes(w.deptId)));
+  /* v7.99 (brief owner-chains, PIN 17 Oct): «extra hours waiting» = head → factory manager → accounts manager (Saeed) and done — the owner is
+     no longer a decider (he sees them in the reports / read-only on the page). Rows waiting from before the change (date < policy.accChainSince,
+     default 2026-10-18 — they used to sit on the owner's dashboard) can also be decided by the accounts manager. */
+  const isAccMgr = () => typeof window.nfIsAccMgr === 'function' && window.nfIsAccMgr();
+  const SINCE = () => String(((S.settings && S.settings.policy) || {}).accChainSince || '2026-10-18');
+  const legacy = d => !!d && String(d) < SINCE();
+  const canDecide = (w, d) => !!S.session && (role() === 'manager' || ((role() === 'head' || xh().includes(w && w.deptId)) && w && myDepts().includes(w.deptId)) || (isAccMgr() && legacy(d)));
+  const canView = () => !!S.session && (isAdmin() || ['manager', 'head', 'hr'].includes(role()) || xh().length > 0);
   /* v7.79: the most extra hours a day can have = from the end of the counted day (shift end, or the counted start if later) to the check-out */
   function maxPend(w, r) {
     try {
@@ -49337,17 +49433,17 @@ function oxFlow(k) {
     try { if (typeof pushSend === 'function') pushSend(h ? ['w:' + h.id] : ['role:manager'], `ساعات زيادة مستنية اعتمادك — ${w.name}`.slice(0, 100), `انصرف ${fmtTm(r.out)} من غير سهر متوافق عليه`, '/#/otpend', 'otp-' + w.id).catch(() => { }); } catch (e) { /* ignore */ }
   }
   /* ---------- the list + approve / reject ---------- */
-  function pending(days = 10) {
+  function pending(days = 10, view) {
     const out = []; const today = todayISO();
     for (let i = 0; i < days; i++) {
       const d = addDays(today, -i); const att = attendanceFor(d) || {};
-      Object.entries(att).forEach(([wid, r]) => { if (!r || !(+r.otPend > 0) || r.otDeptOk || r.otDeptRej) return; const w = byId('workers', wid); if (!w || !canDecide(w)) return; out.push({ d, w, r }); });
+      Object.entries(att).forEach(([wid, r]) => { if (!r || !(+r.otPend > 0) || r.otDeptOk || r.otDeptRej) return; const w = byId('workers', wid); if (!w || !(canDecide(w, d) || (view && canView() && (isAdmin() || ['hr', 'manager'].includes(role()))))) return; out.push({ d, w, r, ro: !canDecide(w, d) }); });
     }
     return out;
   }
   window.nfOtPending = pending;
   ACTIONS.otpDecide = async arg => {
-    const [d, wid, k] = String(arg || '').split('|'); const w = byId('workers', wid); if (!w || !canDecide(w)) return;
+    const [d, wid, k] = String(arg || '').split('|'); const w = byId('workers', wid); if (!w || !canDecide(w, d)) return;
     const cur = (attendanceFor(d) || {})[wid] || {}; if (!(+cur.otPend > 0)) return;
     const me = { by: (S.session && S.session.id) || null, byName: (S.session && S.session.name) || '', at: nowISO() };
     /* v7.79: the hours typed in the box next to «approve» (if changed) */
@@ -49371,18 +49467,18 @@ function oxFlow(k) {
   };
   function listHTML(rows) {
     if (!rows.length) return `<div class="empty small">${esc(T('مفيش ساعات زيادة مستنية', 'No extra hours waiting'))}</div>`;
-    return `<div class="list">${rows.map(({ d, w, r }) => `<div class="item otp-it"><div class="main"><div class="title">${esc(w.name)} <span class="badge warn">${esc(T(`${r.otPend} ساعة زيادة`, `${r.otPend} h extra`))}</span></div><div class="meta"><span>${esc(fmtDate(d))}</span><span>${esc(deptName(w.deptId))}</span><span><bdi>${esc(fmtTm(r.in || ''))}</bdi> ${en() ? '→' : '←'} <bdi>${esc(fmtTm(r.out || ''))}</bdi></span>${+r.late > 0 ? `<span class="badge warn">${esc(T(`متأخر ${r.late} دقيقة`, `${r.late} min late`))}</span>` : ''}<span>${esc(T(`محسوب ${fmtTm(r.countFrom || '')} – ${fmtTm(r.countTo || '')}`, `Counted ${fmtTm(r.countFrom || '')} – ${fmtTm(r.countTo || '')}`))}</span></div></div><div class="end otp-end"><label class="otp-ed" title="${esc(T('تقدر تغيّر الساعات قبل ما تعتمد', 'You can change the hours before approving'))}"><input type="number" class="otp-h ltr" data-k="${esc(d + '|' + w.id)}" value="${esc(String(r.otPend))}" min="0.25" max="${esc(String(maxPend(w, r)))}" step="0.25" inputmode="decimal" aria-label="${esc(T('ساعات الزيادة', 'Extra hours'))}"><span>${esc(T('ساعة', 'h'))}</span></label><button type="button" class="btn sm p" data-action="otpDecide" data-arg="${esc(d + '|' + w.id + '|ok')}">${icon('check')}${esc(T('اعتمد', 'Approve'))}</button><button type="button" class="btn sm ghost" data-action="otpDecide" data-arg="${esc(d + '|' + w.id + '|no')}">${esc(T('ارفض', 'Reject'))}</button></div></div>`).join('')}</div>`;
+    return `<div class="list">${rows.map(({ d, w, r, ro }) => `<div class="item otp-it"><div class="main"><div class="title">${esc(w.name)} <span class="badge warn">${esc(T(`${r.otPend} ساعة زيادة`, `${r.otPend} h extra`))}</span></div><div class="meta"><span>${esc(fmtDate(d))}</span><span>${esc(deptName(w.deptId))}</span><span><bdi>${esc(fmtTm(r.in || ''))}</bdi> ${en() ? '→' : '←'} <bdi>${esc(fmtTm(r.out || ''))}</bdi></span>${+r.late > 0 ? `<span class="badge warn">${esc(T(`متأخر ${r.late} دقيقة`, `${r.late} min late`))}</span>` : ''}<span>${esc(T(`محسوب ${fmtTm(r.countFrom || '')} – ${fmtTm(r.countTo || '')}`, `Counted ${fmtTm(r.countFrom || '')} – ${fmtTm(r.countTo || '')}`))}</span></div></div>${ro ? `<div class="end otp-end"><span class="badge">${esc(T('عند رئيس القسم / مدير المصنع', 'With the head / factory manager'))}</span></div>` : `<div class="end otp-end"><label class="otp-ed" title="${esc(T('تقدر تغيّر الساعات قبل ما تعتمد', 'You can change the hours before approving'))}"><input type="number" class="otp-h ltr" data-k="${esc(d + '|' + w.id)}" value="${esc(String(r.otPend))}" min="0.25" max="${esc(String(maxPend(w, r)))}" step="0.25" inputmode="decimal" aria-label="${esc(T('ساعات الزيادة', 'Extra hours'))}"><span>${esc(T('ساعة', 'h'))}</span></label><button type="button" class="btn sm p" data-action="otpDecide" data-arg="${esc(d + '|' + w.id + '|ok')}">${icon('check')}${esc(T('اعتمد', 'Approve'))}</button><button type="button" class="btn sm ghost" data-action="otpDecide" data-arg="${esc(d + '|' + w.id + '|no')}">${esc(T('ارفض', 'Reject'))}</button></div>`}</div>`).join('')}</div>`;
   }
   if (typeof EXTRA_VIEWS !== 'undefined') {
     VIEW_TITLES.otpend = 'ساعات زيادة';
     canSee = (base => function (v) { if (v === 'otpend') return !!S.session && (isAdmin() || ['manager', 'head', 'hr'].includes(role())); return base.apply(this, arguments); })(canSee);
-    EXTRA_VIEWS.otpend = () => `<div class="card"><div class="cardhead"><h3>${icon('moon')}${esc(T('ساعات زيادة مستنية اعتماد', 'Extra hours waiting for approval'))}</h3></div><p class="small muted" style="margin:0 0 8px">${esc(T('اللي بصم انصراف بعد الساعة 6 (ساعة بعد آخر الوردية) من غير سهر متوافق عليه وكمّل ساعات يومه: محسوبله ساعات الوردية بس لحد ما رئيس قسمه يعتمد. اللي ينصرف قبلها مالوش ساعات زيادة. بعد الاعتماد بتبقى سهر وتكمّل على اعتماد السهر (مدير المصنع ← مدير الحسابات).', 'Someone who punched out after 6 pm (an hour after the shift) without approved overtime and completed his hours: only the shift hours count until his department head approves. Leaving before that gives no extra hours. Approved, it becomes overtime and goes on to the overtime approval (factory manager → accounts manager).'))}</p>${listHTML(pending())}</div>`;
+    EXTRA_VIEWS.otpend = () => `<div class="card"><div class="cardhead"><h3>${icon('moon')}${esc(T('ساعات زيادة مستنية اعتماد', 'Extra hours waiting for approval'))}</h3></div><p class="small muted" style="margin:0 0 8px">${esc(T('اللي بصم انصراف بعد الساعة 6 (ساعة بعد آخر الوردية) من غير سهر متوافق عليه وكمّل ساعات يومه: محسوبله ساعات الوردية بس لحد ما رئيس قسمه يعتمد. اللي ينصرف قبلها مالوش ساعات زيادة. بعد الاعتماد بتبقى سهر وتكمّل على اعتماد السهر (مدير المصنع ← مدير الحسابات).', 'Someone who punched out after 6 pm (an hour after the shift) without approved overtime and completed his hours: only the shift hours count until his department head approves. Leaving before that gives no extra hours. Approved, it becomes overtime and goes on to the overtime approval (factory manager → accounts manager).'))}</p>${listHTML(pending(10, true))}</div>`;
     if (typeof EXTRA_TITLES !== 'undefined') EXTRA_TITLES.otpend = () => ({ title: T('ساعات زيادة', 'Extra hours'), sub: T('اعتماد الساعات اللي بعد الوردية', 'Approve the hours after the shift') });
   }
   /* a card on the attendance page / dashboard for whoever decides */
   if (Array.isArray(RENDER_HOOKS)) RENDER_HOOKS.push(() => {
     try {
-      const v = S.route && S.route.view; if (!['attendance', 'dashboard'].includes(v) || !S.session || !(isAdmin() || ['manager', 'head'].includes(role()) || xh().length)) return;
+      const v = S.route && S.route.view; if (!['attendance', 'dashboard'].includes(v) || !S.session || !(['manager', 'head'].includes(role()) || xh().length || isAccMgr())) return;
       const host = document.getElementById('view'); if (!host) return; const old = host.querySelector('#otpcard'); if (old) old.remove();
       const rows = pending(); if (!rows.length) return;
       host.insertAdjacentHTML('afterbegin', `<div class="card" id="otpcard" style="border-color:var(--warn,#e5932a)"><div class="cardhead"><h3>${icon('moon')}${esc(T('ساعات زيادة مستنية اعتمادك', 'Extra hours waiting for you'))}</h3><span class="badge warn">${rows.length}</span><div class="grow"></div><a class="btn xs ghost" href="#/otpend">${esc(T('الكل', 'All'))}</a></div>${listHTML(rows.slice(0, 5))}</div>`);
@@ -50611,7 +50707,8 @@ if (typeof STU_ON !== 'undefined' && STU_ON) (() => {
   const ini = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('');
   function cardHTML(p) {
     const cs = (p.comments || []).filter(c => c && !c.deleted);
-    return `<div class="card pocom" id="pocom"><div class="cardhead"><h3>${icon('chat')}${esc(T('تعليقات', 'Comments'))}</h3>${cs.length ? `<span class="badge">${cs.length}</span>` : ''}</div>
+    return `<div class="card pocom" id="pocom"><div class="cardhead"><h3>${icon('chat')}${esc(T('تعليقات', 'Comments'))}</h3>${cs.length ? `<span class="badge">${cs.length}</span>` : ''}<span class="grow"></span>${writable() ? `<button type="button" class="btn sm ghost" data-action="poComAdd" data-arg="${esc(p.id)}">${icon('plus')}<span>${esc(T('شخص', 'Person'))}</span></button>` : ''}</div>
+      ${(p.comParties || []).length ? `<div class="pocpp">${(p.comParties || []).map(x => `<span class="badge">${esc(x.name || '')}${canDrop(p, x) ? `<button type="button" class="tpx" data-action="poComDrop" data-arg="${esc(p.id)}|${esc(x.id)}" aria-label="${esc(T('شيل', 'Remove'))}">×</button>` : ''}</span>`).join('')}</div>` : ''}
       ${cs.length ? `<div class="pocl">${cs.map(c => `<div class="pocm ${myIds().includes(String(c.by)) ? 'me' : ''}"><span class="pocav">${esc(ini(c.byName))}</span><div class="pocb"><div class="poch"><b class="notr">${esc(c.byName || '')}</b><span class="muted tiny">${esc(when(c.at))}</span></div>${c.text ? `<div class="poct notr">${esc(c.text).replace(/\n/g, '<br>')}</div>` : ''}${c.photo && c.photo.thumb ? `<img class="pocimg" src="${esc(c.photo.thumb)}" alt="" data-action="fileOpen" data-arg="${esc(c.photo.fileId || '')}">` : ''}</div></div>`).join('')}</div>` : `<p class="muted small" style="margin:2px 0 8px">${esc(T('مفيش تعليقات لسه — اكتب سؤال أو ملاحظة على الطلب، وكل اللي بيتابعوه هيوصلهم.', 'No comments yet — write a question or a note on this request; everybody following it gets it.'))}</p>`}
       ${writable() ? `<form class="pocf" data-pocom="${esc(p.id)}"><textarea name="t" rows="2" maxlength="1500" placeholder="${esc(T('اكتب تعليق…', 'Write a comment…'))}"></textarea><div class="row" style="gap:6px;align-items:center"><button type="submit" class="btn sm p">${icon('send')}<span>${esc(T('ابعت', 'Send'))}</span></button><label class="btn sm ghost" title="${esc(T('صورة', 'Picture'))}">${icon('camera')}<span>${esc(T('صورة', 'Picture'))}</span><input type="file" accept="image/*" name="f" hidden></label><span class="pocfn muted tiny"></span></div></form>` : ''}</div>`;
   }
@@ -50626,6 +50723,9 @@ if (typeof STU_ON !== 'undefined' && STU_ON) (() => {
     (p.comments || []).forEach(c => c && c.by && ids.add(String(c.by)));
     ids.add('role:purch');
     try { list('requests').filter(r => r && r.purchaseId === p.id && r.status === 'pending' && Array.isArray(r.chain)).forEach(r => { const rl = r.chain[r.step || 0]; if (rl) ids.add('role:' + rl); }); } catch (e) { /* ignore */ }
+    /* v7.95: everybody who already approved any step of this purchase, and the people added to the comments */
+    try { list('requests').filter(r => r && r.purchaseId === p.id).forEach(r => { (r.approvals || []).forEach(a => a && a.by && ids.add(String(a.by))); if (r.decidedBy) ids.add(String(r.decidedBy)); }); } catch (e) { /* ignore */ }
+    (p.comParties || []).forEach(x => x && x.id && ids.add(String(x.id)));
     myIds().forEach(x => ids.delete(x));
     return [...ids];
   }
@@ -50644,6 +50744,34 @@ if (typeof STU_ON !== 'undefined' && STU_ON) (() => {
     return true;
   }
   window.nfPoComment = post;
+  /* v7.95: «+ person» — only people who can already open purchases (no change in who sees what) */
+  const canDrop = (p, x) => writable() && (isAdmin() || myIds().includes(String(x.addedBy || '')));
+  function addable(p) {
+    const have = new Set(audience(p).concat(myIds()).map(String));
+    const okRole = r => r === 'admin' || r === 'manager' || (ROLE_VIEWS[r] === null) || (Array.isArray(ROLE_VIEWS[r]) && ROLE_VIEWS[r].includes('purchases'));
+    const ws = list('workers').filter(w => w && w.status !== 'inactive' && w.status !== 'suspended' && !w.left && w.role && w.role !== 'none' && (w.role === 'head' ? (!!p.deptId && (w.deptId === p.deptId || (w.accessDepts || []).includes(p.deptId) || (w.headDepts || []).includes(p.deptId))) : okRole(w.role)) && !have.has('w:' + w.id)).map(w => ({ id: 'w:' + w.id, name: w.name, sub: typeof deptName === 'function' ? deptName(w.deptId) : '' }));
+    const ss = list('staff').filter(x => x && x.active !== false && x.id !== 'local-admin' && okRole(x.role) && !have.has(String(x.id))).map(x => ({ id: String(x.id), name: x.name, sub: (typeof ROLES !== 'undefined' && ROLES[x.role]) || '' }));
+    return sortBy(ws.concat(ss), x => x.name || '');
+  }
+  ACTIONS.poComAdd = id => {
+    const p = byId('purchases', id); if (!can(p) || !writable()) return;
+    const people = addable(p);
+    if (!people.length) { toast(T('كل اللي يقدروا يشوفوا الطلب ده موجودين بالفعل', 'Everyone who can open this purchase is already in')); return; }
+    openModal({ title: T('ضيف شخص للتعليقات', 'Add a person to the comments'), submitLabel: T('ضيف', 'Add'),
+      body: `<p class="small ink2" style="margin:0 0 10px">${esc(T('هيوصله إشعار بأي تعليق جديد على الطلب ده. القايمة فيها بس اللي يقدروا يفتحوا المشتريات.', 'They get a notice for every new comment here. Only people who can already open purchases are listed.'))}</p><div class="form">${field(T('الشخص', 'Person'), `<select name="pid">${people.map(x => `<option value="${esc(x.id)}">${esc(x.name + (x.sub ? ' — ' + x.sub : ''))}</option>`).join('')}</select>`, 'full')}</div>`,
+      onSubmit: async f => {
+        const pid = f.querySelector('[name=pid]').value; const x = people.find(y => y.id === pid); if (!x) return false;
+        const cur = byId('purchases', id) || p; const list2 = (cur.comParties || []).filter(y => y.id !== pid).concat([{ id: pid, name: x.name, addedBy: me().id || '', at: nowISO() }]);
+        await Store.update('purchases', id, { comParties: list2 });
+        try { if (typeof pushSend === 'function') pushSend([pid], T(`${me().name || ''} ضافك على تعليقات ${cur.number || ''}`, `${me().name || ''} added you to the comments on ${cur.number || ''}`).slice(0, 100), T('افتح الطلب وشوف التعليقات', 'Open the purchase to read the comments'), `/#/purchases/${id}/com`, 'pocom-' + id); } catch (e) { /* ignore */ }
+        toast(T(`اتضاف ${x.name}`, `${x.name} added`)); render(false);
+      } });
+  };
+  ACTIONS.poComDrop = async arg => {
+    const [id, pid] = String(arg || '').split('|'); const p = byId('purchases', id); if (!p) return; const x = (p.comParties || []).find(y => y.id === pid); if (!x || !canDrop(p, x)) return;
+    if (!await confirmDlg(T(`تشيل ${x.name} من التعليقات؟`, `Remove ${x.name} from the comments?`), T('شيل', 'Remove'))) return;
+    await Store.update('purchases', id, { comParties: (p.comParties || []).filter(y => y.id !== pid) }); render(false);
+  };
   document.addEventListener('submit', async e => {
     const f = e.target.closest && e.target.closest('form[data-pocom]'); if (!f) return; e.preventDefault();
     const t = f.querySelector('textarea'); const fi = f.querySelector('input[type=file]'); const btn = f.querySelector('button[type=submit]'); if (btn.disabled) return;
@@ -50653,7 +50781,7 @@ if (typeof STU_ON !== 'undefined' && STU_ON) (() => {
   });
   document.addEventListener('change', e => { const i = e.target.closest && e.target.closest('form[data-pocom] input[type=file]'); if (!i) return; const n = i.closest('form').querySelector('.pocfn'); if (n) n.textContent = i.files && i.files[0] ? i.files[0].name : ''; });
   document.head.insertAdjacentHTML('beforeend', `<style>
-    .pocom .cardhead h3{display:flex;align-items:center;gap:6px}.pocom .cardhead h3 svg{width:18px;height:18px}
+    .pocom .cardhead h3{display:flex;align-items:center;gap:6px}.pocom .cardhead{display:flex;align-items:center;gap:8px}.pocom .cardhead .btn{display:inline-flex;align-items:center;gap:4px}.pocom .cardhead .btn svg{width:15px;height:15px}.pocpp{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}.pocpp .tpx{border:0;background:none;color:inherit;opacity:.55;margin-inline-start:6px;padding:0 2px;font-size:14px;cursor:pointer}.pocom .cardhead h3 svg{width:18px;height:18px}
     .pocl{display:flex;flex-direction:column;gap:10px;margin:4px 0 10px;max-height:460px;overflow:auto}
     .pocm{display:flex;gap:8px;align-items:flex-start}.pocav{flex:none;width:30px;height:30px;border-radius:50%;background:var(--surface-2,#eef0f3);display:grid;place-items:center;font-size:12px;font-weight:700}
     .pocb{flex:1;min-width:0;padding:8px 10px;border-radius:12px;background:var(--surface-2,#f4f5f7)}.pocm.me .pocb{background:var(--accent-soft,rgba(10,132,255,.1))}
@@ -53767,12 +53895,8 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
       try {
         if (c.purchaseId) {
           const p = byId('purchases', c.purchaseId);
-          if (p && !['received', 'cancelled', 'arrived'].includes(p.status)) {
-            await Store.update('purchases', p.id, { status: 'arrived', arrivedAt: nowISO(), arrivedTrip: `${c.number} ← ${t.number}` });
-            const h = typeof poHead === 'function' ? poHead(p) : null; const items = (p.pending || p.items || []).map(it => `${it.name || (byId('materials', it.materialId) || {}).name || ''} × ${fmtNum(it.pendingQty ?? it.qty)}`).join('، ');
-            await Store.save('tasks', { id: `po_recv_head_${p.id}`, title: `استلام توريد ${p.number} — رئيس القسم`, desc: `وصل السائق بالتوريد من ${p.supplier || ''} (اتشال في ${c.number} ووصل مع ${t.number}): ${items}\nافحص البضاعة وسجّل استلامك (صورة + الكميات المقبولة/المرفوضة) من صفحة طلب الشراء. الاستلام يكتمل مع أمين المخزن.`, deptId: p.deptId || null, assigneeId: h ? h.id : null, orderId: p.orderId || null, dueDate: todayISO(), priority: 'urgent', status: 'open', kind: 'task', source: 'system', purchaseId: p.id, createdBy: null, createdByName: 'السيستم', createdAt: nowISO(), updatedAt: nowISO() }, { silent: true });
-            await notifyRole('store', `استلام توريد ${p.number} — أمين المخزن`, `وصل التوريد من ${p.supplier || ''} (مع ${t.number}): ${items}\nسجّل استلامك (صورة + الكميات + الوجهة: المخزن أو أرضية المصنع) من صفحة طلب الشراء.`, { id: `po_recv_store_${p.id}`, priority: 'urgent', kind: 'task', fields: { purchaseId: p.id } });
-          }
+          /* v7.96: the shared arrival path of the purchase flow (46-purchase-flow.js poMarkArrived) */
+          if (p && typeof poMarkArrived === 'function') await poMarkArrived(p, { via: 'carry', trip: `${c.number} ← ${t.number}`, from: c.number, to: t.number, skip: ['arrived'] });
         }
         if (c.extId && c.kind === 'pickup_ext') {
           const x = byId('extorders', c.extId);
@@ -56941,7 +57065,7 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
   });
 
   /* ---------- Icons home widget (registered in parts/99zzZzZZzi-widgets.js) ---------- */
-  window.nfSupply = {
+  window.nfSupply = Object.assign(window.nfSupply || {}, {   /* v7.97: merge — supply-docs exports its sheets under the same name */
     has: () => can() && photos().length > 0,
     widget: s => {
       const ps = photos(); const g = groups('all', 'all'); const KD = KIND();
@@ -56953,7 +57077,7 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
       const rows = g.slice(0, s === 'L' ? 4 : 2).map(x => `<button type="button" class="sup-wr" data-action="supGallery" data-arg="${esc(x.oid || '_')}"><b>${esc(x.o ? x.o.code || '' : L('من غير أوردر', 'No order'))}</b><span>${KS.filter(k => x.n[k]).map(k => `<em style="color:${KD[k][1]}">${x.n[k]}</em>`).join(' · ')}</span></button>`).join('');
       return head + `<div class="sup-w">${big}<div class="sup-wrs">${rows}</div></div>`;
     },
-  };
+  });
 
   (document.head || document.body).insertAdjacentHTML('beforeend', `<style id="nf-supply">
 .sup .cardhead h3{display:flex;align-items:center;gap:6px}.sup .cardhead h3 svg{width:18px;height:18px}
@@ -57225,12 +57349,12 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
       out.push({ id: r.id, k: 'fund', d: day((x && (x.date || x.at || x.createdAt)) || r.paidAt), who: L('عهدة ', 'Custody ') + (w ? w.name : (r.requesterName || '')), what: r.reason || '', from: acct((x && x.from) || r.payFrom), by: r.paidByName || (x && x.byName) || '', amt: +((x && x.amount) || r.paidAmount || r.amount) || 0, pic: (x && x.thumb) || r.payThumb ? { thumb: (x && x.thumb) || r.payThumb, fid: ((x && x.fileIds) || r.payFileIds || [])[0] } : null, act: 'reqOpen', arg: r.id });
     });
     /* 3) expenses on the order */
-    list('expenses').filter(e => e && e.orderId === o.id && !e.deleted && !(e.purchaseId && pids.has(e.purchaseId))).forEach(e => {
+    list('expenses').filter(e => e && e.orderId === o.id && !e.deleted && !e.extId && !(e.purchaseId && pids.has(e.purchaseId))).forEach(e => {
       const w = e.src === 'wallet' && typeof walletOf === 'function' ? walletOf(e.account) : null;
       out.push({ id: e.id, k: w ? 'wexp' : 'exp', d: e.date || day(e.createdAt), who: e.payee || '', what: [typeof catLabel === 'function' ? catLabel(e.cat) : (e.cat || ''), e.note || ''].filter(Boolean).join(' — '), from: w ? L('عهدة ', 'Custody ') + w.name : acct(e.account), by: e.byName || '', amt: +e.amount || 0, pic: e.thumb ? { thumb: e.thumb, fid: (e.fileIds || [])[0] } : null });
     });
     /* 4) outside work */
-    list('extorders').filter(x => x && x.orderId === o.id && x.status !== 'cancelled' && x.offer && +x.offer.price).forEach(x => out.push({ id: x.id, k: 'ext', d: day(x.offer.at || x.createdAt), who: x.vendorName || x.supplier || (x.offer && x.offer.vendor) || '', what: x.title || x.name || '', from: '', by: x.byName || '', amt: +x.offer.price || 0 }));
+    list('extorders').filter(x => x && x.orderId === o.id && x.status !== 'cancelled' && x.offer && +x.offer.price).forEach(x => out.push({ id: x.id, k: 'ext', d: day(x.offer.at || x.createdAt), who: x.vendorName || x.supplier || (x.offer && x.offer.vendor) || '', what: x.title || x.name || '', from: x.deposit && x.deposit.from ? acct(x.deposit.from) : '', by: x.byName || '', amt: +x.offer.price || 0 }));
     /* 5) materials issued from stock */
     list('movements').forEach(m => { if (!m) return; Object.entries(m.items || {}).forEach(([iid, it]) => { if (!it || it.orderId !== o.id || it.type !== 'out') return; const mat = (it.materialId && byId('materials', it.materialId)) || {}; const q = +it.qty || 0; out.push({ id: (m.id || m.month || '') + ':' + (it.id || iid), k: 'mat', d: day(it.date || it.ts), who: it.name || mat.name || '', what: `${q} ${mat.unit || it.unit || ''}`.trim(), from: L('المخزن', 'Stock'), by: it.byName || '', amt: q * (+it.cost || 0) }); }); });
     /* 6) v7.89 transport: the order's finished trips (fuel · upkeep · driver time) */
@@ -57640,4 +57764,2576 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
   if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => { try { paint(); } catch (x) { /* ignore */ } });
   setInterval(() => { try { paint(); } catch (x) { /* ignore */ } }, 2000);
   window.nfMoved = { paint, target };
+})();
+/* =====================================================================
+   v7.95 — Purchases page: filter by brand + project, and a search box (owner request 17 Oct).
+   One bar above all purchases lists (new-item RFQ card, materials-requests card, purchase-orders list).
+   Brand of a purchase = its own brandId, else the brand of its linked order (project).
+   The project filter reuses S.ui.filter.purchases.orderId (the AI assistant sets the same key),
+   so the old project banner is replaced by the select + a clear button.
+   ===================================================================== */
+(function () {
+  if (window.__NF_POFILTER__) return; window.__NF_POFILTER__ = 1;
+  const ordOf = p => (p && p.orderId ? byId('orders', p.orderId) : null);
+  const poBrand = p => (p && p.brandId) || (ordOf(p) || {}).brandId || '';
+  window.nfPoBrand = poBrand;
+  /* loose text match: case, Arabic letter variants, Arabic-Indic digits */
+  const ch = (...c) => String.fromCharCode(...c);
+  const RX_ALEF = new RegExp('[' + ch(0x623, 0x625, 0x622, 0x671) + ']', 'g'), RX_TEH = new RegExp(ch(0x629), 'g'), RX_YEH = new RegExp(ch(0x649), 'g'), RX_MARK = new RegExp('[' + ch(0x64B) + '-' + ch(0x652) + ch(0x640) + ']', 'g'), RX_DIG = new RegExp('[' + ch(0x660) + '-' + ch(0x669) + ']', 'g');
+  const norm = s => String(s == null ? '' : s).toLowerCase().replace(RX_ALEF, ch(0x627)).replace(RX_TEH, ch(0x647)).replace(RX_YEH, ch(0x64A)).replace(RX_MARK, '').replace(RX_DIG, d => String(d.charCodeAt(0) - 0x660));
+  const itemNames = p => [].concat(p.items || [], p.needItems || [], p.rfqItems || []).map(i => (i && (i.name || (i.materialId && (byId('materials', i.materialId) || {}).name))) || '');
+  const hay = p => { const o = ordOf(p); return norm([p.number, p.supplier, p.prefSupplier, o && o.code, o && o.title, p.deptId ? deptName(p.deptId) : ''].concat(itemNames(p)).filter(Boolean).join(' ')); };
+  const fState = () => { const f = S.ui.filter.purchases || (S.ui.filter.purchases = { status: 'open' }); return { f, brand: f.brand || '', orderId: f.orderId || '', q: String(S.ui.search.purchases || '').trim() }; };
+  const passes = (p, st) => {
+    if (st.brand && poBrand(p) !== st.brand) return false;
+    if (st.orderId && p.orderId !== st.orderId) return false;
+    if (st.q) { const h = hay(p); if (!norm(st.q).split(/\s+/).filter(Boolean).every(w => h.includes(w))) return false; }
+    return true;
+  };
+  const projOpts = (all, sel) => {
+    const ids = new Set(all.map(p => p.orderId).filter(Boolean)); if (sel) ids.add(sel);
+    const os = sortBy([...ids].map(id => byId('orders', id)).filter(Boolean), o => o.code || '');
+    return os.map(o => `<option value="${esc(o.id)}" ${o.id === sel ? 'selected' : ''}>${esc(`${o.code || ''} — ${o.title || ''}`)}</option>`).join('') + (sel && !byId('orders', sel) ? `<option value="${esc(sel)}" selected>${esc(sel)}</option>` : '');
+  };
+  const bar = (st, all, n) => {
+    const on = !!(st.brand || st.orderId || st.q);
+    return `<div class="pofbar" id="pofbar">
+      <select class="sel" id="fl-pobrand" data-filter="purchases:brand" aria-label="البراند"><option value="">كل البراندات</option>${opts(S.settings.brands || [], st.brand)}</select>
+      <select class="sel" id="fl-poorder" data-filter="purchases:orderId" aria-label="المشروع"><option value="">كل المشاريع</option>${projOpts(all, st.orderId)}</select>
+      <div class="search">${icon('search')}<input id="fl-posearch" type="search" placeholder="بحث برقم الطلب أو المورد أو الصنف أو المشروع" data-search="purchases" value="${esc(S.ui.search.purchases || '')}"></div>
+      ${on ? `<span class="pofbar-n small muted">${n} طلب مطابق</span><button type="button" class="btn sm ghost" data-action="poFilterClear">${icon('x')}إلغاء الفلتر</button>` : ''}
+    </div>`;
+  };
+  /* brand chip + project code on every purchase row (RFQ / needs / orders) */
+  const decorate = (html, arr) => {
+    arr.forEach(p => {
+      const b = poBrand(p); const o = ordOf(p); if (!b && !o) return;
+      [`href="#/purchases/${p.id}"`, `data-arg="purchases/${p.id}"`].forEach(mk => {
+        let from = 0;
+        for (;;) {
+          const i = html.indexOf(mk, from); if (i < 0) break; from = i + mk.length;
+          const t = html.indexOf('<div class="title">', i); if (t < 0 || t - i > 200) continue;
+          const c = html.indexOf('<span class="code">', t); if (c < 0 || c - t > 40) continue;
+          const e = html.indexOf('</span>', c); if (e < 0) continue;
+          const tEnd = html.indexOf('</div>', e); const titleTxt = html.slice(t, tEnd < 0 ? e + 400 : tEnd);
+          const oc = o && o.code && !titleTxt.includes(esc(o.code)) ? `<span class="pofx-o ltr" title="${esc(o.title || '')}">${esc(o.code)}</span>` : '';
+          const tag = `<span class="pofx">${b ? brandChip(b) : ''}${oc}</span>`;
+          if (!oc && !b) continue;
+          html = html.slice(0, e + 7) + tag + html.slice(e + 7); from = e + 7 + tag.length;
+        }
+      });
+    });
+    return html;
+  };
+  if (typeof vPurchases === 'function') vPurchases = (base => function () {
+    const st = fState(); const all = list('purchases'); const full = S.data.purchases;
+    const keep = new Map([...full].filter(([, p]) => passes(p, st)));
+    const saved = st.f.orderId; let h;
+    /* the inner AI-assistant wrapper would add its own project banner — the select replaces it */
+    try { delete st.f.orderId; S.data.purchases = keep; h = base.apply(this, arguments); } finally { S.data.purchases = full; if (saved) st.f.orderId = saved; }
+    const shown = all.filter(p => keep.has(p.id));
+    return bar(st, all, shown.length) + decorate(h, shown);
+  })(vPurchases);
+  ACTIONS.poFilterClear = () => { const f = S.ui.filter.purchases || {}; delete f.brand; delete f.orderId; S.ui.search.purchases = ''; render(false); };
+  (document.head || document.body).insertAdjacentHTML('beforeend', `<style>
+.pofbar{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin:0 0 12px;min-width:0}
+.pofbar .sel{flex:0 1 200px;min-width:0;max-width:260px;width:auto;text-overflow:ellipsis}
+.pofbar #fl-poorder{flex-basis:260px;max-width:340px}
+.pofbar .search{flex:1 1 220px;min-width:0;max-width:none}
+.pofbar .pofbar-n{white-space:nowrap}
+.pofx{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0;font-weight:400}
+.pofx-o{font-size:11px;font-weight:600;padding:1px 7px;border-radius:99px;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);white-space:nowrap}
+@media(max-width:820px){.pofbar{flex-wrap:wrap}.pofbar .sel,.pofbar #fl-poorder{flex:1 1 calc(50% - 4px);max-width:none;width:calc(50% - 4px)}.pofbar .search{flex:1 1 100%}.pofbar .pofbar-n{flex:1}}
+</style>`);
+})();
+/* =====================================================================
+   v7.95 — internal manufacturing order between departments (owner approved, 17 Oct).
+   A department head asks another department of the factory to make something for him: he picks the project (required),
+   the target department and writes the request (title, items, need-by date, notes, drawings / photos / PDF).
+   No approval step: it goes straight to the target department.
+     sent → accepted → inprogress → done → received   (+ rejected with a reason, cancelled by the sender)
+   · create: the head of the from-department (role head, or a person who leads it via workers.headDepts), manager, office, admin
+   · accept / reject / start / done: canDo('stage.update', { deptId: toDeptId }) (the target head, manager, admin) + extra heads
+   · receive: the from-department head (or manager / admin) with a photo + ok / issue + note; an issue goes to the factory manager
+   · tasks: imo_<id>_to for the target department on send, imo_<id>_back for the sender on done; closed on receive / reject / cancel
+   · entry points: a card on the project page (production section), the head's «+» menu, the departments board inbox,
+     the department popup, #/intorders (list) and #/intorders/<id> (detail)
+   Collection «intorders» (generic docs table). Costs keep flowing through the project (orderId); no money anywhere here.
+   Factory system only. Phone and desktop, Arabic and English, day and night.
+   v7.95 b (owner PIN, 17 Oct — claude/imo-time-brief.md): the order is tracked by time, not money.
+   · daily hours: the head of the making department (toDeptId) may allocate a worker's hours to an open order (accepted / in
+     progress) in the attendance allocation window; stored as { orderId: imo.orderId, imoId, h } so project costing keeps
+     counting the hours on the project exactly once (laborByWorker / monthLabor read orderId only)
+   · «Time» card on the order page: who worked on it, hours each, total — the owner only (isAdmin()), hours only
+   · «Purchase request» on the order page for the head of the making department while the order is accepted / in progress:
+     the normal department materials request (needForm / saveNeed, same approval chain) locked to the order's project and
+     tagged imoId / imoNumber, even when that project is off his department's route; orderInMyScope is not widened
+   ===================================================================== */
+(function () {
+  if (window.__NF_IMO__) return; window.__NF_IMO__ = 1;
+  if ((typeof isStuSys === 'function' && isStuSys()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  if (typeof NAV === 'undefined' || typeof EXTRA_VIEWS === 'undefined' || typeof Store === 'undefined') return;
+  const COL = 'intorders';
+  if (!COLS.includes(COL)) COLS.push(COL); S.data[COL] = S.data[COL] || new Map();
+  Store.subscribeAll = (base => function () { base.call(this); const db = S.db; if (!db) return; S.unsub.push(db.collection(COL).onSnapshot(snap => { S.data[COL] = new Map(snap.docs.map(d => [d.id, d.data()])); S.loaded[COL] = true; rerender(); }, e => console.warn('snapshot', COL, e))); })(Store.subscribeAll);
+
+  const IMO_STATUS = { sent: ['اتبعت', 'acc'], accepted: ['القسم قبله', 'warn'], inprogress: ['شغّال', 'acc'], done: ['جاهز', 'good'], received: ['اتسلّم', 'ink'], rejected: ['اترفض', 'crit'], cancelled: ['اتلغى', 'crit'] };
+  window.IMO_STATUS = IMO_STATUS;
+  /* English labels of its own: the generic dictionary reads some of these short Arabic words differently (e.g. «on» / «delivered») */
+  const IMO_STATUS_EN = { sent: ['Sent', 'acc'], accepted: ['Accepted', 'warn'], inprogress: ['In progress', 'acc'], done: ['Ready', 'good'], received: ['Received', 'ink'], rejected: ['Rejected', 'crit'], cancelled: ['Cancelled', 'crit'] };
+  const isEn = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (isEn() ? b : a);
+  const stMap = () => (isEn() ? IMO_STATUS_EN : IMO_STATUS);
+  const stB = st => badge(stMap(), st);
+  const OPEN = ['sent', 'accepted', 'inprogress', 'done'];
+  const CLOSED = ['received', 'rejected', 'cancelled'];
+  const SEES_ALL = ['admin', 'manager', 'vice', 'office'];
+  const CREATES = ['admin', 'manager', 'office'];
+  const active = w => w && !['inactive', 'stopped', 'suspended'].includes(w.status);
+  const deptsOf = w => [w.deptId].concat(Array.isArray(w.deptIds) ? w.deptIds : []).filter(Boolean);
+  /* same rule as the late-work card: role head of the department, or another role leading it via workers.headDepts */
+  const headsOf = d => list('workers').filter(w => active(w) && ((w.role === 'head' && deptsOf(w).includes(d)) || (w.role !== 'head' && Array.isArray(w.headDepts) && w.headDepts.includes(d))));
+  const all = () => list(COL).filter(x => x && x.id && !x.deleted);
+  const meId = () => (S.session && S.session.id) || null;
+  /* the departments the signed-in person leads */
+  const leadDepts = () => { if (!S.session) return []; if (role() === 'head') return myDepts(); return typeof window.nfHeadDepts === 'function' ? window.nfHeadDepts() : []; };
+  const seesAll = () => !!S.session && SEES_ALL.includes(role());
+  const W = () => typeof writable === 'function' && writable();
+  const imoVisible = x => !!x && (seesAll() || leadDepts().includes(x.fromDeptId) || leadDepts().includes(x.toDeptId) || (x.createdBy && x.createdBy === meId()));
+  const canCreate = () => W() && (CREATES.includes(role()) || leadDepts().length > 0);
+  const canAct = x => !!x && W() && (canDo('stage.update', { deptId: x.toDeptId }) || leadDepts().includes(x.toDeptId));
+  const canRecv = x => !!x && W() && (isAdmin() || role() === 'manager' || leadDepts().includes(x.fromDeptId));
+  const canCancel = x => !!x && W() && (isAdmin() || role() === 'manager' || leadDepts().includes(x.fromDeptId) || (x.createdBy && x.createdBy === meId()));
+  window.nfImoCanCreate = canCreate;
+  /* the departments the creator may send from */
+  const fromDepts = () => (CREATES.includes(role()) ? prodDepts() : prodDepts().filter(d => leadDepts().includes(d.id)));
+  /* the projects he may attach the order to */
+  const pickOrders = () => sortBy(list('orders').filter(o => isOpen(o) && (role() === 'head' ? (typeof orderInMyScope !== 'function' || orderInMyScope(o)) : true)), o => o.code || '');
+  window.nfImoOrders = pickOrders;
+  const nextNo = () => { const y = todayISO().slice(2, 4); const rx = new RegExp(`^IMO-${y}-(\\d+)$`); let mx = 0; all().forEach(x => { const m = rx.exec(x.number || ''); if (m) mx = Math.max(mx, +m[1]); }); return `IMO-${y}-${String(mx + 1).padStart(3, '0')}`; };
+  const orderLabel = x => { const o = x.orderId ? byId('orders', x.orderId) : null; return o ? o.code : (x.orderCode || '—'); };
+  const route = x => `${deptName(x.fromDeptId)} ${isEn() ? '→' : '←'} ${deptName(x.toDeptId)}`;
+  const needsMe = () => all().filter(x => (x.status === 'sent' && leadDepts().includes(x.toDeptId)) || (x.status === 'done' && leadDepts().includes(x.fromDeptId)));
+  const push = (ids, title, body, id) => { const to = Array.from(new Set(ids.filter(Boolean))).filter(w => w !== (S.session && S.session.workerId)).map(w => 'w:' + w); if (to.length && typeof pushSend === 'function') pushSend(to, String(title).slice(0, 100), String(body || '').slice(0, 200), '/#/intorders/' + id, 'imo-' + id).catch(() => { }); };
+  async function closeTask(tid, pr) { const t = byId('tasks', tid); if (t && !['done', 'cancelled'].includes(t.status)) await Store.update('tasks', tid, Object.assign({ status: 'done', doneAt: nowISO(), doneByName: (S.session && S.session.name) || '' }, pr ? { proof: pr } : {}), { silent: true }); }
+  const imoTask = (x, key, deptId, title, desc) => ({ id: `imo_${x.id}_${key}`, title, desc, deptId, assigneeId: null, orderId: x.orderId || null, dueDate: x.needBy || null, priority: x.priority || 'normal', status: 'open', kind: 'task', source: 'imo', imoId: x.id, createdBy: meId(), createdByName: (S.session && S.session.name) || '', createdAt: nowISO(), updatedAt: nowISO() });
+
+  /* ---------------- styles ---------------- */
+  document.head.insertAdjacentHTML('beforeend', `<style>
+.imo-inbox{margin:0 0 8px;border:1px dashed color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:10px;padding:6px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+.imo-inbox .imo-h{font-size:12px;font-weight:700;color:var(--ink);padding:2px 4px 6px;display:flex;align-items:center;gap:6px}
+.imo-inbox .imo-h svg{width:14px;height:14px;color:var(--accent)}
+.imo-inbox .tcard{margin-bottom:6px}.imo-inbox .tcard:last-child{margin-bottom:0}
+.imo-rt{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.imo-items{display:grid;gap:6px}.imo-items .ir{display:grid;grid-template-columns:3fr 1fr 1fr;gap:6px}
+@media (max-width:600px){.imo-items .ir{grid-template-columns:2fr 1fr 1fr}}
+.imo-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 14px;font-size:13px}
+@media (max-width:820px){.imo-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.imo-meta>div{min-width:0;overflow-wrap:anywhere}
+.imo-steps{overflow-x:auto;flex-wrap:nowrap!important;padding-bottom:2px;scrollbar-width:none}.imo-steps::-webkit-scrollbar{display:none}
+.imo-steps .rstep{flex:0 0 auto}
+@media (min-width:821px){.imo-steps{flex-wrap:wrap!important;overflow:visible}}
+.imo-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.imo-desc{white-space:pre-wrap;overflow-wrap:anywhere}
+.imo-pop h4{margin:14px 0 6px}
+.imo-time .item .main,.imo-alr .imo-all,#imo-prs .item .main{min-width:0;overflow-wrap:anywhere}
+.imo-ttot{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--line);margin-top:6px;padding-top:8px;font-size:14px}
+.imo-alr{gap:8px;flex-wrap:nowrap}.imo-alr .imo-all{flex:1 1 auto}.imo-alr .num{flex:0 0 auto;white-space:nowrap}
+#al-order{max-width:100%}.imo-prn{overflow-wrap:anywhere}
+</style>`);
+
+  /* ---------------- form ---------------- */
+  function form(x) {
+    const fds = fromDepts(); const from = x.fromDeptId || (fds[0] && fds[0].id) || '';
+    const toList = prodDepts().filter(d => d.id !== from); const to = x.toDeptId && x.toDeptId !== from ? x.toDeptId : '';
+    const items = (x.items || []).concat([{}, {}, {}]).slice(0, Math.max(3, (x.items || []).length + 1));
+    const ords = pickOrders(); if (x.orderId && !ords.some(o => o.id === x.orderId) && byId('orders', x.orderId)) ords.unshift(byId('orders', x.orderId));
+    return `<div class="form">
+      ${field('المشروع (أمر التشغيل)', `<select id="f-orderId" name="orderId" required><option value="">— اختار المشروع —</option>${opts(ords, x.orderId || '', o => `${o.code || ''} — ${o.title || ''}`)}</select>`, 'full')}
+      ${field('من قسم', `<select id="f-fromDeptId" name="fromDeptId" required>${opts(fds, from)}</select>`)}
+      ${field('إلى قسم', `<select id="f-toDeptId" name="toDeptId" required><option value="">— اختار القسم —</option>${opts(toList, to)}</select>`)}
+      ${field('المطلوب', inp('title', x.title || '', 'required placeholder="مثال: 4 رجول خشب زان مخروطة للترابيزات"'), 'full')}
+      ${field('مطلوب قبل', inp('needBy', x.needBy || '', 'type="date"'))}
+      ${field('الأولوية', `<select id="f-priority" name="priority">${opts(Object.keys(PRIORITY), x.priority || 'normal', k => PRIORITY[k][0])}</select>`)}
+      <div class="field full"><label>البنود (الوصف — الكمية — الوحدة)</label><div class="imo-items">${items.map((it, i) => `<div class="ir"><input name="it-desc-${i}" value="${esc(it.desc || '')}" placeholder="البند"><input name="it-qty-${i}" type="number" step="any" min="0" inputmode="decimal" value="${esc(it.qty ?? '')}" placeholder="الكمية"><input name="it-unit-${i}" value="${esc(it.unit || '')}" placeholder="الوحدة"></div>`).join('')}</div></div>
+      ${field('التفاصيل والمواصفات', `<textarea id="f-desc" name="desc" placeholder="المقاسات، الخامة، التشطيب، أي ملاحظة للقسم…">${esc(x.desc || '')}</textarea>`, 'full')}
+      ${!x.id ? `<div class="field full"><label>رسومات / صور / PDF (اختياري)</label><input type="file" id="f-files" name="files" multiple accept="image/*,application/pdf,.dwg,.dxf,.skp"></div>` : ''}
+    </div>`;
+  }
+  function wire(f) {
+    const fr = $('#f-fromDeptId', f), to = $('#f-toDeptId', f); if (!fr || !to) return;
+    fr.addEventListener('change', () => { const cur = to.value; const ds = prodDepts().filter(d => d.id !== fr.value); to.innerHTML = `<option value="">${esc(typeof i18nT === 'function' ? i18nT('— اختار القسم —') : '— اختار القسم —')}</option>` + opts(ds, cur !== fr.value ? cur : ''); if (typeof i18nApply === 'function') try { i18nApply(to); } catch (e) { /* ignore */ } });
+  }
+  async function save(f, x) {
+    const d = formData(f);
+    if (!d.orderId) { toast('اختار المشروع — أمر التصنيع الداخلي لازم يكون على مشروع', 'err'); return false; }
+    if (!d.fromDeptId || !d.toDeptId) { toast('اختار القسم اللي طالب والقسم اللي هيصنّع', 'err'); return false; }
+    if (d.fromDeptId === d.toDeptId) { toast('القسم اللي هيصنّع لازم يكون غير قسمك', 'err'); return false; }
+    if (!CREATES.includes(role()) && !leadDepts().includes(d.fromDeptId)) { toast('تقدر تطلب من قسمك بس', 'err'); return false; }
+    if (!d.title) { toast('اكتب المطلوب', 'err'); return false; }
+    const items = []; for (let i = 0; i < 60; i++) { if (d[`it-desc-${i}`] === undefined) break; const desc = (d[`it-desc-${i}`] || '').trim(); if (!desc) continue; items.push({ desc, qty: num(d[`it-qty-${i}`]), unit: (d[`it-unit-${i}`] || '').trim() }); }
+    const o = byId('orders', d.orderId);
+    const doc = Object.assign({}, x, { id: x.id || uid(), number: x.number || nextNo(), orderId: d.orderId, orderCode: (o && o.code) || x.orderCode || '', orderTitle: (o && o.title) || x.orderTitle || '', fromDeptId: d.fromDeptId, toDeptId: d.toDeptId, title: d.title, desc: d.desc || '', items, needBy: d.needBy || null, priority: d.priority || 'normal', status: x.status || 'sent', createdBy: x.createdBy || meId(), createdByName: x.createdByName || (S.session && S.session.name) || '', createdAt: x.createdAt || nowISO(), updatedAt: nowISO() });
+    await Store.save(COL, doc);
+    const files = Array.from($('#f-files', f)?.files || []); for (const file of files) { try { await proofAttach(file, { kind: 'doc', ownerKind: 'intorder', ownerId: doc.id }); } catch (e) { console.warn(e); } }
+    const title = `أمر تصنيع داخلي ${doc.number} من ${deptName(doc.fromDeptId)} — ${doc.title}`;
+    const desc = `المشروع ${doc.orderCode}${doc.needBy ? ` · مطلوب قبل ${fmtDate(doc.needBy)}` : ''}\nافتح الأمر واقبله أو ارفضه من «أوامر التصنيع الداخلية».`;
+    if (!x.id) { await Store.save('tasks', imoTask(doc, 'to', doc.toDeptId, title, desc), { silent: true }); push(headsOf(doc.toDeptId).map(w => w.id), title, desc, doc.id); }
+    else { const t = byId('tasks', `imo_${doc.id}_to`); if (t && t.status !== 'done') await Store.update('tasks', t.id, { title, desc, deptId: doc.toDeptId, dueDate: doc.needBy || null, priority: doc.priority, orderId: doc.orderId }, { silent: true }); }
+    toast(x.id ? 'تم الحفظ' : `اتبعت ${doc.number} لقسم ${deptName(doc.toDeptId)}`);
+    if (!x.id) setTimeout(() => go('intorders/' + doc.id), 30);
+  }
+  ACTIONS.imoNew = arg => {
+    if (!canCreate()) { toast('أمر التصنيع الداخلي لرؤساء الأقسام ومدير المصنع', 'err'); return; }
+    if (!fromDepts().length) { toast('حسابك مش مربوط بقسم', 'err'); return; }
+    if (!pickOrders().length && !arg) { toast('مفيش مشروع مفتوح تطلب عليه', 'err'); return; }
+    openModal({ title: 'أمر تصنيع داخلي جديد', wide: true, submitLabel: 'ابعت للقسم', body: form({ orderId: arg || '' }), onOpen: wire, onSubmit: f => save(f, {}) });
+  };
+  ACTIONS.imoEdit = id => { const x = byId(COL, id); if (!x || x.status !== 'sent' || !canCancel(x)) return; openModal({ title: `تعديل ${x.number}`, wide: true, body: form(x), onOpen: wire, onSubmit: f => save(f, x) }); };
+  ACTIONS.imoFiles = id => {
+    const x = byId(COL, id); if (!x || CLOSED.includes(x.status) || !(canCancel(x) || canAct(x))) return;
+    openModal({ title: `ملفات ${x.number}`, submitLabel: 'رفع', body: `<div class="form"><div class="field full"><label>رسومات / صور / PDF</label><input type="file" id="f-files" name="files" multiple required accept="image/*,application/pdf,.dwg,.dxf,.skp"></div></div>`,
+      onSubmit: async f => { const files = Array.from($('#f-files', f)?.files || []); if (!files.length) return false; for (const file of files) await proofAttach(file, { kind: 'doc', ownerKind: 'intorder', ownerId: id }); toast('تم الرفع'); } });
+  };
+
+  /* ---------------- the steps ---------------- */
+  const popOpen = () => !!document.querySelector('#mform .imo-pop');
+  const after = () => { if (popOpen()) closeModal(); };
+  async function step(x, st, extra) {
+    const by = { by: meId(), byName: (S.session && S.session.name) || '' };
+    const patch = Object.assign({ status: st, updatedAt: nowISO() }, extra || {});
+    if (st === 'accepted') Object.assign(patch, { acceptedAt: nowISO(), acceptedBy: by.by, acceptedByName: by.byName });
+    if (st === 'inprogress') Object.assign(patch, { startedAt: nowISO(), startedByName: by.byName }, x.acceptedAt ? {} : { acceptedAt: nowISO(), acceptedBy: by.by, acceptedByName: by.byName });
+    if (st === 'done') Object.assign(patch, { doneAt: nowISO(), doneByName: by.byName });
+    if (st === 'received') Object.assign(patch, { receivedAt: nowISO() });
+    if (st === 'rejected') Object.assign(patch, { rejectedAt: nowISO(), rejectedBy: by.by, rejectedByName: by.byName });
+    if (st === 'cancelled') Object.assign(patch, { cancelledAt: nowISO(), cancelledByName: by.byName });
+    await Store.update(COL, x.id, patch);
+  }
+  const senders = x => headsOf(x.fromDeptId).map(w => w.id).concat(x.createdBy && String(x.createdBy).startsWith('w:') ? [String(x.createdBy).slice(2)] : []);
+  ACTIONS.imoAccept = async id => { const x = byId(COL, id); if (!x || x.status !== 'sent' || !canAct(x)) return; await step(x, 'accepted'); push(senders(x), `${deptName(x.toDeptId)} قبل ${x.number}`, x.title, id); toast(`قبلت ${x.number}`); after(); };
+  ACTIONS.imoStart = async id => { const x = byId(COL, id); if (!x || !['sent', 'accepted'].includes(x.status) || !canAct(x)) return; await step(x, 'inprogress'); toast(`${x.number} شغّال`); after(); };
+  ACTIONS.imoDone = async id => {
+    const x = byId(COL, id); if (!x || x.status !== 'inprogress' || !canAct(x)) return;
+    const pr = await proofDialog({ title: `${x.number} جاهز — ${x.title}`, intro: `يوصل لقسم ${deptName(x.fromDeptId)} إنه جاهز للاستلام`, requireFile: false, kind: 'proof', ownerKind: 'intorder', ownerId: id, fileLabel: 'صورة الشغل الجاهز', noteLabel: 'ملاحظة (اختياري)' });
+    if (!pr) return;
+    await step(x, 'done', { doneProof: pr });
+    await closeTask(`imo_${id}_to`, pr);
+    const t = `${x.number} جاهز للاستلام — ${x.title}`; const d = `قسم ${deptName(x.toDeptId)} خلّص المطلوب. استلمه وسجّل الاستلام بصورة.`;
+    await Store.save('tasks', imoTask(x, 'back', x.fromDeptId, t, d), { silent: true });
+    push(senders(x), t, d, id); toast(`${x.number} جاهز — وصل لقسم ${deptName(x.fromDeptId)}`);
+  };
+  ACTIONS.imoReject = id => {
+    const x = byId(COL, id); if (!x || !['sent', 'accepted'].includes(x.status) || !canAct(x)) return;
+    openModal({ title: `رفض ${x.number}`, submitLabel: 'رفض الأمر', body: `<div class="form">${field('سبب الرفض', `<textarea id="f-note" name="note" required placeholder="مثال: الخامة مش موجودة — أو القسم مش بيعمل الشغل ده"></textarea>`, 'full')}</div>`,
+      onSubmit: async f => { const d = formData(f); if (!(d.note || '').trim()) { toast('اكتب سبب الرفض', 'err'); return false; } await step(x, 'rejected', { rejectNote: d.note.trim() }); await closeTask(`imo_${id}_to`); await closeTask(`imo_${id}_back`); push(senders(x), `${deptName(x.toDeptId)} رفض ${x.number}`, d.note.trim(), id); toast(`اترفض ${x.number}`); } });
+  };
+  ACTIONS.imoCancel = async id => { const x = byId(COL, id); if (!x || !['sent', 'accepted', 'inprogress'].includes(x.status) || !canCancel(x)) return; if (!(await confirmDlg(`إلغاء ${x.number}؟`, 'إلغاء الأمر'))) return; await step(x, 'cancelled'); await closeTask(`imo_${id}_to`); await closeTask(`imo_${id}_back`); push(headsOf(x.toDeptId).map(w => w.id), `${x.number} اتلغى`, x.title, id); toast(`اتلغى ${x.number}`); };
+  ACTIONS.imoReceive = async id => {
+    const x = byId(COL, id); if (!x || x.status !== 'done' || !canRecv(x)) return;
+    const pr = await proofDialog({ title: `استلام ${x.number} من ${deptName(x.toDeptId)}`, intro: 'صورة الشغل عند الاستلام + حالته + ملاحظة قصيرة', status: [['ok', 'سليم — مطابق'], ['issue', 'فيه مشكلة']], statusLabel: 'حالة الشغل', requireFile: typeof proofRequired === 'function' ? proofRequired() : true, fileOptionalWhen: ['issue'], kind: 'proof', ownerKind: 'intorder', ownerId: id, fileLabel: 'صورة الشغل المستلم', noteLabel: 'ملاحظة الاستلام' });
+    if (!pr) return;
+    await step(x, 'received', { received: { ok: pr.status !== 'issue', note: pr.note || '', photo: pr.thumb || null, fileIds: pr.fileIds || [], at: pr.at, by: pr.by, byName: pr.byName, status: pr.status || 'ok', thumb: pr.thumb || null } });
+    await closeTask(`imo_${id}_to`); await closeTask(`imo_${id}_back`, pr);
+    if (pr.status === 'issue') await notifyRole('manager', `مشكلة في استلام أمر تصنيع داخلي — ${x.number}`, `${route(x)} · ${x.title}\n${pr.note || ''}`, { id: `imo_issue_${id}`, priority: 'urgent', orderId: x.orderId || null, fields: { imoId: id } });
+    toast(pr.status === 'issue' ? 'اتسجّل الاستلام مع مشكلة — وصل لمدير المصنع' : `اتسلّم ${x.number}`);
+  };
+
+  /* ---------------- time: daily hours allocated to an order (attendance rows alloc[{ orderId, imoId, h }]) ---------------- */
+  const WORKING = ['accepted', 'inprogress'];
+  const imoLabel = x => `${L('أمر تصنيع داخلي', 'Internal manufacturing order')} ${x.number || ''} — ${x.title || ''}`;
+  /* the open orders a worker's hours may go to: the head of the making department; the owner / factory manager for a worker of it */
+  const allocImos = w => all().filter(x => WORKING.includes(x.status) && x.orderId && byId('orders', x.orderId) && (leadDepts().includes(x.toDeptId) || ((isAdmin() || role() === 'manager') && deptsOf(w).includes(x.toDeptId))));
+  window.nfImoAllocTargets = w => allocImos(w || {}).map(x => x.id);
+  function imoHours(x) {
+    const by = {}; let tot = 0;
+    list('attendance').forEach(doc => Object.entries((doc && doc.rows) || {}).forEach(([date, rows]) => Object.entries(rows || {}).forEach(([wid, r]) => ((r && r.alloc) || []).forEach(a => {
+      if (!a || a.imoId !== x.id) return; const h = +a.h || 0; if (!h) return;
+      const b = by[wid] || (by[wid] = { wid, h: 0, days: new Set() }); b.h += h; b.days.add(date); tot += h;
+    }))));
+    return { tot: Math.round(tot * 100) / 100, rows: sortBy(Object.values(by), b => -b.h) };
+  }
+  window.nfImoHours = id => { const x = byId(COL, id); if (!x) return null; const t = imoHours(x); return { tot: t.tot, rows: t.rows.map(b => ({ wid: b.wid, h: Math.round(b.h * 100) / 100, days: b.days.size })) }; };
+  function timeCard(x) {
+    if (!(typeof isAdmin === 'function' && isAdmin())) return '';
+    const t = imoHours(x); const hr = h => `${fmtNum(Math.round(h * 100) / 100)} ${L('س', 'h')}`;
+    return `<div class="card imo-time" id="imo-time"><div class="cardhead"><h3>${L('الوقت', 'Time')}</h3><div class="grow"></div><span class="badge acc">${hr(t.tot)}</span></div>
+      ${t.rows.length ? `<div class="list">${t.rows.map(b => { const w = byId('workers', b.wid); return `<div class="item" style="cursor:default"><div class="main"><div class="title">${esc(w ? w.name : b.wid)}</div><div class="meta">${w && w.deptId ? `<span>${esc(deptName(w.deptId))}</span>` : ''}<span>${b.days.size} ${L('يوم', 'days')}</span></div></div><div class="end"><b class="num">${hr(b.h)}</b></div></div>`; }).join('')}</div>
+        <div class="imo-ttot"><span>${L('الإجمالي', 'Total')}</span><b class="num">${hr(t.tot)}</b></div>` : `<div class="muted small">${L('لسه محدش اتوزّعله ساعات على الأمر ده. رئيس القسم بيوزّع الساعات من «الحضور» ← توزيع الساعات.', 'No hours allocated to this order yet. The department head allocates hours from Attendance → hours allocation.')}</div>`}</div>`;
+  }
+  /* the attendance allocation window: open internal orders join the job orders as targets */
+  if (typeof ACTIONS.attAlloc === 'function') ACTIONS.attAlloc = (base => function (arg) {
+    const [date, wid] = String(arg || '').split(':'); const w = byId('workers', wid); if (!w) return base.apply(this, arguments);
+    const r = attendanceFor(date)[wid] || {}; const imos = allocImos(w);
+    if (!imos.length && !(r.alloc || []).some(a => a && a.imoId)) return base.apply(this, arguments);
+    const al = (r.alloc || []).map(a => Object.assign({}, a));
+    const hpd = +S.settings.hoursPerDay || 8; const cap = r.s === 'H' ? hpd / 2 : hpd + (+r.ot || 0); const rem = Math.max(0, cap - sum(al, a => a.h));
+    const open = sortBy(list('orders').filter(o => isOpen(o) && o.status !== 'hold' && (role() !== 'head' || orderInMyScope(o))), o => o.code);
+    const lbl = a => { const x = a.imoId ? byId(COL, a.imoId) : null; if (a.imoId) return `<span class="code">${esc(x ? x.number : (a.imoNumber || 'IMO'))}</span> ${esc(L('أمر تصنيع داخلي', 'Internal manufacturing order'))}${x ? ` — ${esc(x.title || '')}` : ''} <span class="tiny muted">${esc(byId('orders', a.orderId)?.code || '')}</span>`; return `<span class="code">${esc(byId('orders', a.orderId)?.code || '?')}</span> ${esc(byId('orders', a.orderId)?.title || '')}`; };
+    const rowsHTML = () => al.map((a, i) => `<div class="row imo-alr" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span class="imo-all">${lbl(a)}</span><span class="num bold">${fmtNum(a.h)} ${L('س', 'h')}</span><button type="button" class="iconbtn" data-al="${i}">${icon('x')}</button></div>`).join('') || `<div class="muted small">${L('لا يوجد توزيع بعد', 'No allocation yet')}</div>`;
+    const sel = `<select id="al-order"><optgroup label="${esc(L('أوامر التشغيل', 'Job orders'))}">${opts(open, '', o => `${o.code} · ${o.title}`)}</optgroup>${imos.length ? `<optgroup label="${esc(L('أوامر التصنيع الداخلية', 'Internal manufacturing orders'))}">${imos.map(x => `<option value="imo:${esc(x.id)}">${esc(imoLabel(x))}</option>`).join('')}</optgroup>` : ''}</select>`;
+    openModal({ title: `${L('توزيع ساعات', 'Allocate hours of')} ${w.name} — ${fmtDate(date)}`, submitLabel: L('حفظ التوزيع', 'Save allocation'),
+      body: `<div id="alrows">${rowsHTML()}</div><div class="sep"></div><div class="form"><div class="field full"><label>${L('أمر التشغيل أو أمر التصنيع الداخلي', 'Job order or internal manufacturing order')}</label>${sel}</div>${field('الساعات', `<input id="al-h" type="number" step="0.5" min="0.5" value="${rem || hpd}" inputmode="decimal">`)}<div class="field"><label>&nbsp;</label><button type="button" class="btn" id="al-add">${icon('plus')}${L('إضافة', 'Add')}</button></div></div><p class="tiny muted" style="margin-top:8px">${L('المتاح اليوم', 'Available today')} ${fmtNum(cap)} ${L('ساعة', 'hours')}${r.ot ? ` (${L('منها', 'of which')} ${fmtNum(r.ot)} ${L('إضافية', 'overtime')})` : ''}</p>${imos.length ? `<p class="tiny muted">${L('ساعات أمر التصنيع الداخلي بتتحسب على مشروع الأمر.', 'Hours on an internal manufacturing order count on its project.')}</p>` : ''}`,
+      onOpen: f => { f.addEventListener('click', e => {
+        const d = e.target.closest('[data-al]'); if (d) { al.splice(+d.dataset.al, 1); $('#alrows', f).innerHTML = rowsHTML(); }
+        if (e.target.closest('#al-add')) {
+          const v = $('#al-order', f).value; const h = num($('#al-h', f).value); if (!v || !h) return;
+          if (v.startsWith('imo:')) { const x = byId(COL, v.slice(4)); if (!x || !x.orderId) return; const ex = al.find(a => a.imoId === x.id); if (ex) ex.h += h; else al.push({ orderId: x.orderId, imoId: x.id, imoNumber: x.number || '', h }); }
+          else { const ex = al.find(a => a.orderId === v && !a.imoId && !a.ot); if (ex) ex.h += h; else al.push({ orderId: v, h }); }
+          $('#alrows', f).innerHTML = rowsHTML(); $('#al-h', f).value = Math.max(0, cap - sum(al, a => a.h)) || '';
+        } }); },
+      onSubmit: async () => { await setAtt(date, w, Object.assign({}, r, { alloc: al })); toast(L('تم حفظ التوزيع', 'Allocation saved')); } });
+  })(ACTIONS.attAlloc);
+
+  /* ---------------- purchase request from the order page (the making department's head) ---------------- */
+  const canPR = x => !!x && W() && WORKING.includes(x.status) && !!x.orderId && leadDepts().includes(x.toDeptId) && typeof canNeed === 'function' && canNeed() && typeof needForm === 'function' && typeof saveNeed === 'function';
+  window.nfImoCanPR = id => canPR(byId(COL, id));
+  const prsOf = x => sortBy(list('purchases').filter(p => p && p.imoId === x.id && !p.deleted), p => p.createdAt || p.date || '', true);
+  ACTIONS.imoNeed = id => {
+    const x = byId(COL, id); if (!canPR(x)) { toast(L('طلب الشراء متاح لرئيس القسم اللي بيصنّع وطول ما الأمر مقبول أو شغّال', 'Purchase requests are for the making department head while the order is accepted or in progress'), 'err'); return; }
+    const o = byId('orders', x.orderId);
+    const ctx = { orderId: x.orderId, deptId: x.toDeptId, imoId: x.id, imoNumber: x.number || '' };
+    /* the form is the normal one; its project picker gets this one project (opened from the order, off-route allowed here only) */
+    const note = `<div class="banner info imo-prn" style="margin:0 0 10px">${icon('layers')}<span>${L('على أمر التصنيع الداخلي', 'For internal manufacturing order')} <b class="code">${esc(x.number || '')}</b> — ${esc(x.title || '')} · ${L('المشروع', 'Project')} <span class="code">${esc((o && o.code) || x.orderCode || '')}</span></span></div>`;
+    openModal({ title: `${L('طلب شراء', 'Purchase request')} — ${x.number || ''}`, wide: true, submitLabel: L('ابعت الطلب', 'Send the request'), body: note + needForm(ctx),
+      onOpen: f => {
+        const lock = (sel, val, label) => { const s = f.querySelector(sel); if (!s) return; s.innerHTML = `<option value="${esc(val)}">${esc(label)}</option>`; s.value = val; s.dataset.imoLock = '1'; };
+        lock('#f-orderId', x.orderId, o ? `${o.code || ''} — ${o.title || ''}` : (x.orderCode || x.orderId));
+        lock('#f-deptId', x.toDeptId, deptName(x.toDeptId));
+      },
+      onSubmit: async f => {
+        const cur = byId(COL, id); if (!canPR(cur)) { toast(L('الأمر اتقفل — مينفعش طلب شراء عليه دلوقتي', 'The order is closed — no purchase request on it now'), 'err'); return false; }
+        const os = f.querySelector('#f-orderId'); if (os) os.value = x.orderId; const ds = f.querySelector('#f-deptId'); if (ds) ds.value = x.toDeptId;
+        const res = await saveNeed(f, Object.assign({}, ctx)); if (res === false || !res) return res;
+        const tag = { imoId: x.id, imoNumber: x.number || '', orderId: x.orderId };
+        const ids = new Set([res.id]); const main = byId('purchases', res.id) || res; (main.rfqIds || []).forEach(i => ids.add(i)); if (main.fromNeed) ids.add(main.fromNeed);
+        list('purchases').filter(p => p && p.fromNeed === res.id).forEach(p => ids.add(p.id));
+        for (const pid of ids) { const p = byId('purchases', pid); if (p && p.imoId !== x.id) { try { await Store.update('purchases', pid, tag, { silent: true }); } catch (e) { console.warn('imo pr tag', e); } } }
+        const rq = main.needReqId && byId('requests', main.needReqId); if (rq && rq.imoId !== x.id) { try { await Store.update('requests', rq.id, { imoId: x.id, imoNumber: x.number || '' }, { silent: true }); } catch (e) { console.warn('imo pr req', e); } }
+        rerender(); return res;
+      } });
+  };
+  function prCard(x) {
+    const ps = prsOf(x); const add = canPR(x);
+    if (!ps.length && !add) return '';
+    const link = !(role() === 'head' || role() === 'employee');
+    const row = p => { const its = (p.kind === 'rfq' ? p.rfqItems : p.needItems) || []; const inner = `<div class="main"><div class="title"><span class="code">${esc(p.number || '')}</span><span>${p.kind === 'rfq' ? L('طلب عرض سعر — أصناف جديدة', 'Request for quotation — new items') : L('طلب شراء خامات', 'Materials purchase request')}</span></div><div class="meta"><span class="imo-pri">${its.slice(0, 3).map(i => `${esc(i.name || '')} × ${fmtNum(i.qty)} ${esc(i.unit || '')}`).join('، ')}${its.length > 3 ? '…' : ''}</span>${p.requestedByName ? `<span>${esc(p.requestedByName)}</span>` : ''}</div></div><div class="end">${badge(PO_STATUS, p.status)}</div>`; return link ? `<a class="item" href="#/purchases/${esc(p.id)}">${inner}</a>` : `<div class="item" style="cursor:default">${inner}</div>`; };
+    return `<div class="card" id="imo-prs"><div class="cardhead"><h3>${L('طلبات الشراء على الأمر', 'Purchase requests on this order')}</h3><span class="muted small">${ps.length}</span><div class="grow"></div>${add ? `<button class="btn sm" data-action="imoNeed" data-arg="${esc(x.id)}">${icon('purchase')}${L('طلب شراء', 'Purchase request')}</button>` : ''}</div>${ps.length ? `<div class="list">${ps.map(row).join('')}</div>` : `<div class="muted small">${L('القسم اللي بيصنّع يقدر يطلب الخامات اللي محتاجها للأمر ده من هنا — بتمشي في نفس سكة موافقات طلبات الخامات.', 'The making department can request the materials it needs for this order here — it follows the normal materials-request approvals.')}</div>`}</div>`;
+  }
+
+  /* ---------------- views ---------------- */
+  const prioB = x => (x.priority && x.priority !== 'normal' ? badge(PRIORITY, x.priority) : '');
+  const late = x => x.needBy && OPEN.includes(x.status) && x.status !== 'done' && x.needBy < todayISO();
+  function item(x) {
+    return `<div class="item ${late(x) ? 'late' : ''}" data-action="go" data-arg="intorders/${esc(x.id)}"><div class="main"><div class="title"><span class="code">${esc(x.number || '')}</span><span>${esc(x.title || '')}</span>${prioB(x)}</div><div class="meta"><span class="imo-rt">${esc(route(x))}</span><span class="code">${esc(orderLabel(x))}</span>${x.needBy ? `<span>مطلوب قبل ${fmtDate(x.needBy)}</span>` : ''}${x.createdByName ? `<span>${esc(x.createdByName)}</span>` : ''}</div></div><div class="end">${stB(x.status)}</div></div>`;
+  }
+  const btns = (x, sm) => {
+    const c = sm ? 'xs' : 'sm'; const a = [];
+    if (canAct(x)) {
+      if (x.status === 'sent') a.push(`<button class="btn ${c} p" data-action="imoAccept" data-arg="${x.id}">${icon('check')}قبول</button>`);
+      if (x.status === 'accepted' || (x.status === 'sent' && !sm)) a.push(`<button class="btn ${c} ${x.status === 'accepted' ? 'a' : ''}" data-action="imoStart" data-arg="${x.id}">${icon('play')}بدء الشغل</button>`);
+      if (x.status === 'inprogress') a.push(`<button class="btn ${c} p" data-action="imoDone" data-arg="${x.id}">${icon('check')}جاهز</button>`);
+      if (['sent', 'accepted'].includes(x.status) && !sm) a.push(`<button class="btn ${c}" data-action="imoReject" data-arg="${x.id}">رفض</button>`);
+    }
+    if (x.status === 'done' && canRecv(x)) a.push(`<button class="btn ${c} p" data-action="imoReceive" data-arg="${x.id}">${icon('camera')}استلام</button>`);
+    return a;
+  };
+  function vList() {
+    const f = S.ui.filter.intorders || (S.ui.filter.intorders = { tab: 'open' });
+    const lead = leadDepts(); let arr = all().filter(imoVisible);
+    const tabs = [['open', 'المفتوحة'], ...(lead.length ? [['in', 'جاية لقسمي'], ['out', 'طالبها قسمي']] : []), ['closed', 'المقفولة'], ['all', 'الكل']];
+    if (!tabs.some(t => t[0] === f.tab)) f.tab = 'open';
+    if (f.tab === 'open') arr = arr.filter(x => OPEN.includes(x.status)); else if (f.tab === 'in') arr = arr.filter(x => lead.includes(x.toDeptId) && OPEN.includes(x.status)); else if (f.tab === 'out') arr = arr.filter(x => lead.includes(x.fromDeptId) && OPEN.includes(x.status)); else if (f.tab === 'closed') arr = arr.filter(x => CLOSED.includes(x.status));
+    const rank = x => (x.status === 'sent' && lead.includes(x.toDeptId)) || (x.status === 'done' && lead.includes(x.fromDeptId)) ? '0' : '1';
+    arr = sortBy(arr, x => rank(x) + (x.needBy || '9999') + (x.number || ''));
+    const mine = needsMe();
+    return `${mine.length ? `<div class="banner warn" style="margin-bottom:12px">${icon('alert')}<span>${mine.length} أمر تصنيع داخلي مستني تصرّفك</span></div>` : ''}
+      <div class="toolbar"><div class="seg">${tabs.map(t => `<button class="${f.tab === t[0] ? 'on' : ''}" data-action="imoTab" data-arg="${t[0]}">${t[1]}</button>`).join('')}</div><span class="muted small">${arr.length} أمر</span></div>
+      ${arr.length ? `<div class="list" id="imo-list">${arr.map(item).join('')}</div>` : `<div class="empty"><b>مفيش أوامر تصنيع داخلية هنا</b>${canCreate() ? 'لو قسمك محتاج حاجة من قسم تاني في المصنع، دوس «أمر تصنيع داخلي» واختار المشروع والقسم' : ''}</div>`}`;
+  }
+  ACTIONS.imoTab = t => { (S.ui.filter.intorders ||= {}).tab = t; render(false); };
+  function vDetail(id) {
+    const x = byId(COL, id); if (!x) return `<div class="empty"><b>الأمر غير موجود</b></div>`;
+    if (!imoVisible(x)) return `<div class="empty"><b>الأمر ده مش من أقسامك</b></div>`;
+    const docs = attachmentsOf('intorder', id); const o = x.orderId ? byId('orders', x.orderId) : null;
+    const acts = btns(x, false);
+    if (x.status === 'sent' && canCancel(x)) acts.push(`<button class="btn sm" data-action="imoEdit" data-arg="${x.id}">${icon('edit')}تعديل</button>`);
+    if (!CLOSED.includes(x.status) && (canCancel(x) || canAct(x))) acts.push(`<button class="btn sm" data-action="imoFiles" data-arg="${x.id}">${icon('plus')}ملفات</button>`);
+    if (canPR(x)) acts.push(`<button class="btn sm" data-action="imoNeed" data-arg="${x.id}">${icon('purchase')}${L('طلب شراء', 'Purchase request')}</button>`);
+    if (['sent', 'accepted', 'inprogress'].includes(x.status) && canCancel(x)) acts.push(`<button class="btn sm ghost" data-action="imoCancel" data-arg="${x.id}">إلغاء</button>`);
+    const steps = ['sent', 'accepted', 'inprogress', 'done', 'received'].map(k => [k, stMap()[k][0]]); const order = steps.map(s => s[0]);
+    const stopAt = ['rejected', 'cancelled'].includes(x.status) ? (x.status === 'rejected' ? 0 : (x.startedAt ? 2 : x.acceptedAt ? 1 : 0)) : -1; const cur = stopAt >= 0 ? stopAt : order.indexOf(x.status);
+    const who = (t, n) => (t ? `<div class="tiny muted">${esc(n || '')} · ${fmtDate(String(t).slice(0, 10))}</div>` : '');
+    return `<div class="grid gmain imo-detail"><div class="stack">
+      <div class="card"><div class="cardhead"><h2 style="margin:0">${esc(x.number || '')}</h2><div class="grow"></div>${prioB(x)}${stB(x.status)}</div>
+        <div class="rsteps imo-steps">${steps.map((s, i) => `<div class="rstep ${stopAt >= 0 ? (i < cur ? 'good' : '') : (i < cur || x.status === 'received' ? 'good' : i === cur ? 'warn' : '')}"><div class="rn">${i + 1}</div><div class="small bold">${s[1]}</div></div>`).join(`<div class="rarrow">${isEn() ? '→' : '←'}</div>`)}</div>
+        ${x.status === 'rejected' ? `<div class="banner crit" style="margin:8px 0">${icon('alert')}<span>اترفض: ${esc(x.rejectNote || '')} — ${esc(x.rejectedByName || '')}</span></div>` : ''}
+        ${x.status === 'cancelled' ? `<div class="banner crit" style="margin:8px 0">${icon('alert')}<span>اتلغى — ${esc(x.cancelledByName || '')}</span></div>` : ''}
+        <div class="imo-meta"><div><div class="tiny muted">من قسم</div><b>${esc(deptName(x.fromDeptId))}</b></div><div><div class="tiny muted">إلى قسم</div><b>${esc(deptName(x.toDeptId))}</b></div><div><div class="tiny muted">المشروع</div>${o ? `<a href="#/orders/${esc(o.id)}"><span class="code">${esc(o.code)}</span></a>` : `<span class="code">${esc(x.orderCode || '—')}</span>`}${x.orderTitle ? `<div class="tiny muted">${esc(x.orderTitle)}</div>` : ''}</div><div><div class="tiny muted">مطلوب قبل</div>${x.needBy ? `<span class="${late(x) ? 'crit-ink' : ''}">${fmtDate(x.needBy)}</span>` : '—'}</div></div>
+        <div class="sep"></div><div class="bold">${esc(x.title || '')}</div>${x.desc ? `<div class="small imo-desc" style="margin-top:4px">${esc(x.desc)}</div>` : ''}
+        ${(x.items || []).length ? `<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>البند</th><th class="n">الكمية</th><th>الوحدة</th></tr></thead><tbody>${x.items.map(it => `<tr><td>${esc(it.desc)}</td><td class="n">${fmtNum(it.qty)}</td><td>${esc(it.unit || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        ${acts.length ? `<div class="imo-acts no-print">${acts.join('')}</div>` : ''}</div>
+      <div class="card"><div class="cardhead"><h3>الرسومات والملفات</h3><span class="muted small">${docs.filter(a => a.kind === 'doc').length}</span></div>${attachGallery(docs.filter(a => a.kind === 'doc'), { empty: 'مفيش ملفات مرفقة' })}</div>
+      ${prCard(x)}
+    </div><div class="stack">
+      <div class="card"><div class="cardhead"><h3>المتابعة</h3></div><div class="list">
+        <div class="item" style="cursor:default"><div class="main"><div class="title">اتبعت</div>${who(x.createdAt, x.createdByName)}</div></div>
+        ${x.acceptedAt ? `<div class="item" style="cursor:default"><div class="main"><div class="title">القسم قبله</div>${who(x.acceptedAt, x.acceptedByName)}</div></div>` : ''}
+        ${x.startedAt ? `<div class="item" style="cursor:default"><div class="main"><div class="title">بدأ الشغل</div>${who(x.startedAt, x.startedByName)}</div></div>` : ''}
+        ${x.doneAt ? `<div class="item" style="cursor:default"><div class="main"><div class="title">جاهز للاستلام</div>${who(x.doneAt, x.doneByName)}${x.doneProof && (x.doneProof.thumb || x.doneProof.note) ? `<div style="margin-top:4px">${proofChip(x.doneProof, `imo:${x.id}:doneProof`, 'الشغل الجاهز')}</div>` : ''}</div></div>` : ''}
+        ${x.received ? `<div class="item" style="cursor:default"><div class="main"><div class="title">اتسلّم ${badge(HAND_STATUS, x.received.ok ? 'ok' : 'issue')}</div>${who(x.receivedAt, x.received.byName)}${x.received.note ? `<div class="small imo-desc">${esc(x.received.note)}</div>` : ''}<div style="margin-top:4px">${proofChip(x.received, `imo:${x.id}:received`, 'صورة الاستلام')}</div></div></div>` : ''}
+      </div></div>
+      ${timeCard(x)}
+    </div></div>`;
+  }
+  /* proof photos of an internal order open in the lightbox */
+  ACTIONS.lightbox = (base => arg => { const [k, id, key] = String(arg || '').split(':'); if (k !== 'imo') return base(arg); const pr = (byId(COL, id) || {})[key]; if (pr && pr.fileIds && pr.fileIds.length && byId('files', pr.fileIds[0]) && byId('files', pr.fileIds[0]).store !== 'thumb') { ACTIONS.fileOpen(pr.fileIds[0] + ':att'); return; } lightbox(pr && pr.thumb, pr ? `${pr.byName || ''}${pr.note ? ' — ' + pr.note : ''}` : ''); })(ACTIONS.lightbox);
+
+  EXTRA_VIEWS.intorders = r => (canSee('intorders') ? (r.id ? vDetail(r.id) : vList()) : '<div class="card qlock"><h3>الصفحة دي مش متاحة لك</h3></div>');
+  EXTRA_TITLES.intorders = (r, addBtn) => {
+    if (r.id) { let x = byId(COL, r.id); if (x && !imoVisible(x)) x = null; return { title: x ? x.number : 'أمر تصنيع داخلي', sub: x ? esc(x.title || '') : '', actions: `<a class="btn ghost" href="#/intorders">${icon('back')}<span>كل أوامر التصنيع الداخلية</span></a>` }; }
+    return { sub: 'قسم بيطلب من قسم تاني يصنّع له حاجة على مشروع: اتبعت ← قبول ← شغّال ← جاهز ← استلام', actions: canCreate() ? addBtn('أمر تصنيع داخلي', 'imoNew') : '' };
+  };
+  if (typeof VIEW_TITLES === 'object') VIEW_TITLES.intorders = 'أوامر التصنيع الداخلية';
+  const seesPage = () => !!S.session && role() !== 'kiosk' && (seesAll() || leadDepts().length > 0);
+  canSee = (base => function (v) { if (v === 'intorders') return seesPage(); return base.apply(this, arguments); })(canSee);
+  (() => { if (NAV.some(n => n.id === 'intorders')) return; const e = { id: 'intorders', label: 'أوامر التصنيع الداخلية', icon: 'layers', count: () => needsMe().length, countCls: 'warn' }; let i = NAV.findIndex(n => n.id === 'external'); if (i < 0) i = NAV.findIndex(n => n.id === 'boards'); if (i >= 0) NAV.splice(i + 1, 0, e); else NAV.push(e); })();
+
+  /* ---------------- (a) the card on the project page (production section) ---------------- */
+  function intOrdersCard(o) {
+    if (!o || !seesPage()) return '';
+    const arr = sortBy(all().filter(x => x.orderId === o.id && imoVisible(x)), x => x.createdAt || '', true);
+    const add = canCreate() && isOpen(o);
+    if (!arr.length && !add) return '';
+    return `<div class="card" data-psec="make" id="imo-card"><div class="cardhead"><h3>أوامر التصنيع الداخلية</h3><span class="muted small">${arr.length}</span><div class="grow"></div>${add ? `<button class="btn sm" data-action="imoNew" data-arg="${esc(o.id)}">${icon('plus')}أمر تصنيع داخلي</button>` : ''}</div>${arr.length ? `<div class="list">${arr.map(item).join('')}</div>` : '<div class="muted small">مفيش أوامر تصنيع داخلية على المشروع ده</div>'}</div>`;
+  }
+  window.intOrdersCard = intOrdersCard;
+  if (typeof extOrdersCard === 'function') extOrdersCard = (base => function (o) { let h = ''; try { h = base.apply(this, arguments) || ''; } catch (e) { console.warn(e); } try { return h + intOrdersCard(o); } catch (e) { console.warn('imo card', e); return h; } })(extOrdersCard);
+
+  /* ---------------- (c) the receiving inbox on the departments board + the department popup ---------------- */
+  const inboxOf = d => sortBy(all().filter(x => x.toDeptId === d && ['sent', 'accepted', 'inprogress'].includes(x.status) && imoVisible(x)), x => ({ sent: '0', accepted: '1', inprogress: '2' }[x.status] || '3') + (x.needBy || '9999'));
+  const tcard = x => `<div class="tcard ${late(x) ? 'late' : x.status === 'inprogress' ? 'active' : ''}" data-action="go" data-arg="intorders/${esc(x.id)}"><div class="t"><span class="code">${esc(x.number || '')}</span> ${esc(x.title || '')}</div><div class="m"><span>من ${esc(deptName(x.fromDeptId))}</span><span class="code">${esc(orderLabel(x))}</span>${x.needBy ? `<span>${fmtDate(x.needBy)}</span>` : ''}${prioB(x)}${stB(x.status)}</div>${(() => { const b = btns(x, true); return b.length ? `<div class="acts">${b.join('')}</div>` : ''; })()}</div>`;
+  const inboxHTML = d => { const xs = inboxOf(d); if (!xs.length) return ''; return `<div class="imo-inbox" data-imo-dept="${esc(d)}"><div class="imo-h">${icon('layers')}<span>طلبات تصنيع داخلية (${xs.length})</span></div>${xs.map(tcard).join('')}</div>`; };
+  if (typeof vBoardsBase === 'function') vBoardsBase = (base => function () {
+    let html = base.apply(this, arguments);
+    try {
+      prodDepts().forEach(d => { const head = `<div class="col"><div class="ch"><span>${esc(d.name)}</span>`; const i = html.indexOf(head); if (i < 0) return; const j = html.indexOf('<div class="cb">', i); if (j < 0) return; const ins = inboxHTML(d.id); if (!ins) return; const k = j + '<div class="cb">'.length; html = html.slice(0, k) + ins + html.slice(k); });
+    } catch (e) { console.warn('imo board', e); }
+    return html;
+  })(vBoardsBase);
+  if (typeof ACTIONS.bdDept === 'function') ACTIONS.bdDept = (base => function (id) {
+    const r = base.apply(this, arguments);
+    try { const mb = document.querySelector('#mform .mb'); const xs = inboxOf(id); if (mb && xs.length) mb.insertAdjacentHTML('beforeend', `<div class="imo-pop"><h4>طلبات تصنيع داخلية للقسم (${xs.length})</h4><div class="list">${xs.map(x => `<div class="item" data-action="go" data-arg="intorders/${esc(x.id)}"><div class="main"><div class="title"><span class="code">${esc(x.number || '')}</span><span>${esc(x.title || '')}</span></div><div class="meta"><span>من ${esc(deptName(x.fromDeptId))}</span><span class="code">${esc(orderLabel(x))}</span>${x.needBy ? `<span>${fmtDate(x.needBy)}</span>` : ''}${stB(x.status)}</div></div><div class="end">${btns(x, true).join('')}</div></div>`).join('')}</div></div>`); if (mb && typeof i18nApply === 'function' && typeof I18N !== 'undefined' && I18N.lang === 'en') i18nApply(mb.querySelector('.imo-pop')); } catch (e) { console.warn('imo popup', e); }
+    return r;
+  })(ACTIONS.bdDept);
+
+  /* ---------------- tasks: the target / sending head sees the order's task even when the project route skips his department ---------------- */
+  if (typeof taskVisible === 'function') taskVisible = (base => function (t) { if (base.apply(this, arguments)) return true; try { return !!t && t.source === 'imo' && !!t.deptId && leadDepts().includes(t.deptId); } catch (e) { return false; } })(taskVisible);
+  /* the task page of an internal order links to the order */
+  RENDER_HOOKS.push(() => {
+    const r = S.route || {}; if (r.view !== 'tasks' || !r.id) return; const t = byId('tasks', r.id); if (!t || t.source !== 'imo' || !t.imoId) return;
+    const v = document.getElementById('view'); if (!v || v.querySelector('.imo-tlink')) return; const x = byId(COL, t.imoId); if (!x) return;
+    v.insertAdjacentHTML('afterbegin', `<div class="banner info imo-tlink" style="margin-bottom:12px">${icon('layers')}<span>${esc(x.number || '')} — ${stB(x.status)}</span><a class="btn sm" style="margin-inline-start:auto" href="#/intorders/${esc(x.id)}">افتح أمر التصنيع</a></div>`);
+    if (typeof i18nApply === 'function' && typeof I18N !== 'undefined' && I18N.lang === 'en') try { i18nApply(v.querySelector('.imo-tlink')); } catch (e) { /* ignore */ }
+  });
+})();
+/* =====================================================================
+   v7.95 — full vs partial overtime (owner approved, brief: overtime kind; rule updated by the owner the same day):
+   · the department head picks the kind when he registers «tonight's overtime»:
+       full    — with a meal, only once the factory manager (or the owner) approved it
+       partial — never a meal
+   · BOTH kinds registered by a head wait for the factory manager (night.mgr = 'pending'); registered by the factory manager / the owner
+     they are approved at once. Older entries without a kind are full and already approved.
+   · the factory manager gets a task «approve full / partial overtime — <dept> — <n> people» (no money) with approve / reject, on the
+     overtime page and inside the task. Approve → (full) the meals count, after the day's request as an «addition».
+     Reject → no meal, the night no longer covers the check-out (the hours go back to the normal extra-hours approval); the head is told.
+   · check-out cover: pending = provisional cover, approved = cover, rejected = none (nfOtNightOf + nfOtTaskFor skip rejected nights).
+   · the core rules (meal counts, Bahaa's note, deductions, payroll meals, report) live in 99zzZzZZt-ot-night.js through nfOtKind.mealOn.
+   ===================================================================== */
+(function () {
+  if (window.__NF_OTKIND__) return; window.__NF_OTKIND__ = 1;
+  if ((typeof isStuSys === 'function' && isStuSys()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  if (typeof EXTRA_VIEWS === 'undefined' || !window.nfOtKind) return;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const K = window.nfOtKind;
+  const pol = () => (S.settings && S.settings.policy) || {};
+  const isMgr = () => role() === 'manager';
+  const canApprove = () => !!S.session && writable() && (isAdmin() || isMgr());
+  const liveIds = t => ((t && t.ot && t.ot.workerIds) || []).filter(Boolean);
+  const me = () => S.session || {};
+  const people = n => L(`${n} ${n === 1 ? 'شخص' : 'أشخاص'}`, `${n} ${n === 1 ? 'person' : 'people'}`);
+  const peopleAr = n => `${n} ${n === 1 ? 'شخص' : 'أشخاص'}`;
+  const mtid = id => `otkm_${id}`;
+  const isRej = t => !!(t && t.ot && t.ot.night && t.ot.night.mgr === 'rej');
+  /* a rejected night is no approved overtime task for the check-out cover */
+  if (typeof window.nfOtTaskFor === 'function') window.nfOtTaskFor = (base => function (date, wid) {
+    const t = base.apply(this, arguments); if (!t || !isRej(t)) return t;
+    return list('tasks').find(x => x && x.ot && x.ot.date === date && x.status !== 'cancelled' && x.ot.status === 'ok' && (x.ot.workerIds || []).includes(wid) && !isRej(x)) || null;
+  })(window.nfOtTaskFor);
+
+  /* the day's meals request deadline (same as the server: ask time + 3 h) */
+  window.nfOtSumPassed = () => { try { const a = tmToMin(pol().otAskAt || '12:00'); const n = tmToMin(nowTm()); return a != null && n != null && n >= a + 180; } catch (e) { return false; } };
+
+  /* ---------- the form: the kind ---------- */
+  window.nfOtKindField = t => {
+    const k0 = t ? K.kindOf(t) : ''; const boss = isAdmin() || isMgr();
+    const sub = { full: boss ? L('فيه وجبة', 'With a meal') : L('فيه وجبة — بعد اعتماد مدير المصنع', 'With a meal — after the factory manager approves'), partial: boss ? L('من غير وجبة', 'No meal') : L('من غير وجبة — بعد اعتماد مدير المصنع', 'No meal — after the factory manager approves') };
+    const lab = { full: L('سهر كامل (فيه وجبة)', 'Full overtime (with a meal)'), partial: L('سهر جزئي (من غير وجبة)', 'Partial overtime (no meal)') };
+    const st = t ? K.mgrOf(t) : '';
+    const note = t && st === 'rej' ? `<div class="tiny otk-fn crit">${esc(L('مدير المصنع رفض السهر ده', 'The factory manager rejected this overtime'))}</div>` : t && st === 'pending' ? `<div class="tiny otk-fn">${esc(L('مستني اعتماد مدير المصنع', 'Waiting for the factory manager'))}</div>` : '';
+    return `<div class="field full otk-f"><label>${esc(L('نوع السهر', 'Overtime kind'))} <span class="otk-req">*</span></label><div class="otn-tiles two otk-tiles">${['full', 'partial'].map(k => `<label class="otn-t otk-t" data-kind="${k}"><input type="radio" name="otkind" value="${k}" ${k === k0 ? 'checked' : ''}><span><b>${esc(lab[k])}</b><small>${esc(sub[k])}</small></span></label>`).join('')}</div>${note}</div>`;
+  };
+
+  /* ---------- the stored state of the kind on save ---------- */
+  window.nfOtKindState = (kind, n0, ex, prev, wids) => {
+    const now = nowISO(); const m = me();
+    if (isAdmin() || isMgr()) return n0 && n0.kind === kind && n0.mgr === 'ok' ? { kind } : { kind, mgr: 'ok', mgrBy: m.name || '', mgrById: m.id || null, mgrAt: now, mgrAuto: true, mgrRej: null };
+    const pk = n0 && n0.kind ? n0.kind : (ex ? 'full' : ''); const pm = n0 && n0.mgr ? n0.mgr : (ex ? 'ok' : '');
+    const noNew = (wids || []).every(x => (prev || []).includes(x));
+    if (ex && pk === kind && pm === 'ok' && noNew) return { kind };
+    if (ex && pk === kind && pm === 'rej') return { kind };
+    return { kind, mgr: 'pending', mgrAskAt: now, byWid: m.workerId || null, byId: m.id || null };
+  };
+
+  /* ---------- after a save: the factory manager's task ---------- */
+  async function closeMgrTask(t, note, cancel) {
+    const x = byId('tasks', mtid(t.id)); if (!x || !['open', 'doing'].includes(x.status)) return;
+    await Store.update('tasks', x.id, cancel ? { status: 'cancelled', updatedAt: nowISO() } : { status: 'done', doneAt: nowISO(), doneByName: me().name || '', doneNote: note || '', autoClosed: true, updatedAt: nowISO() }, { silent: true });
+  }
+  window.nfOtKindAfter = async (t, n0) => {
+    const live = liveIds(t).length && t.status !== 'cancelled';
+    if (!live || K.mgrOf(t) !== 'pending') { await closeMgrTask(t, '', !live); return; }
+    const o = byId('orders', t.orderId) || {}; const n = liveIds(t).length; const now = nowISO(); const had = byId('tasks', mtid(t.id));
+    const names = liveIds(t).map(x => (byId('workers', x) || {}).name || '').filter(Boolean).join('، ');
+    const title = K.kindOf(t) === 'partial' ? `اعتمد سهر جزئي — ${deptName(t.deptId)} — ${peopleAr(n)}` : `اعتمد سهر كامل — ${deptName(t.deptId)} — ${peopleAr(n)}`;
+    const place = t.ot.night.place === 'site' ? 'في موقع المشروع' : 'في المصنع';
+    const desc = K.kindOf(t) === 'partial' ? `${o.code || ''} ${o.title || ''} — ${place}\n${names}\nمن ${t.ot.byName || me().name || ''} — سهر جزئي من غير وجبة: اعتمد أو ارفض من «سهر النهارده».` : `${o.code || ''} ${o.title || ''} — ${place}\n${names}\nمن ${t.ot.byName || me().name || ''} — سهر كامل فيه وجبة: اعتمد أو ارفض من «سهر النهارده».`;
+    const same = had && ['open', 'doing'].includes(had.status) && had.title === title && had.desc === desc;
+    if (same) return;
+    await Store.save('tasks', Object.assign({}, had || {}, { id: mtid(t.id), title, desc, link: '/#/otnight', assigneeId: null, toRole: 'manager', deptId: t.deptId || null, orderId: t.orderId || null, kind: 'task', source: 'otkind', otRef: t.id, priority: 'high', status: 'open', dueDate: t.ot.date, createdBy: (had && had.createdBy) || me().id || null, createdByName: (had && had.createdByName) || me().name || '', createdAt: (had && had.createdAt) || now, updatedAt: now }), { silent: true });
+    try { if (typeof pushSend === 'function') pushSend(['role:manager'], title, `${o.code || ''} — ${place}`, '/#/otnight', 'otk-' + t.id).catch(() => { }); } catch (e) { /* ignore */ }
+  };
+
+  /* ---------- approve / reject (the factory manager or the owner) ---------- */
+  ACTIONS.otkOk = async id => {
+    const t = byId('tasks', id); if (!t || !t.ot || !t.ot.night || !canApprove() || K.mgrOf(t) === 'ok') return;
+    const now = nowISO(); const n1 = Object.assign({}, t.ot.night, { mgr: 'ok', mgrBy: me().name || '', mgrById: me().id || null, mgrAt: now, mgrRej: null });
+    await Store.update('tasks', t.id, { ot: Object.assign({}, t.ot, { night: n1 }), updatedAt: now });
+    await closeMgrTask(t, 'اتعتمد');
+    try { if (typeof window.nfOtMealSync === 'function') await window.nfOtMealSync(byId('tasks', t.id)); } catch (e) { console.warn('otkind meals', e); }
+    toast(K.kindOf(t) === 'partial' ? L('اتعتمد السهر الجزئي', 'Partial overtime approved') : L('اتعتمد السهر الكامل — الوجبات اتحسبت', 'Full overtime approved — the meals count')); render(false);
+  };
+  ACTIONS.otkRej = id => {
+    const t = byId('tasks', id); if (!t || !t.ot || !t.ot.night || !canApprove() || K.mgrOf(t) === 'rej') return;
+    const o = byId('orders', t.orderId) || {};
+    const part = K.kindOf(t) === 'partial';
+    openModal({ title: part ? L('رفض السهر الجزئي', 'Reject partial overtime') : L('رفض السهر الكامل', 'Reject full overtime'), submitLabel: L('رفض', 'Reject'), body: `<div class="form"><div class="full small">${esc(`${o.code || ''} — ${deptName(t.deptId)} — ${people(liveIds(t).length)}`)}</div>
+      <div class="tiny muted full">${esc(L('من غير وجبة، والساعات بعد الوردية بترجع لاعتماد الساعات الزيادة العادي. رئيس القسم هيتبلّغ.', 'No meal, and the hours after the shift go back to the normal extra-hours approval. The head is told.'))}</div>
+      ${field(L('السبب', 'Reason'), `<textarea name="reason" required></textarea>`, 'full')}</div>`,
+      onSubmit: async f => {
+        const reason = String(formData(f).reason || '').trim(); if (reason.length < 3) { toast(L('اكتب السبب', 'Write the reason'), 'err'); return false; }
+        const cur = byId('tasks', id); if (!cur) return true; const now = nowISO();
+        const n1 = Object.assign({}, cur.ot.night, { mgr: 'rej', mgrRej: { reason, by: me().name || '', byId: me().id || null, at: now } });
+        await Store.update('tasks', cur.id, { ot: Object.assign({}, cur.ot, { night: n1 }), updatedAt: now });
+        await closeMgrTask(cur, 'اترفضت');
+        try { if (typeof window.nfOtMealSync === 'function') await window.nfOtMealSync(byId('tasks', cur.id)); } catch (e) { console.warn('otkind meals', e); }
+        /* the head who registered it is told */
+        const who = cur.ot.night.byWid || cur.ot.by || null;
+        if (who) {
+          const wid = String(who).replace(/^w:/, ''); const isW = !!byId('workers', wid);
+          const title = part ? `السهر الجزئي اترفض — ${deptName(cur.deptId)} — ${o.code || ''}` : `السهر الكامل اترفض — ${deptName(cur.deptId)} — ${o.code || ''}`; const desc = `السبب: ${reason}\nمن غير وجبة — الساعات بعد الوردية بترجع لاعتماد الساعات الزيادة — من ${me().name || ''}`;
+          await Store.save('tasks', { id: `otkr_${cur.id}`, title, desc, link: '/#/otnight', assigneeId: isW ? wid : who, toRole: null, deptId: cur.deptId || null, orderId: cur.orderId || null, kind: 'update', source: 'otkind', otRef: cur.id, priority: 'high', status: 'open', createdBy: me().id || null, createdByName: me().name || '', createdAt: now, updatedAt: now }, { silent: true });
+          try { if (typeof pushSend === 'function') pushSend([isW ? 'w:' + wid : who], title, desc.split('\n')[0], '/#/otnight', 'otkr-' + cur.id).catch(() => { }); } catch (e) { /* ignore */ }
+        }
+        toast(L('اترفض — رئيس القسم اتبلّغ', 'Rejected — the head is told')); render(false); return true;
+      } });
+  };
+
+  /* ---------- the pill + the approve bar on the entry card ---------- */
+  window.nfOtKindPill = t => {
+    const part = K.kindOf(t) === 'partial'; const m = K.mgrOf(t);
+    if (m === 'pending') return `<span class="badge warn otk-pill">${esc(part ? L('جزئي — مستني مدير المصنع', 'Partial — waiting for the factory manager') : L('كامل — مستني مدير المصنع', 'Full — waiting for the factory manager'))}</span>`;
+    if (m === 'rej') return `<span class="badge crit otk-pill">${esc(part ? L('جزئي — اترفض', 'Partial — rejected') : L('كامل — الوجبة اترفضت', 'Full — meal rejected'))}</span>`;
+    return `<span class="badge ${part ? 'otk-part' : 'good'} otk-pill">${esc(part ? L('جزئي ✓', 'Partial ✓') : L('كامل ✓', 'Full ✓'))}</span>`;
+  };
+  window.nfOtKindBar = t => {
+    const m = K.mgrOf(t); const n = t.ot.night; const part = K.kindOf(t) === 'partial';
+    const rej = m === 'rej' && n.mgrRej ? `<div class="tiny otk-why">${esc(L(`رفض ${n.mgrRej.by || ''}: ${n.mgrRej.reason || ''}`, `Rejected by ${n.mgrRej.by || ''}: ${n.mgrRej.reason || ''}`))}</div>` : '';
+    const ok = m === 'ok' && n.mgrBy && !n.mgrAuto ? `<div class="tiny muted">${esc(L(`اعتمده ${n.mgrBy}`, `Approved by ${n.mgrBy}`))}</div>` : '';
+    const ask = part ? L('سهر جزئي من غير وجبة — محتاج اعتمادك', 'Partial overtime, no meal — needs your approval') : L('سهر كامل فيه وجبة — محتاج اعتمادك', 'Full overtime with a meal — needs your approval');
+    const btns = canApprove() && (m === 'pending' || m === 'rej') ? `<div class="otk-bar">${m === 'pending' ? `<span class="small">${esc(ask)}</span>` : ''}<div class="grow"></div><button type="button" class="btn sm p" data-action="otkOk" data-arg="${esc(t.id)}">${icon('check')}${esc(m === 'rej' ? L('اعتمد برضه', 'Approve anyway') : L('اعتمد', 'Approve'))}</button>${m === 'pending' ? `<button type="button" class="btn sm" data-action="otkRej" data-arg="${esc(t.id)}">${esc(L('ارفض', 'Reject'))}</button>` : ''}</div>` : '';
+    return rej + ok + btns;
+  };
+
+  /* ---------- the manager's task page: the night + approve / reject ---------- */
+  if (typeof vTaskDetail === 'function') vTaskDetail = (base => function (t) {
+    const html = base.apply(this, arguments);
+    try {
+      if (!t || t.source !== 'otkind' || !t.otRef) return html; const x = byId('tasks', t.otRef); if (!x || !x.ot || !x.ot.night) return html;
+      const o = byId('orders', x.orderId) || {}; const names = liveIds(x).map(id => (byId('workers', id) || {}).name || '').filter(Boolean).join('، ');
+      return `<div class="card otk-tc" id="otk-tc"><div class="cardhead"><h3>${icon('moon')}${esc(L('سهر النهارده', "Tonight's overtime"))}</h3>${window.nfOtKindPill(x)}<div class="grow"></div><a class="btn xs ghost" href="#/otnight">${esc(L('افتح', 'Open'))}</a></div>
+        <div class="small"><b class="ltr-num">${esc(o.code || '')}</b> ${esc(o.title || '')}</div>
+        <div class="tiny muted">${esc(deptName(x.deptId))} · ${esc(people(liveIds(x).length))} · ${esc(x.ot.night.place === 'site' ? L('في موقع المشروع', 'On the project site') : L('في المصنع', 'At the factory'))} · ${esc(x.ot.byName || '')}</div>
+        <div class="small otk-names">${esc(names)}</div>${window.nfOtKindBar(x)}</div>` + html;
+    } catch (e) { return html; }
+  })(vTaskDetail);
+  /* «Done» on the manager's task while it waits = approve */
+  if (ACTIONS.taskStatus) ACTIONS.taskStatus = (base => async function (arg) {
+    const [id, st] = String(arg || '').split(':'); const t0 = byId('tasks', id);
+    if (st === 'done' && t0 && t0.source === 'otkind' && t0.otRef && String(t0.id).indexOf('otkm_') === 0) { const x = byId('tasks', t0.otRef); if (x && K.mgrOf(x) === 'pending' && canApprove()) return ACTIONS.otkOk(x.id); }
+    return base.apply(this, arguments);
+  })(ACTIONS.taskStatus);
+
+  document.head.insertAdjacentHTML('beforeend', `<style>
+    .otk-tiles .otn-t span{min-height:52px}.otk-t span small{white-space:normal}
+    .otk-req{color:var(--crit-ink,#c4302b)}.otk-fn{margin-top:4px;color:var(--muted)}.otk-fn.crit{color:var(--crit-ink,#c4302b)}
+    .otk-pill{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}.otk-part{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+    .otk-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;padding:8px 10px;border-radius:12px;background:rgba(229,147,42,.10);border:1px solid rgba(229,147,42,.35)}
+    .otk-bar .small{min-width:0;flex:1 1 180px}.otk-why{margin-top:6px;color:var(--crit-ink,#c4302b)}
+    .otk-cs{color:var(--muted);font-size:11.5px}.otn-st.pend{border-color:rgba(229,147,42,.8)}
+    .otk-tc .cardhead{flex-wrap:wrap;gap:6px}.otk-names{margin-top:4px;overflow-wrap:anywhere}
+  </style>`);
+})();
+/* =====================================================================
+   v7.95 (Mahmoud, owner decision): every department sees only its own people and requests.
+   Applies to department heads (role head) and department employees (role employee). The owner, the factory manager,
+   HR, office, accounts and the vice chairman keep seeing every department.
+   Before: a head saw every pending request whose approval chain had a «head» step (all departments), and the
+   employee lists of a plain employee were not limited at all.
+   After (scoped roles only):
+   · people lists (employees, attendance, penalties, pickers that read visibleWorkers) = his departments + himself;
+   · requests = the request's department (r.deptId, or the department of its employee) is one of his, or it is his own
+     (he is the employee / requester / creator), or he took part in its thread / was asked in it, or he is the direct
+     manager of its employee; a request with no department and no employee keeps the old rule;
+   · acting for an employee (new request / decide / attendance edit / warning) outside his departments is refused.
+   «His departments» = his department + the extra ones on his card (accessDepts, headDepts) + the session departments.
+   Server side: server/sql/v795-dept-scope.sql (restrictive read policy, written only — not applied here).
+   ===================================================================== */
+(function () {
+  if (window.__NF_DSCOPE__) return; window.__NF_DSCOPE__ = 1;
+  const SCOPED = ['head', 'employee'];
+  const scoped = () => { try { return !!S.session && SCOPED.includes(role()) && !S.session.owner; } catch (e) { return false; } };
+  const meW = () => (S.session && S.session.workerId ? byId('workers', S.session.workerId) : null);
+  const arr = v => (Array.isArray(v) ? v.filter(Boolean) : []);
+  /* the departments of the signed-in scoped person (read live from his worker card) */
+  function scopeDepts() {
+    if (!scoped()) return [];
+    const s = new Set(); const add = d => { if (d) s.add(d); };
+    try { (typeof myDepts === 'function' ? myDepts() : []).forEach(add); } catch (e) { /* ignore */ }
+    try { (typeof myScopeDepts === 'function' ? myScopeDepts() : []).forEach(add); } catch (e) { /* ignore */ }
+    const w = meW(); if (w) { add(w.deptId); arr(w.accessDepts).forEach(add); arr(w.headDepts).forEach(add); }
+    return [...s];
+  }
+  window.nfScopeDepts = scopeDepts;
+  window.nfDeptScoped = scoped;
+  const deptOfW = wid => { const w = wid ? byId('workers', wid) : null; return w ? w.deptId || '' : ''; };
+  const reqDept = r => (r && (r.deptId || deptOfW(r.workerId))) || '';
+  const bare = v => String(v || '').replace(/^w:/, '');
+  /* the request is his own, he took part in it, or he manages its employee */
+  function reqPersonal(r) {
+    const me = S.session || {}; const wid = me.workerId || '';
+    if (wid && (r.workerId === wid || bare(r.requesterId) === wid || bare(r.createdBy) === wid)) return true;
+    if (me.id && (r.createdBy === me.id || r.requesterId === me.id)) return true;
+    if ((r.thread || []).some(m => m && m.by && (m.by === me.id || (wid && bare(m.by) === wid)))) return true;
+    try { const p = r.purchaseId ? byId('purchases', r.purchaseId) : null; if (p && ((p.createdBy && p.createdBy === me.id) || (wid && bare(p.requestedBy) === wid))) return true; } catch (e) { /* ignore */ }
+    try { const tg = [me.id, wid ? 'w:' + wid : ''].filter(Boolean); if (tg.some(t => byId('tasks', `rqc_${r.id}_${String(t).replace(/[^a-zA-Z0-9]/g, '_')}`))) return true; } catch (e) { /* ignore */ }
+    try { if (typeof isManagerOf === 'function' && isManagerOf(byId('workers', r.workerId))) return true; } catch (e) { /* ignore */ }
+    return false;
+  }
+  function reqInScope(r) {
+    if (!r) return false; if (reqPersonal(r)) return true;
+    const d = reqDept(r); if (!d) return true; /* no department and no employee: the old rule decides */
+    return scopeDepts().includes(d);
+  }
+  window.nfReqInScope = reqInScope;
+
+  /* 1) requests: never another department's */
+  if (typeof requestVisible === 'function') requestVisible = (base => function (r) {
+    const v = base.apply(this, arguments); if (!v || !scoped()) return v;
+    try { return reqInScope(r); } catch (e) { return v; }
+  })(requestVisible);
+
+  /* 2) people lists: his departments + himself */
+  if (typeof visibleWorkers === 'function') visibleWorkers = (base => function () {
+    const a = base.apply(this, arguments); if (!scoped()) return a;
+    try { const ds = scopeDepts(); const wid = S.session.workerId; return a.filter(w => w && (w.id === wid || ds.includes(w.deptId))); } catch (e) { return a; }
+  })(visibleWorkers);
+
+  /* 3) acting for an employee outside his departments is refused */
+  const ACTS = ['requests.decide', 'requests.create', 'attendance.edit', 'penalty.add', 'stage.update'];
+  if (typeof canDo === 'function') canDo = (base => function (act, ctx) {
+    try {
+      if (scoped() && ACTS.includes(act)) {
+        const c = ctx || {}; const ds = scopeDepts();
+        if (c.workerId) {
+          const w = byId('workers', c.workerId); const own = c.workerId === S.session.workerId;
+          const mgr = typeof isManagerOf === 'function' && isManagerOf(w);
+          const d = c.deptId || (w && w.deptId) || '';
+          if (!own && !mgr && d && !ds.includes(d)) return false;
+        } else if (c.deptId && !ds.includes(c.deptId)) return false;
+      }
+    } catch (e) { /* ignore */ }
+    return base.apply(this, arguments);
+  })(canDo);
+
+  /* 4) an employee page outside his departments stays closed for a scoped employee too (heads are closed by the base page) */
+  if (typeof vWorkerDetailBase === 'function') vWorkerDetailBase = (base => function (id) {
+    try {
+      if (scoped() && role() !== 'head') { const w = byId('workers', id); if (w && w.id !== S.session.workerId && !scopeDepts().includes(w.deptId)) return `<div class="empty"><b>هذا الموظف خارج أقسامك</b></div>`; }
+    } catch (e) { /* ignore */ }
+    return base.apply(this, arguments);
+  })(vWorkerDetailBase);
+})();
+/* =====================================================================
+   v7.96 — the purchase-order receiving chain (owner brief claude/po-receive-chain-brief.md, approved).
+   1. «Done» on the fleet task po_pickup_<po> while the PO has no trip and has not arrived → a choice:
+        · «Make the trip»      → the usual PO trip form (ACTIONS.tripNew('po:<id>')), the task stays open;
+        · «The supply arrived» → the PO turns «arrived» through the shared arrival path (46-purchase-flow.js poMarkArrived):
+          arrivedAt, arrivedTrip = «recorded by <name>», the technical-receipt task for the department head (po_recv_head_<po>)
+          and the counts task for the storekeeper (po_recv_store_<po>); then the pickup task is closed.
+   2. Receipt roles wording lives in 46-purchase-flow.js (storekeeper = counts and item review, head = technical receipt).
+   3. Custody: floor items go out as the department head's custody (46-purchase-flow.js poFinalizeReceipt).
+   4. The driver of a PO trip sees the supplier transfer picture(s) on his trip page while the trip is active, so he can show the
+      supplier the money was sent — never an amount. The fleet manager / factory manager / owner always see it. The driver's trip
+      task and the trip push get one line about it (no amount).
+   Factory only. Phone and computer, Arabic and English, day and night.
+   ===================================================================== */
+(function () {
+  if (window.__NF_PORECV__) return; window.__NF_PORECV__ = 1;
+  if ((typeof isStudioz === 'function' && isStudioz()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const R = () => (typeof role === 'function' ? role() : '');
+  const myName = () => (S.session && S.session.name) || '';
+
+  /* ---------- shared helpers ---------- */
+  const pkPo = id => { const m = /^po_pickup_(.+)$/.exec(String(id || '')); return m ? m[1] : null; };
+  const tripOk = t => !!t && !['cancelled', 'rejected'].includes(t.status);
+  function poTripOf(p) {
+    if (!p) return null; const a = p.pickup && p.pickup.tripId ? byId('trips', p.pickup.tripId) : null; if (tripOk(a)) return a;
+    return list('trips').find(t => t && t.purchaseId === p.id && tripOk(t)) || null;
+  }
+  const NO_ARRIVE = ['arrived', 'received', 'partial', 'rejected', 'cancelled'];
+  const needsChoice = p => !!p && !poTripOf(p) && !NO_ARRIVE.includes(p.status);
+  window.nfPoTripOf = poTripOf;
+
+  /* ---------- 1) «done» on the pickup task without a trip ---------- */
+  const canClose = t => !!t && (typeof canTasks !== 'function' || canTasks()) && (typeof taskVisible !== 'function' || taskVisible(t));
+  function choose(t, p) {
+    const fleet = typeof canFleet === 'function' && canFleet();
+    openModal({ title: L(`استلام ${p.number} — مفيش مشوار`, `Collecting ${p.number} — no trip`), cls: 'pkc-m',
+      body: `<div class="pkc"><div class="banner warn" style="margin:0">${icon('alert')}<span>${esc(L(`طلب الشراء ${p.number} مالوش مشوار نقل لسه. لو قفلت المهمة كده التوريد مش هيتسجّل إنه وصل، ورئيس القسم وأمين المخزن مش هيجيلهم الاستلام.`, `Purchase order ${p.number} has no transport trip yet. Closing the task like this does not record the supply as arrived, and the department head and the storekeeper get no receipt task.`))}</span></div>
+        <div class="pkc-opts">${fleet ? `<button type="button" class="pkc-o" data-action="poPkTrip" data-arg="${esc(p.id)}"><b>${icon('map')}${esc(L('اعمل المشوار', 'Make the trip'))}</b><small>${esc(L('كلّف عربية وسواق يستلم من المورد — المهمة تتقفل لما المشوار يتعتمد.', 'Assign a vehicle and a driver to collect from the supplier — the task closes when the trip is approved.'))}</small></button>` : ''}
+        <button type="button" class="pkc-o" data-action="poPkArrived" data-arg="${esc(p.id)}"><b>${icon('check')}${esc(L('التوريد وصل خلاص', 'The supply has arrived'))}</b><small>${esc(L('المورد وصّل أو اتشال بطريقة تانية — يتسجّل «وصل» ويروح الاستلام لرئيس القسم (فني) وأمين المخزن (كميات وأصناف).', 'The supplier delivered or it came another way — it is recorded «arrived» and the receipt goes to the department head (technical) and the storekeeper (counts and items).'))}</small></button></div></div>`,
+      footer: `<button type="button" class="btn" data-action="closemodal">${esc(L('إلغاء', 'Cancel'))}</button>` });
+  }
+  if (typeof ACTIONS !== 'undefined' && ACTIONS.taskStatus) ACTIONS.taskStatus = (base => async function (arg) {
+    const [id, st] = String(arg || '').split(':'); const pid = st === 'done' ? pkPo(id) : null;
+    if (pid) { const t = byId('tasks', id); const p = byId('purchases', pid); if (t && t.status !== 'done' && needsChoice(p) && canClose(t) && writable()) { choose(t, p); return; } }
+    return base.apply(this, arguments);
+  })(ACTIONS.taskStatus);
+  ACTIONS.poPkTrip = pid => { closeModal(); if (typeof ACTIONS.tripNew === 'function') setTimeout(() => ACTIONS.tripNew('po:' + pid), 30); };
+  let busy = false;
+  ACTIONS.poPkArrived = async pid => {
+    const p = byId('purchases', pid); const t = byId('tasks', `po_pickup_${pid}`); if (busy || !needsChoice(p) || !canClose(t) || !writable()) { closeModal(); return; }
+    busy = true; closeModal();
+    try {
+      const nm = myName(); const now = nowISO();
+      const ok = await poMarkArrived(p, { via: 'manual', trip: `سجّله ${nm}`, skip: NO_ARRIVE });
+      if (!ok) return;
+      await Store.update('tasks', t.id, { status: 'done', doneAt: now, doneByName: nm, updatedAt: now, proof: { note: L('التوريد وصل من غير مشوار', 'The supply arrived without a trip'), at: now, byName: nm } });
+      toast(L(`${p.number} اتسجّل «وصل» — الاستلام راح لرئيس القسم وأمين المخزن`, `${p.number} recorded «arrived» — the receipt went to the department head and the storekeeper`));
+      try { render(false); } catch (e) { /* ignore */ }
+    } finally { busy = false; }
+  };
+  /* the receipt card: an arrival without a trip says so */
+  if (typeof poReceiptCard === 'function') poReceiptCard = (base => function (p) {
+    let h = base.apply(this, arguments); if (!h || !p || !p.arrivedManual) return h;
+    const line = `<span class="tiny muted po-arrman">${esc(L('وصل من غير مشوار — سجّله', 'Arrived without a trip — recorded by'))} ${esc(p.arrivedManual.byName || '')}</span>`;
+    const i = h.indexOf('<span class="tiny muted">وصل بالمشوار'); if (i < 0) return h; const j = h.indexOf('</span>', i); return j < 0 ? h : h.slice(0, i) + line + h.slice(j + 7);
+  })(poReceiptCard);
+
+  /* ---------- 4) the supplier transfer picture for the driver ---------- */
+  function proofsOf(p) {
+    if (!p) return []; const recs = [];
+    if (p.transfer) recs.push(p.transfer);
+    ((p.deferred && p.deferred.payments) || []).forEach(x => recs.push(x));
+    (Array.isArray(p.payments) ? p.payments : []).forEach(x => recs.push(x));
+    const out = []; const seen = new Set();
+    recs.forEach(r => {
+      if (!r || typeof r !== 'object') return; const ids = (Array.isArray(r.fileIds) ? r.fileIds : []).filter(Boolean);
+      if (ids.length) ids.forEach((fid, i) => { if (seen.has(fid)) return; seen.add(fid); const f = byId('files', fid); out.push({ fileId: fid, thumb: (f && f.thumb) || (i === 0 ? r.thumb : null) || null }); });
+      else if (r.thumb && !seen.has(r.thumb)) { seen.add(r.thumb); out.push({ fileId: null, thumb: r.thumb }); }
+    });
+    return out;
+  }
+  window.nfPoTrfProofs = proofsOf;
+  const staff = () => !!S.session && (isAdmin() || ['fleet', 'manager'].includes(R()));
+  const myTrip = t => !!t && !!t.driverId && typeof myDriverId === 'function' && t.driverId === myDriverId();
+  const active = t => !!t && !['done', 'cancelled', 'rejected'].includes(t.status);
+  const canSeeTrf = t => !!t && !!t.purchaseId && (staff() || (myTrip(t) && active(t)));
+  const trfName = p => `${L('صورة التحويل للمورد', 'Supplier transfer picture')} — ${p.number || ''}`;
+  function trfCard(t) {
+    if (!canSeeTrf(t)) return ''; const p = byId('purchases', t.purchaseId); const xs = proofsOf(p); if (!p || !xs.length) return '';
+    return `<div class="card potrf" id="po-trf-card"><div class="cardhead"><h3>${esc(L('صورة التحويل للمورد', 'Supplier transfer picture'))}</h3><span class="code potrf-no">${esc(p.number || '')}</span></div>
+      <div class="small muted">${esc(L('وريها للمورد لو طلب — دي تثبت إن الفلوس اتحوّلت.', 'Show it to the supplier if he asks — it proves the money was sent.'))}</div>
+      <div class="potrf-row">${xs.map((x, i) => `<button type="button" class="potrf-th" data-action="poTrfOpen" data-arg="${esc(t.id)}:${i}" aria-label="${esc(trfName(p))}">${x.thumb ? `<img src="${esc(x.thumb)}" alt="">` : `<span class="potrf-ic">${icon('camera')}</span>`}</button>`).join('')}</div></div>`;
+  }
+  ACTIONS.poTrfOpen = arg => {
+    const [tid, k] = String(arg || '').split(':'); const t = byId('trips', tid); if (!canSeeTrf(t)) return;
+    const p = byId('purchases', t.purchaseId); const x = proofsOf(p)[+k || 0]; if (!x) return;
+    const f = x.fileId ? byId('files', x.fileId) : null;
+    /* the viewer gets a copy without the uploader's note (it may carry an amount) and a neutral name */
+    if (f && f.store && f.store !== 'thumb' && typeof openViewer === 'function') { openViewer([Object.assign({}, f, { name: trfName(p), note: '', productId: null, orderId: null })], 0, {}); return; }
+    lightbox(x.thumb || (f && f.thumb) || null, trfName(p));
+  };
+  if (typeof vTripDetail === 'function') vTripDetail = (base => function (id) {
+    const html = base.apply(this, arguments); const t = byId('trips', id); const card = t ? trfCard(t) : ''; if (!card) return html;
+    const i = html.indexOf('<div class="card'); return i < 0 ? card + html : html.slice(0, i) + card + html.slice(i);
+  })(vTripDetail);
+
+  /* the driver's trip task and the trip push carry one line about the picture (no amount) */
+  const lineOf = p => L(`معاك صورة تحويل ${p.number} للمورد — وريها للمورد لو طلب`, `You have the transfer picture of ${p.number} for the supplier — show it to the supplier if he asks`);
+  const hasLine = (txt, p) => { const s = String(txt || ''); return s.includes(`معاك صورة تحويل ${p.number} للمورد`) || s.includes(`You have the transfer picture of ${p.number}`); };
+  const poOfTrip = t => (t && t.purchaseId ? byId('purchases', t.purchaseId) : null);
+  if (typeof Store !== 'undefined' && typeof Store.save === 'function') Store.save = (base => async function (col, doc) {
+    try {
+      if (col === 'tasks' && doc && /^trip_/.test(String(doc.id || '')) && doc.tripId) {
+        const p = poOfTrip(byId('trips', doc.tripId));
+        if (p && proofsOf(p).length && !hasLine(doc.desc, p)) arguments[1] = Object.assign({}, doc, { desc: `${doc.desc ? doc.desc + '\n' : ''}${lineOf(p)}` });
+      }
+    } catch (e) { /* ignore */ }
+    return base.apply(this, arguments);
+  })(Store.save);
+  if (typeof pushSend === 'function') pushSend = (base => async function (to, title, body, url) {
+    try {
+      const m = /^\/#\/fleet\/([^/?#]+)$/.exec(String(url || '')); const t = m ? byId('trips', m[1]) : null;
+      if (t && t.driverId && Array.isArray(to) && to.length === 1 && to[0] === 'w:' + t.driverId) { const p = poOfTrip(t); if (p && proofsOf(p).length && !hasLine(body, p)) arguments[2] = `${body || ''}\n${lineOf(p)}`; }
+    } catch (e) { /* ignore */ }
+    return base.apply(this, arguments);
+  })(pushSend);
+
+  document.head.insertAdjacentHTML('beforeend', `<style>
+.pkc{display:flex;flex-direction:column;gap:12px}
+.pkc-opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pkc-o{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer;min-height:44px}
+.pkc-o:hover{border-color:var(--accent)}
+.pkc-o b{display:inline-flex;align-items:center;gap:6px;font-size:14px}
+.pkc-o small{color:var(--muted);font-size:12px;line-height:1.5}
+@media (max-width:820px){.pkc-opts{grid-template-columns:1fr}}
+.potrf .potrf-no{margin-inline-start:auto}
+.potrf-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.potrf-th{width:84px;height:84px;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg);cursor:zoom-in;display:grid;place-items:center}
+.potrf-th img{width:100%;height:100%;object-fit:cover;display:block}
+.potrf-ic{color:var(--muted)}
+.recbox .recrole{margin:-2px 0 6px}
+</style>`);
+})();
+/* =====================================================================
+   v7.97 — the delivery note to the client (DN-yy-NNN) as ONE flow (owner brief claude/delivery-note-brief.md,
+   approved). It unifies the two half-flows that were never used:
+     · 99y3-fg-stock.js   — the finished-goods note in collection «fgs» (type dn), its number sequence, the stock-out on delivery,
+                            the «delivery to client» trip;
+     · 99zzZzZZzzg-supply-docs.js — the branded sheet with the contract lines «delivered X of Y» and the receiver signature pad.
+   Same collection (fgs, type 'dn'), same numbers (nextDnNo), same stock logic (dnDeliver); new notes carry dn2:true (+ sd:true).
+   1. «Delivery note» on the project (order) page — factory manager / owner / office (the people who handle deliveries today):
+      the contract lines with delivered / on the way / remaining; today's quantity per line (never more than remaining, the
+      finished-goods stock is suggested — what is not in stock goes without a stock move); company, site, planned date, notes,
+      the order's contact (name + WhatsApp number, editable on the order page, default from the client record).
+   2. The A4 sheet: the project's brand kit, company, project code + title, DN number, date, lines with pictures and quantities,
+      receiver name / signature / date boxes, Arabic + English, NO prices; Print · PDF · Picture.
+   3. Creating the note creates the «delivery to client» trip (kind delivery, trip.dnId) and tells the fleet manager to pick the
+      vehicle and driver (or the factory manager / owner picks them in the same dialog → approved at once). The driver's trip task
+      and push say «you carry delivery note DN-… — hand it over, have the receiver sign and photograph the signed sheet from this
+      same task»; his trip page and his task show the note (view only, no prices).
+   4. After handover, from the SAME trip page / task (or the «delivered» trip step, or before ending the trip) the driver or the
+      manager uploads the photo of the signed sheet (or the receiver signs on the phone) → «Delivered ✓» with receivedAt,
+      receiverName, signedPhoto; finished goods go out; the project shows the new «delivered X of Y». A driver cannot write the
+      note (database rules), so he writes trip.dnSigned on his own trip and the first client that may write fgs (or the server)
+      completes the note.
+   5. WhatsApp to the contact: the client calls the Edge function «wa» with {action:'send-dn', dnId} only; the server composes the
+      text from the note + order (no amounts) and records waSentAt / waError. When it fails (or no number): a task + push for the
+      factory manager «send the delivery confirmation to the client» with a one-tap wa.me button (same text, built here). The
+      factory manager is told «delivery note DN-… delivered» either way.
+   Factory only. Phone and computer, Arabic and English, day and night. No amounts in any task / notification / WhatsApp text.
+   ===================================================================== */
+(function () {
+  if (window.__NF_DN2__) return; window.__NF_DN2__ = 1;
+  if ((typeof isStuSys === 'function' && isStuSys()) || (typeof isStudioz === 'function' && isStudioz()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  if (typeof fgDns !== 'function' || typeof dnDeliver !== 'function' || typeof ACTIONS === 'undefined') return;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const B2 = (ar, enx) => `${ar}<small class="sdx">${enx}</small>`;
+  const R = () => (typeof role === 'function' ? role() : '');
+  const nm = () => (S.session && S.session.name) || '';
+  const W = () => typeof writable === 'function' && writable();
+  const MONEY = /(\d[\d.,\s]*\s*(جنيه|ج\.?\s?م|EGP|USD|\$|دولار|ريال|SAR|€))|((EGP|USD|SAR|\$|€)\s*\d[\d.,]*)/gi;
+  const n2 = v => (typeof fmtNum === 'function' ? fmtNum(v) : String(v));
+  const dmy = iso => { if (!iso) return '—'; const d = String(iso).slice(0, 10).split('-'); return d.length === 3 ? `${d[2]}/${d[1]}/${d[0]}` : iso; };
+  const later = (f, ms) => setTimeout(f, ms || 60);
+  const ic = (a, b) => { let k = a; try { if (b && typeof ICONS === 'object' && ICONS && !ICONS[a]) k = b; } catch (e) { /* ignore */ } return icon(k); };
+
+  /* ---------- who ---------- */
+  const canDn = () => typeof fgCanDeliver === 'function' && fgCanDeliver();                       /* writes fgs (DB: same roles) */
+  const canTripW = () => W() && (isAdmin() || ['manager', 'office', 'hr', 'fleet'].includes(R()));
+  const canOrderW = () => W() && (isAdmin() || ['manager', 'office', 'hr'].includes(R()));
+  const isBoss = () => isAdmin() || R() === 'manager';
+  const fleetOk = () => typeof canFleet === 'function' && canFleet();
+  const sees = () => !!S.session && (canDn() || isAdmin() || ['hr', 'acc', 'vice', 'manager', 'office'].includes(R()));
+  const me = () => (typeof myDriverId === 'function' ? myDriverId() : null);
+  const myTrip = t => !!t && !!t.driverId && t.driverId === me();
+  const tripLive = t => !!t && !['done', 'cancelled', 'rejected'].includes(t.status);
+
+  /* ---------- data ---------- */
+  const isDn2 = d => !!d && d.type === 'dn' && !!d.dn2;
+  const okTrip = t => !!t && !['cancelled', 'rejected'].includes(t.status);
+  function tripOf(dn) {
+    if (!dn) return null; const a = dn.tripId ? byId('trips', dn.tripId) : null; if (okTrip(a)) return a;
+    return list('trips').find(t => t && t.dnId === dn.id && okTrip(t)) || null;
+  }
+  function signedOf(dn) {
+    if (!dn) return null; if (dn.signed) return dn.signed; const t = tripOf(dn); if (t && t.dnSigned) return t.dnSigned;
+    if (dn.sign) return { receiverName: dn.sign.name, receiverTitle: dn.sign.title || '', img: dn.sign.img || null, thumb: dn.sign.img || null, at: dn.sign.at, byName: dn.sign.byName || '' };
+    if (dn.signedCopy) return { receiverName: '', fileId: dn.signedCopy.fileId || null, thumb: dn.signedCopy.thumb || null, at: dn.signedCopy.at, byName: dn.signedCopy.byName || '' };
+    return null;
+  }
+  const isDone = dn => !!dn && dn.status !== 'cancelled' && (dn.status === 'delivered' || !!signedOf(dn));
+  const stOf = dn => (!dn ? '' : dn.status === 'cancelled' ? 'cancelled' : isDone(dn) ? 'delivered' : dn.status === 'out' || (tripOf(dn) && tripOf(dn).driverId) ? 'out' : 'draft');
+  const ST = () => ({ draft: [L('مستني مشوار', 'Waiting for a trip'), 'warn'], out: [L('مع السواق', 'With the driver'), 'acc'], delivered: [L('اتسلّم ✓', 'Delivered ✓'), 'good'], cancelled: [L('ملغي', 'Cancelled'), ''] });
+  const stBadge = dn => { const s = stOf(dn); const m = ST()[s] || [s, '']; return `<span class="badge ${m[1]}">${esc(m[0])}</span>`; };
+  const dnsOf = oid => fgDns().filter(d => d && d.orderId === oid && d.status !== 'cancelled');
+  const lineKey = it => it.line || (it.productId ? 'p:' + it.productId : 'd:' + (it.desc || it.variant || ''));
+  const qtyIn = (d, k) => (d.items || []).filter(it => lineKey(it) === k).reduce((a, it) => a + (+it.qty || 0), 0);
+  function counts(oid, k, exceptId) {
+    let done = 0, pend = 0; dnsOf(oid).filter(d => d.id !== exceptId).forEach(d => { const q = qtyIn(d, k); if (isDone(d)) done += q; else pend += q; });
+    return { done: r2(done), pend: r2(pend) };
+  }
+  function contract(o) {
+    if (!o) return []; if (window.nfSupply && typeof nfSupply.contract === 'function') { try { return nfSupply.contract(o) || []; } catch (e) { /* fall through */ } }
+    const items = typeof orderItems === 'function' ? orderItems(o) : [];
+    if (items.length) return items.map(it => ({ k: 'p:' + it.productId, productId: it.productId, name: fgName(it.productId, ''), qty: +it.qty || 0, unit: (byId('products', it.productId) || {}).unit || '', thumb: fgThumb(it.productId) }));
+    const q = (o.quotationId && byId('quotations', o.quotationId)) || null;
+    return ((o.contractLines && o.contractLines.length ? o.contractLines : (q && q.items) || [])).filter(x => x && (x.desc || x.name) && +x.qty).map(x => ({ k: 'd:' + (x.desc || x.name), productId: null, name: String(x.desc || x.name).split('\n')[0].slice(0, 160), qty: +x.qty || 0, unit: x.unit || '', thumb: x.thumb || '' }));
+  }
+  function stockFor(oid, productId) {
+    const st = fgStock(); let n = 0; const keys = [];
+    Object.values(st).filter(r => r.productId === productId && !String(r.key).startsWith('ns|')).forEach(r => { const res = Math.max(0, (r.byOrder[oid] || 0) - (r.pendingOrder[oid] || 0)); const free = Math.max(0, r.available); const can = r2(res + free); if (can > 0) { keys.push({ key: r.key, variant: r.variant, res, free, can }); n += can; } });
+    keys.sort((a, b) => b.res - a.res); return { n: r2(n), keys };
+  }
+  const prodName = pid => { const p = byId('products', pid); return (p && (p.name || p.code)) || fgName(pid, ''); };
+  /* the note's lines grouped by contract line (a product line may come from several stock keys) */
+  function linesOf(dn) {
+    const map = new Map();
+    (dn.items || []).forEach(it => { const k = lineKey(it); const x = map.get(k) || { k, name: it.productId ? fgName(it.productId, '') : (it.desc || it.variant || ''), short: it.name || (it.productId ? prodName(it.productId) : (it.desc || it.variant || '')), qty: 0, of: +it.of || 0, unit: it.unit || (it.productId ? ((byId('products', it.productId) || {}).unit || L('قطعة', 'pc')) : ''), thumb: it.productId ? fgThumb(it.productId) : (it.thumb || '') }; x.qty += +it.qty || 0; map.set(k, x); });
+    const before = dnsOf(dn.orderId).filter(d => d.id !== dn.id && String(d.createdAt || '') <= String(dn.createdAt || ''));
+    return [...map.values()].map(x => { const prev = before.reduce((a, d) => a + qtyIn(d, x.k), 0); return Object.assign(x, { prev: r2(prev), after: r2(prev + x.qty), left: x.of ? Math.max(0, r2(x.of - prev - x.qty)) : null }); });
+  }
+  function contactOf(o, dn) {
+    const c = o && o.clientId ? byId('clients', o.clientId) || {} : (dn && dn.clientId ? byId('clients', dn.clientId) || {} : {});
+    const name = (o && o.contactName) || (dn && dn.contactName) || c.contact || '';
+    const phone = (o && o.contactPhone) || (dn && dn.contactPhone) || c.phone || '';
+    return { name, phone, fromClient: !(o && o.contactPhone) && !(dn && dn.contactPhone) && !!c.phone };
+  }
+  const brandOf = (dn, o) => { const b = (dn && dn.brandId) || (o && o.brandId) || ''; return typeof BRAND_KIT_DEFAULT === 'object' && b && BRAND_KIT_DEFAULT[b] ? b : 'nf'; };
+  const brandCo = b => { try { const k = brandKit(b); return (k.legal && k.legal.company) || k.name || 'Ninety Fabrication'; } catch (e) { return 'Ninety Fabrication'; } };
+  /* the same sentence the server sends (server/wa/index.ts dnText) */
+  function dnText(dn) {
+    const o = dn.orderId ? byId('orders', dn.orderId) : null; const c = o && o.clientId ? byId('clients', o.clientId) : null;
+    const items = linesOf(dn).filter(x => x.short && x.qty > 0).map(x => `${x.short} × ${Math.round(x.qty * 100) / 100}`).join('، ');
+    const company = String(dn.clientName || (c && c.name) || '').trim(); const proj = o ? [o.code, o.title].filter(Boolean).join(' — ') : '';
+    const co = dn.brandCo || brandCo(brandOf(dn, o));
+    return `السادة ${company}، تحية طيبة. نفيدكم بأنه تم اليوم تسليم إذن التسليم رقم ${dn.number || ''}${proj ? ` الخاص بمشروع ${proj}` : ''}${items ? `: ${items}` : ''}. شكرًا لثقتكم — ${co}`.replace(MONEY, '').replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim();
+  }
+  const waMe = dn => { const ph = contactOf(dn.orderId ? byId('orders', dn.orderId) : null, dn).phone; const t = dnText(dn); return ph && typeof waLink === 'function' ? waLink(ph, t) : `https://wa.me/?text=${encodeURIComponent(t)}`; };
+  const dnLine = dn => `معاك إذن تسليم ${dn.number} — سلّمه ومضّي المستلم وصوّر الورقة الممضية من نفس المهمة`;
+  const itemsTxt = dn => linesOf(dn).map(x => `${x.short} × ${n2(x.qty)}`).join('، ');
+  function nextNo() { let n = typeof nextDnNo === 'function' ? nextDnNo() : 'DN-' + todayISO().slice(2, 4) + '-' + uid().slice(0, 3); const used = new Set(fgDns().map(d => d.number)); let i = 0; while (used.has(n) && i++ < 500) { const m = /^(DN-\d\d-)(\d+)$/.exec(n); if (!m) break; n = m[1] + String(+m[2] + 1).padStart(3, '0'); } return n; }
+
+  /* ---------- the sheet ---------- */
+  function sheetShell(b, title, right, inner) {
+    const k = typeof brandKit === 'function' ? brandKit(b) : { name: 'Ninety', legal: {} }; const Lg = k.legal || {};
+    const logo = typeof brandLogoHTML === 'function' ? brandLogoHTML(b, 44) : '';
+    return `<div class="sdoc dnxs" dir="rtl" lang="ar" style="--sd-ink:${esc(k.ink || '#111')};--sd-bg:${esc(k.bg || '#f1f1f1')};--sd-ac:${esc(k.accent || '#111')}">
+      <div class="sdh"><div class="sdl">${logo}</div><div class="sdt"><div class="sdtt">${title}</div><div class="sdco">${esc(Lg.company || k.name || '')}</div></div><div class="sdr">${right}</div></div>
+      ${inner}
+      <div class="sdf"><span>${esc(Lg.company || k.name || '')}${Lg.address ? ' · ' + esc(Lg.address) : ''}</span><span dir="ltr">${esc([Lg.phone, Lg.email].filter(Boolean).join(' · '))}</span></div></div>`;
+  }
+  const kv = rows => `<table class="dnxkv"><tbody>${rows.filter(r => r && r[1]).map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>`;
+  const K2 = (ar, enx) => `${ar} <small>${enx}</small>`;
+  function dnSheet(dn) {
+    const o = dn.orderId ? byId('orders', dn.orderId) : null; const Ls = linesOf(dn); const sg = signedOf(dn); const t = tripOf(dn); const ct = contactOf(o, dn);
+    const right = kv([[K2('رقم الإذن', 'DN No'), `<span dir="ltr">${esc(dn.number || '')}</span>`], [K2('التاريخ', 'Date'), dmy(dn.date || dn.createdAt)], [K2('كود المشروع', 'Project code'), o ? `<span dir="ltr">${esc(o.code || '')}</span>` : '']]);
+    const drv = t && t.driverId && typeof assigneeName === 'function' ? assigneeName(t.driverId) : '';
+    return sheetShell(brandOf(dn, o), B2('إذن تسليم', 'Delivery Note'), right, `
+      <div class="sdcols"><div>${kv([[K2('السادة', 'To'), esc(dn.clientName || '')], [K2('موقع التسليم', 'Delivery site'), esc(dn.address || '')], [K2('مسؤول التواصل', 'Contact'), ct.name || ct.phone ? `${esc(ct.name || '')}${ct.phone ? ` <span dir="ltr">${esc(ct.phone)}</span>` : ''}` : '']])}</div>
+      <div>${kv([[K2('المشروع', 'Project'), esc((o && o.title) || '')], [K2('رقم العقد / أمر التوريد', 'Contract / PO ref'), dn.clientRef ? `<span dir="ltr">${esc(dn.clientRef)}</span>` : ''], [K2('السواق', 'Driver'), esc(drv)]])}</div></div>
+      <table class="sdtab"><thead><tr><th style="width:26px">#</th><th style="width:64px"></th><th>${B2('الصنف', 'Item')}</th><th style="width:74px">${B2('الكمية دي', 'This delivery')}</th><th style="width:66px">${B2('المتعاقد', 'Contract')}</th><th style="width:74px">${B2('المسلّم لحد دلوقتي', 'Delivered to date')}</th><th style="width:60px">${B2('الباقي', 'Remaining')}</th></tr></thead>
+      <tbody>${Ls.map((x, i) => `<tr><td>${i + 1}</td><td>${x.thumb ? `<img class="sdph2" src="${esc(x.thumb)}" alt="">` : ''}</td><td><b>${esc(x.name)}</b></td><td class="n sdbig">${n2(x.qty)} ${esc(x.unit || '')}</td><td class="n">${x.of ? n2(x.of) : '—'}</td><td class="n">${n2(x.after)}</td><td class="n">${x.left != null ? n2(x.left) : '—'}</td></tr>`).join('')}</tbody></table>
+      ${dn.note ? `<div class="sdnote">${B2('ملاحظات', 'Notes')}: ${esc(String(dn.note).replace(MONEY, '…'))}</div>` : ''}
+      <p class="sdp">نقر نحن الموقعين أدناه باستلام الأصناف الموضّحة بعاليه بحالة جيدة ومطابقة.<br><span class="sdx2">We, the undersigned, confirm receiving the items above in good condition.</span></p>
+      <div class="sdsigns dnxsg"><div><span>${B2('سلّمه', 'Delivered by')}</span><b>${esc(drv || (sg && sg.byName) || '')}</b><i></i><small>${B2('الاسم · التوقيع', 'Name · signature')}</small></div>
+      <div><span>${B2('استلمه', 'Received by')}</span><b>${sg && sg.receiverName ? esc(sg.receiverName) + (sg.receiverTitle ? ' — ' + esc(sg.receiverTitle) : '') : '&nbsp;'}</b>${sg && sg.img ? `<img class="sdsig" src="${esc(sg.img)}" alt="">` : '<i></i>'}<small>${B2('الاسم · الوظيفة · التوقيع · الختم', 'Name · title · signature · stamp')}</small></div>
+      <div><span>${B2('تاريخ الاستلام', 'Date received')}</span><b>${sg ? dmy(sg.at) : '&nbsp;'}</b><i></i><small>${B2('اليوم / الشهر / السنة', 'Day / month / year')}</small></div></div>`);
+  }
+  async function toPng(html) {
+    if (window.nfSupply && typeof nfSupply.toPng === 'function') return nfSupply.toPng(html);
+    await vendorLoad('snap'); const host = document.createElement('div'); host.className = 'sdhost'; host.innerHTML = html; document.body.appendChild(host);
+    try { const c = await window.modernScreenshot.domToCanvas(host.firstElementChild, { scale: 2, backgroundColor: '#ffffff', timeout: 6000, font: false }); return await new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('png'))), 'image/png')); } finally { host.remove(); }
+  }
+  function download(blob, name) { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); }
+  /* ASCII file names (some browsers drop a non-Latin download name) */
+  const fname = (dn, ext) => { const o = dn.orderId ? byId('orders', dn.orderId) : null; return `Delivery-note ${dn.number || ''}${o && o.code ? ' ' + o.code : ''}`.replace(/[^\w.\- ]+/g, '').trim().replace(/\s+/g, '_') + '.' + ext; };
+  const JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; let _js = null;
+  const loadJsPDF = () => { if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(true); if (_js) return _js; _js = new Promise(res => { const s = document.createElement('script'); s.src = JSPDF; s.onload = () => res(!!(window.jspdf && window.jspdf.jsPDF)); s.onerror = () => { _js = null; res(false); }; document.head.appendChild(s); }); return _js; };
+  const canView = dn => !!dn && (sees() || (myTrip(tripOf(dn))));
+  ACTIONS.dnxView = id => {
+    const dn = byId('fgs', id); if (!canView(dn)) return; const html = dnSheet(dn); window.__dnxCur = { id, html };
+    openModal({ title: `${L('إذن تسليم', 'Delivery note')} ${dn.number || ''}`, wide: true, cls: 'sdprevm dnxprev', body: `<div class="sdprev">${html}</div>`,
+      footer: `<button type="button" class="btn p" data-action="dnxPrint">${ic('print')}${esc(L('اطبع', 'Print'))}</button><button type="button" class="btn" data-action="dnxPdf">${ic('pdf', 'file')}PDF</button><button type="button" class="btn" data-action="dnxPng">${ic('image', 'camera')}${esc(L('صورة', 'Picture'))}</button><button type="button" class="btn ghost" data-action="closemodal">${esc(L('إغلاق', 'Close'))}</button>` });
+  };
+  ACTIONS.dnxPrint = () => { const c = window.__dnxCur; if (c && typeof printHTML === 'function') printHTML(c.html); };
+  ACTIONS.dnxPng = async () => { const c = window.__dnxCur; const dn = c && byId('fgs', c.id); if (!dn) return; try { toast(L('بيجهّز الصورة…', 'Preparing the picture…')); download(await toPng(c.html), fname(dn, 'png')); } catch (e) { toast(L('مقدرتش أعمل الصورة', 'Could not make the picture'), 'err'); } };
+  ACTIONS.dnxPdf = async () => {
+    const c = window.__dnxCur; const dn = c && byId('fgs', c.id); if (!dn) return;
+    try {
+      toast(L('بيجهّز الـPDF…', 'Preparing the PDF…'));
+      if (!(await loadJsPDF())) { ACTIONS.dnxPrint(); return; }
+      const blob = await toPng(c.html); const url = URL.createObjectURL(blob); const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' }); const w = 210, h = im.naturalHeight * w / im.naturalWidth;
+      let y = 0; const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+      pdf.addImage(data, 'PNG', 0, 0, w, h); while (h + y > 297 + 0.5) { y -= 297; pdf.addPage(); pdf.addImage(data, 'PNG', 0, y, w, h); }
+      URL.revokeObjectURL(url); download(pdf.output('blob'), fname(dn, 'pdf'));
+    } catch (e) { console.warn('dn pdf', e); ACTIONS.dnxPrint(); }
+  };
+
+  /* ---------- the contact on the order ---------- */
+  ACTIONS.dnxContact = oid => {
+    const o = byId('orders', oid); if (!o || !canOrderW()) return; const ct = contactOf(o, null);
+    openModal({ title: `${L('مسؤول التواصل', 'Contact person')} — ${o.code || ''}`, submitLabel: L('حفظ', 'Save'), body: `<div class="form">
+      ${field(L('الاسم', 'Name'), inp('contactName', ct.name || '', 'autocomplete="off"'))}${field(L('رقم الواتساب', 'WhatsApp number'), inp('contactPhone', ct.phone || '', 'inputmode="tel" class="ltr" placeholder="01xxxxxxxxx"'))}
+      <p class="tiny muted full">${esc(L('الرقم ده بيوصله تأكيد التسليم على الواتساب أوتوماتيك لما الإذن الممضي يترفع.', 'This number gets the delivery confirmation on WhatsApp automatically when the signed note is uploaded.'))}</p></div>`,
+      onSubmit: async f => { const d = formData(f); await Store.update('orders', oid, { contactName: String(d.contactName || '').trim(), contactPhone: String(d.contactPhone || '').trim() }); toast(L('اتحفظ', 'Saved')); return true; } });
+  };
+
+  /* ---------- 1) the new note ---------- */
+  const vehOpts = sel => sortBy(list('vehicles').filter(v => v && v.status !== 'out'), v => v.name || '').map(v => `<option value="${esc(v.id)}" ${v.id === sel ? 'selected' : ''}>${esc(typeof vehicleName === 'function' ? vehicleName(v.id) : v.name)}</option>`).join('');
+  const drvOpts = sel => (typeof drivers === 'function' ? drivers() : []).map(w => `<option value="${esc(w.id)}" ${w.id === sel ? 'selected' : ''}>${esc(w.name)}</option>`).join('');
+  function assignFields(t) {
+    return `${field(L('العربية', 'Vehicle'), `<select name="vehicleId"><option value="">${esc(L('— مدير الحركة يحدّد —', '— the fleet manager picks —'))}</option>${vehOpts(t && t.vehicleId)}</select>`)}${field(L('السواق', 'Driver'), `<select name="driverId"><option value="">${esc(L('— مدير الحركة يحدّد —', '— the fleet manager picks —'))}</option>${drvOpts(t && t.driverId)}</select>`)}`;
+  }
+  ACTIONS.dnxNew = orderId => {
+    const o = byId('orders', orderId); if (!o || !canDn() || !W()) return; const Ls = contract(o); const c = byId('clients', o.clientId) || {}; const ct = contactOf(o, null);
+    if (!Ls.length) { toast(L('أمر التشغيل ده مالوش بنود متسجّلة — ضيف المنتجات للأمر أو اربطه بعرض السعر', 'This order has no lines — add its products or link its quotation'), 'err'); return; }
+    const rows = Ls.map((l, i) => {
+      const cn = counts(o.id, l.k); const left = Math.max(0, r2(l.qty - cn.done - cn.pend)); const stk = l.productId ? stockFor(o.id, l.productId).n : null; const sug = l.productId && stk > 0 ? Math.min(left, stk) : 0;
+      const sub = L(`اتسلّم ${n2(cn.done)} من ${n2(l.qty)}${cn.pend ? ` · في الطريق ${n2(cn.pend)}` : ''} · باقي ${n2(left)}`, `delivered ${n2(cn.done)} of ${n2(l.qty)}${cn.pend ? ` · on the way ${n2(cn.pend)}` : ''} · left ${n2(left)}`) + (stk ? ' · ' + L(`جاهز في المخزن ${n2(stk)}`, `ready in stock ${n2(stk)}`) : '');
+      return `<div class="sddl dnxl ${left ? '' : 'done'}" data-i="${i}"><input type="checkbox" name="on${i}" ${sug > 0 ? 'checked' : ''} ${left ? '' : 'disabled'} aria-label="${esc(l.name)}">${l.thumb ? `<img src="${esc(l.thumb)}" alt="">` : `<span class="sdnoimg">${ic('inventory')}</span>`}<div class="sddb"><b class="notr">${esc(l.name)}</b><small>${esc(sub)}</small></div><input name="q${i}" type="number" min="0" step="1" max="${left}" inputmode="numeric" value="${sug > 0 ? sug : ''}" ${left ? '' : 'disabled'} placeholder="${esc(L('النهارده', 'Today'))}" aria-label="${esc(L('كمية النهارده', "Today's quantity"))}"></div>`;
+    }).join('');
+    openModal({ title: `${L('إذن تسليم', 'Delivery note')} — ${o.code || ''}`, wide: true, cls: 'dnxm', submitLabel: L('اعمل الإذن', 'Create the note'), body: `<div class="form">
+      <div class="dnxhd full"><b class="notr">${esc(c.name || (typeof clientName === 'function' ? clientName(o.clientId) : '') || '')}</b><span><span class="ltr">${esc(o.code || '')}</span> — <span class="notr">${esc(o.title || '')}</span></span></div>
+      <div class="field full"><label>${esc(L('اللي هيتسلّم النهارده', 'What goes today'))}</label><div class="sddls">${rows}</div><div class="tiny muted" style="margin-top:4px">${esc(L('اكتب كمية النهارده لكل بند — مش أكتر من الباقي في العقد. الجاهز في المخزن متقترح، واللي مش متسجّل في المخزن بيتسلّم من غير خصم مخزن.', "Type today's quantity per line — never more than what is left in the contract. Ready stock is suggested; what is not in the stock goes without a stock move."))}</div></div>
+      ${field(L('الشركة', 'Company'), inp('clientName', c.name || (typeof clientName === 'function' ? clientName(o.clientId) : '') || '', 'required'))}${field(L('موقع التسليم / العنوان', 'Delivery site / address'), inp('address', o.siteAddress || c.address || (o.site && o.site.label) || '', ''))}
+      ${field(L('مسؤول التواصل', 'Contact person'), inp('contactName', ct.name || '', ''))}${field(L('رقم الواتساب للتأكيد', 'WhatsApp number for the confirmation'), inp('contactPhone', ct.phone || '', 'inputmode="tel" class="ltr" placeholder="01xxxxxxxxx"'))}
+      ${field(L('ميعاد التسليم', 'Planned date'), `<input type="date" name="date" value="${todayISO()}">`)}${field(L('رقم العقد / أمر التوريد عندهم (اختياري)', 'Their contract / PO no. (optional)'), inp('clientRef', o.clientRef || '', 'class="ltr"'))}
+      ${fleetOk() ? assignFields(null) : ''}
+      ${field(L('ملاحظات', 'Notes'), inp('note', ''), 'full')}
+      <p class="tiny muted full">${esc(L('الإذن بيطلّع مشوار «تسليم للعميل» لحركة النقل، والسواق بيوصله الإذن على مهمته. الورقة من غير أسعار.', 'The note opens a «delivery to client» trip for the fleet, and the driver gets the note on his task. The sheet has no prices.'))}</p></div>`,
+      onOpen: f => { f.addEventListener('input', e => { const q = e.target.closest && e.target.closest('.dnxl input[type=number]'); if (!q) return; const cb = q.closest('.dnxl').querySelector('input[type=checkbox]'); if (cb) cb.checked = num(q.value) > 0; }); },
+      onSubmit: async f => {
+        const d = formData(f); const items = [];
+        if (!String(d.clientName || '').trim()) { toast(L('اكتب اسم الشركة', 'Type the company name'), 'err'); return false; }
+        for (let i = 0; i < Ls.length; i++) {
+          const l = Ls[i]; if (!(f.querySelector(`[name=on${i}]`) || {}).checked) continue; const q = Math.round(num((f.querySelector(`[name=q${i}]`) || {}).value)); if (!(q > 0)) continue;
+          const cn = counts(o.id, l.k); const left = Math.max(0, r2(l.qty - cn.done - cn.pend));
+          if (q > left) { toast(L(`${l.name}: الباقي في العقد ${n2(left)} بس`, `${l.name}: only ${n2(left)} left in the contract`), 'err'); return false; }
+          if (l.productId) {
+            const s0 = stockFor(o.id, l.productId); let need = q;
+            for (const k of s0.keys) { if (need <= 0) break; const take = Math.min(need, k.can); items.push({ productId: l.productId, variant: k.variant || '', qty: take, key: k.key, line: l.k, of: l.qty, name: prodName(l.productId) }); need -= take; }
+            if (need > 0) items.push({ productId: l.productId, variant: '', qty: need, key: `ns|${l.productId}`, nostock: true, line: l.k, of: l.qty, name: prodName(l.productId) });
+          } else items.push({ productId: null, variant: l.name, desc: l.name, name: l.name, unit: l.unit, qty: q, key: 'd|' + l.name, line: l.k, of: l.qty });
+        }
+        if (!items.length) { toast(L('اكتب كمية بند واحد على الأقل', 'Type the quantity of at least one line'), 'err'); return false; }
+        const b = brandOf({ brandId: o.brandId }, o);
+        const dn = { id: uid(), type: 'dn', sd: true, dn2: true, number: nextNo(), orderId: o.id, clientId: o.clientId || null, clientName: d.clientName.trim(), address: String(d.address || '').trim(), clientRef: String(d.clientRef || '').trim(), date: d.date || todayISO(), plannedDate: d.date || todayISO(), brandId: o.brandId || null, brandCo: brandCo(b), contactName: String(d.contactName || '').trim(), contactPhone: String(d.contactPhone || '').trim(), items, note: d.note || '', status: 'draft', createdAt: nowISO(), createdBy: (S.session && S.session.id) || null, byName: nm() };
+        await Store.save('fgs', dn, { silent: true });
+        /* the contact lives on the order (editable there); the client ref too */
+        const op = {}; if (dn.contactPhone && dn.contactPhone !== (o.contactPhone || '')) op.contactPhone = dn.contactPhone; if (dn.contactName && dn.contactName !== (o.contactName || '')) op.contactName = dn.contactName; if (dn.clientRef && dn.clientRef !== (o.clientRef || '')) op.clientRef = dn.clientRef;
+        if (Object.keys(op).length && canOrderW()) { try { await Store.update('orders', o.id, op); } catch (e) { /* ignore */ } }
+        try { await openTrip(dn, { vehicleId: d.vehicleId || '', driverId: d.driverId || '' }); } catch (e) { console.warn('dn trip', e); }
+        toast(L(`اتعمل ${dn.number}`, `${dn.number} created`)); later(() => go('fg/' + dn.id), 50); return true;
+      } });
+  };
+  /* every older entry point opens the new dialog */
+  ACTIONS.sdDnNew = id => ACTIONS.dnxNew(id);
+
+  /* ---------- 3) the trip ---------- */
+  function tripNotes(dn) { const o = dn.orderId ? byId('orders', dn.orderId) : null; const ct = contactOf(o, dn); return [itemsTxt(dn), ct.name || ct.phone ? `${L('مسؤول التواصل', 'Contact')}: ${ct.name || ''} ${ct.phone || ''}`.trim() : '', dnLine(dn)].filter(Boolean).join('\n'); }
+  async function approveOrAsk(trip, dn) {
+    trip = byId('trips', trip.id) || trip;
+    if (isBoss() || trip.dnBoss) { if (typeof tripApproved === 'function') await tripApproved(trip, true); else await Store.update('trips', trip.id, { status: 'approved', approvedAt: nowISO(), approvedByName: nm() }); pushDriver(byId('trips', trip.id) || trip, dn); }
+    else if (typeof createTripRequest === 'function') await createTripRequest(trip);
+    await Store.update('fgs', dn.id, { tripId: trip.id, status: 'out', outAt: nowISO() }, { silent: true });
+    const tk = byId('tasks', `dn_${dn.id}`); if (tk && tk.status !== 'done') await Store.update('tasks', tk.id, { status: 'done', doneAt: nowISO(), doneByName: nm() }, { silent: true });
+  }
+  function pushDriver(t, dn) { try { if (t && t.driverId && typeof pushSend === 'function') pushSend(['w:' + t.driverId], `مشوار تسليم مستنيك — ${dn.clientName || ''}`.slice(0, 100), dnLine(dn), '/#/fleet/' + t.id, 'nf-trip-' + t.id); } catch (e) { /* ignore */ } }
+  async function openTrip(dn, pick) {
+    if (!canTripW()) {
+      await notifyRole('fleet', `إذن تسليم ${dn.number} — محتاج مشوار`, `${dn.clientName}${dn.address ? ' · ' + dn.address : ''}\n${itemsTxt(dn)}`, { id: `dn_${dn.id}`, priority: 'high', orderId: dn.orderId || null, fields: { link: `/#/fg/${dn.id}`, dnId: dn.id } });
+      return null;
+    }
+    const o = dn.orderId ? byId('orders', dn.orderId) : null; const D = window.nfDT; const now = nowISO();
+    const trip = { id: 'tdn_' + dn.id, number: D && D.uniqueTripNo ? D.uniqueTripNo() : nextTripNo(), kind: 'delivery', purpose: `تسليم للعميل — ${dn.number} — ${o ? `${o.code || ''} ${o.title || ''}`.trim() : dn.clientName}`, dnId: dn.id, orderId: dn.orderId || null, extId: null,
+      from: 'المصنع', to: dn.address || dn.clientName || '', date: dn.plannedDate || todayISO(), time: '09:00', vehicleId: pick.vehicleId || null, driverId: pick.driverId || null, notes: tripNotes(dn),
+      status: isBoss() ? 'approved' : 'planned', dnBoss: isBoss(), createdAt: now, createdBy: (S.session && S.session.id) || null, createdByName: nm() };
+    if (trip.vehicleId && !trip.driverId) { const v = byId('vehicles', trip.vehicleId); if (v && v.driverId) trip.driverId = v.driverId; }
+    if (trip.driverId && !trip.vehicleId) { const v = list('vehicles').find(x => x && x.driverId === trip.driverId && x.status !== 'out'); if (v) trip.vehicleId = v.id; }
+    await Store.save('trips', Object.assign({}, trip, trip.driverId && trip.vehicleId ? { status: 'requested' } : {}), { silent: true });
+    await Store.update('fgs', dn.id, { tripId: trip.id }, { silent: true });
+    if (trip.driverId && trip.vehicleId) {
+      await approveOrAsk(trip, byId('fgs', dn.id) || dn);
+      try { if (typeof pushSend === 'function') pushSend(['role:fleet'], `مشوار تسليم ${trip.number} — ${dn.number}`.slice(0, 100), `${dn.clientName || ''}${dn.address ? ' · ' + dn.address : ''} — ${typeof assigneeName === 'function' ? assigneeName(trip.driverId) : ''}`.slice(0, 140), '/#/fleet/' + trip.id, 'nf-dn-' + dn.id); } catch (e) { /* ignore */ }
+      return trip;
+    }
+    await notifyRole('fleet', `إذن تسليم ${dn.number} — حدّد العربية والسواق`, `${trip.purpose}\n${dn.address ? dn.address + ' · ' : ''}${dmy(trip.date)}\n${itemsTxt(dn)}`, { id: `dn_${dn.id}`, priority: 'high', orderId: dn.orderId || null, fields: { link: `/#/fleet/${trip.id}`, tripId: trip.id, dnId: dn.id } });
+    return trip;
+  }
+  /* the fleet manager (or the factory manager / owner) picks the vehicle and the driver — or makes the trip of a note that has none */
+  const needsAssign = t => !!t && t.dnId && !t.driverId && ['planned', 'approved', 'requested'].includes(t.status);
+  ACTIONS.dnxAssign = dnId => {
+    const dn = byId('fgs', dnId); if (!dn || !fleetOk() || isDone(dn) || dn.status === 'cancelled') return; const t = tripOf(dn);
+    openModal({ title: `${L('مشوار التسليم', 'Delivery trip')} — ${dn.number}`, submitLabel: L('حفظ', 'Save'), cls: 'dnxm', body: `<div class="form">
+      <div class="dnxhd full"><b class="notr">${esc(dn.clientName || '')}</b><span>${esc(dn.address || '')}</span></div>
+      ${assignFields(t)}${field(L('التاريخ', 'Date'), `<input type="date" name="date" value="${esc((t && t.date) || dn.plannedDate || todayISO())}">`)}${field(L('الساعة', 'Time'), `<input type="time" name="time" value="${esc((t && t.time) || '09:00')}">`)}</div>`,
+      onSubmit: async f => {
+        const d = formData(f); if (!d.vehicleId || !d.driverId) { toast(L('اختار العربية والسواق', 'Pick the vehicle and the driver'), 'err'); return false; }
+        const busy = list('trips').find(x => x && (!t || x.id !== t.id) && x.status === 'started' && (x.vehicleId === d.vehicleId || x.driverId === d.driverId));
+        if (busy && !(await confirmDlg(L(`${busy.number} شغّال دلوقتي بنفس العربية / السواق — تكمّل؟`, `${busy.number} is running with the same vehicle / driver — continue?`), L('كمّل', 'Continue')))) return false;
+        if (!t) { const tr = await openTrip(dn, d); if (tr) { await Store.update('trips', tr.id, { date: d.date || tr.date, time: d.time || tr.time }, { silent: true }); } toast(L('المشوار اتعمل', 'Trip created')); return true; }
+        await Store.update('trips', t.id, { vehicleId: d.vehicleId, driverId: d.driverId, date: d.date || t.date, time: d.time || t.time, notes: tripNotes(dn) });
+        await approveOrAsk(byId('trips', t.id), byId('fgs', dn.id) || dn);
+        toast(isBoss() || t.dnBoss ? L('اتبعت للسواق ✓', 'Sent to the driver ✓') : L('راح لمدير المصنع يعتمده', 'Sent to the factory manager for approval')); return true;
+      } });
+  };
+  if (ACTIONS.tripNew) ACTIONS.tripNew = (base => function (arg) {
+    try {
+      const [k, id] = String(arg || '').split(':');
+      if (k === 'dn') { const dn = byId('fgs', id); if (isDn2(dn)) { ACTIONS.dnxAssign(id); return; } }
+      if (k === 'order' && id) { const dn = sortBy(dnsOf(id).filter(d => isDn2(d) && !isDone(d) && (!tripOf(d) || needsAssign(tripOf(d)))), d => d.createdAt || '')[0]; if (dn) { ACTIONS.dnxAssign(dn.id); return; } }
+    } catch (e) { /* fall back */ }
+    return base.apply(this, arguments);
+  })(ACTIONS.tripNew);
+
+  /* the driver's trip task + push carry the note line */
+  if (typeof Store !== 'undefined' && typeof Store.save === 'function') Store.save = (base => async function (col, doc) {
+    try {
+      if (col === 'tasks' && doc && /^trip_/.test(String(doc.id || '')) && doc.tripId) {
+        const t = byId('trips', doc.tripId); const dn = t && t.dnId ? byId('fgs', t.dnId) : null;
+        if (isDn2(dn) && !String(doc.desc || '').includes(`معاك إذن تسليم ${dn.number}`)) arguments[1] = Object.assign({}, doc, { dnId: dn.id, desc: `${doc.desc ? doc.desc + '\n' : ''}${dnLine(dn)}` });
+      }
+    } catch (e) { /* ignore */ }
+    return base.apply(this, arguments);
+  })(Store.save);
+  if (typeof pushSend === 'function') pushSend = (base => async function (to, title, body, url) {
+    try {
+      const m = /^\/#\/fleet\/([^/?#]+)$/.exec(String(url || '')); const t = m ? byId('trips', m[1]) : null; const dn = t && t.dnId ? byId('fgs', t.dnId) : null;
+      if (isDn2(dn) && t.driverId && Array.isArray(to) && to.length === 1 && to[0] === 'w:' + t.driverId && !String(body || '').includes(`معاك إذن تسليم ${dn.number}`)) arguments[2] = `${body || ''}\n${dnLine(dn)}`.trim();
+    } catch (e) { /* ignore */ }
+    return base.apply(this, arguments);
+  })(pushSend);
+
+  /* ---------- 4) after handover: the signed sheet ---------- */
+  const canSign = dn => { if (!dn || dn.status === 'cancelled' || isDone(dn) || !W()) return false; const t = tripOf(dn); return canDn() || (myTrip(t) && tripLive(t)); };
+  const quickPos = async () => { try { if (typeof getGeo !== 'function') return null; const g = await Promise.race([getGeo(2500), new Promise(r => setTimeout(() => r(null), 1800))]); return g ? { lat: g.lat, lng: g.lng, acc: g.acc, at: nowISO() } : null; } catch (e) { return null; } };
+  const busy = new Set();
+  function openSign(dnId, opt) {
+    const dn = byId('fgs', dnId); if (!canSign(dn)) return; opt = opt || {};
+    openModal({ title: `${L('اتسلّم — الإذن الممضي', 'Delivered — the signed note')} ${dn.number}`, wide: true, cls: 'dnxm dnxsignm', submitLabel: L('تم التسليم ✓', 'Delivered ✓'), body: `<div class="form">
+      <div class="banner info full" style="margin:0">${ic('info')}<span>${esc(L('صوّر ورقة الإذن بعد ما المستلم يمضي عليها — أو خلّيه يمضي هنا على الموبايل. التأكيد بيروح للعميل على الواتساب أوتوماتيك.', 'Photograph the note after the receiver signs it — or let him sign here on the phone. The confirmation goes to the client on WhatsApp by itself.'))}</span></div>
+      ${field(L('اسم المستلم', 'Receiver name'), inp('rname', (dn.signed && dn.signed.receiverName) || '', 'required autocomplete="off"'))}${field(L('الوظيفة', 'Title'), inp('rtitle', '', 'autocomplete="off"'))}
+      <div class="field full"><label>${esc(L('صورة الإذن الممضي', 'Photo of the signed note'))}</label><label class="btn dnxcam">${ic('camera')}<span id="dnx-fname">${esc(L('صوّر / اختار صورة', 'Take / pick a photo'))}</span><input type="file" id="dnx-file" accept="image/*" capture="environment" hidden></label></div>
+      <div class="field full"><label>${esc(L('أو المستلم يمضي على الموبايل', 'Or the receiver signs on the phone'))}</label><canvas class="sdpad dnxpad" width="600" height="220"></canvas><div class="row" style="gap:6px;margin-top:4px"><button type="button" class="btn xs" data-dnxpad="clear">${esc(L('امسح', 'Clear'))}</button><span class="tiny muted">${esc(L('بصباعه في المربع.', 'With a finger in the box.'))}</span></div></div></div>`,
+      onOpen: f => {
+        const cv = f.querySelector('.dnxpad'); const cx = cv.getContext('2d'); cx.lineWidth = 3.2; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#111'; let on = false, n = 0;
+        const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+        cv.addEventListener('pointerdown', e => { e.preventDefault(); on = true; try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } const [x, y] = pt(e); cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x + 0.1, y); cx.stroke(); n++; });
+        cv.addEventListener('pointermove', e => { if (!on) return; e.preventDefault(); const [x, y] = pt(e); cx.lineTo(x, y); cx.stroke(); n++; });
+        const up = () => { on = false; }; cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+        f.addEventListener('click', e => { if (e.target.closest('[data-dnxpad="clear"]')) { e.preventDefault(); cx.clearRect(0, 0, cv.width, cv.height); n = 0; } });
+        f.addEventListener('change', e => { if (e.target.id === 'dnx-file') { const fl = e.target.files && e.target.files[0]; const s = f.querySelector('#dnx-fname'); if (s) s.textContent = fl ? fl.name : L('صوّر / اختار صورة', 'Take / pick a photo'); } });
+        f._pad = () => (n > 3 ? cv.toDataURL('image/png') : '');
+      },
+      onSubmit: async f => {
+        const d = formData(f); const file = (f.querySelector('#dnx-file') || {}).files?.[0] || null; const pad = f._pad ? f._pad() : '';
+        if (!String(d.rname || '').trim()) { toast(L('اكتب اسم المستلم', 'Type the receiver name'), 'err'); return false; }
+        if (!file && !pad) { toast(L('صوّر الإذن الممضي أو خلّي المستلم يمضي', 'Photograph the signed note or let the receiver sign'), 'err'); return false; }
+        const ok = await signDn(dnId, { name: d.rname.trim(), title: String(d.rtitle || '').trim(), file, pad }, opt);
+        if (ok && typeof opt.then === 'function') later(opt.then, 350);
+        return ok ? true : false;
+      } });
+  }
+  ACTIONS.dnxSign = id => openSign(id, {});
+  async function signDn(dnId, x, opt) {
+    if (busy.has(dnId)) return false; busy.add(dnId);
+    try {
+      const dn = byId('fgs', dnId); if (!canSign(dn)) return false; const t = tripOf(dn); const at = nowISO();
+      let fileId = null, thumb = null;
+      if (x.file) { try { const doc = await proofAttach(x.file, { kind: 'proof', ownerKind: t ? 'trip' : 'fg', ownerId: t ? t.id : dn.id, note: `إذن تسليم ${dn.number} — النسخة الممضية` }); if (doc) { fileId = doc.id; thumb = doc.thumb || null; } } catch (e) { console.warn('dn photo', e); } if (!fileId && !thumb) { toast(L('مقدرتش أرفع الصورة', 'Could not upload the picture'), 'err'); return false; } }
+      const signed = { receiverName: x.name, receiverTitle: x.title || '', fileId, thumb: thumb || x.pad || null, img: x.pad || null, at, by: (S.session && S.session.id) || null, byName: nm(), via: x.file && x.pad ? 'both' : x.file ? 'photo' : 'pad', tripId: t ? t.id : null };
+      if (t && (myTrip(t) || canTripW() || fleetOk())) {
+        const upd = { dnSigned: signed }; const legs = typeof tripLegs === 'function' ? tripLegs(t) : (t.legs || []);
+        if (t.status === 'started' && !legs.some(l => l.key === 'received') && (opt.leg || (typeof tripNextLeg === 'function' && (tripNextLeg(t) || {}).key === 'received'))) {
+          const p = await quickPos(); const note = `استلم: ${x.name}${x.title ? ' — ' + x.title : ''}`;
+          upd.legs = legs.concat([{ key: 'received', at, pos: p, km: null, thumb: signed.thumb, note, status: 'ok' }]); if (p) upd.track = (t.track || []).concat([p]); upd.receivedAt = at; upd.receiveProof = { thumb: signed.thumb, note, status: 'ok', fileIds: fileId ? [fileId] : [], at, byName: nm() };
+        }
+        await Store.update('trips', t.id, upd);
+      }
+      if (canDn()) { if (!t) await Store.update('fgs', dn.id, { signed, receivedAt: at, receiverName: x.name, signedPhoto: fileId }, { silent: true }); await finalize(dn.id); }
+      toast(L('اتسلّم ✓', 'Delivered ✓'));
+      afterSigned(dn.id).catch(e => console.warn('dn after', e));
+      try { render(false); } catch (e) { /* ignore */ }
+      return true;
+    } finally { busy.delete(dnId); }
+  }
+  /* complete the note from what was signed (any client that may write fgs) */
+  const fin = new Set();
+  async function finalize(dnId) {
+    if (fin.has(dnId) || !canDn()) return; fin.add(dnId);
+    try {
+      const dn = byId('fgs', dnId); if (!dn || dn.status === 'cancelled') return; const t = tripOf(dn); const sg = dn.signed || (t && t.dnSigned); if (!sg) return;
+      const patch = {};
+      if (!dn.signed) Object.assign(patch, { signed: sg, receivedAt: sg.at || nowISO(), receiverName: sg.receiverName || '', signedPhoto: sg.fileId || null });
+      if (!dn.sign && sg.img) patch.sign = { name: sg.receiverName || '', title: sg.receiverTitle || '', img: sg.img, at: sg.at, byName: sg.byName || '' };
+      if (!dn.signedCopy && (sg.fileId || (sg.thumb && !sg.img))) patch.signedCopy = { fileId: sg.fileId || null, thumb: sg.thumb || null, at: sg.at, byName: sg.byName || '' };
+      if (Object.keys(patch).length) await Store.update('fgs', dn.id, patch, { silent: true });
+      if (dn.status !== 'delivered') await dnDeliver(byId('fgs', dn.id) || dn, { thumb: sg.thumb || null, note: `استلم: ${sg.receiverName || ''}`, byName: sg.byName || '', at: sg.at || nowISO(), fileIds: sg.fileId ? [sg.fileId] : [], tripId: t ? t.id : null });
+    } finally { fin.delete(dnId); }
+  }
+  let _syncAt = 0;
+  if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => {
+    try {
+      if (!S.session || !canDn() || Date.now() - _syncAt < 6000) return; _syncAt = Date.now();
+      fgDns().filter(d => isDn2(d) && d.status !== 'cancelled').forEach(d => { const t = tripOf(d); if ((t && t.dnSigned && (!d.signed || d.status !== 'delivered')) || (d.signed && d.status !== 'delivered')) finalize(d.id).catch(() => { }); });
+    } catch (e) { /* ignore */ }
+  });
+
+  /* ---------- 5) WhatsApp to the contact + the factory manager ---------- */
+  const WHY = () => ({ no_phone: L('مفيش رقم واتساب لمسؤول التواصل', 'No WhatsApp number for the contact'), bad_number: L('رقم الواتساب غلط', 'The WhatsApp number is wrong'), no_wa: L('واتساب الشركة مش متظبط', 'The company WhatsApp is not set up'), upstream: L('واتساب رفض الرسالة', 'WhatsApp refused the message'), offline: L('مفيش اتصال بالسيرفر', 'No connection to the server'), network: L('مفيش اتصال بالسيرفر', 'No connection to the server'), forbidden: L('مش مسموح', 'Not allowed'), not_signed: L('الإذن لسه مامضيش', 'The note is not signed yet'), busy: L('اتبعتت محاولة من ثواني — استنى شوية وحاول تاني', 'A try went seconds ago — wait a little and try again') });
+  const WHY_AR = { no_phone: 'مفيش رقم واتساب لمسؤول التواصل', bad_number: 'رقم الواتساب غلط', no_wa: 'واتساب الشركة مش متظبط', upstream: 'واتساب رفض الرسالة', offline: 'مفيش اتصال بالسيرفر', network: 'مفيش اتصال بالسيرفر', forbidden: 'مش مسموح', not_signed: 'الإذن لسه مامضيش', busy: 'اتبعتت محاولة من ثواني — استنى شوية وحاول تاني' };
+  async function callWa(dnId) {
+    if (!(typeof sbOn === 'function' && sbOn()) || !S.sb || !S.sb.functions) return { error: 'offline' };
+    try {
+      const r = await S.sb.functions.invoke('wa', { body: { action: 'send-dn', dnId } });
+      if (r && r.error) { let m = r.error.message || 'error'; try { const j = await r.error.context.json(); m = j.error || m; } catch (e) { /* no body */ } return { error: m }; }
+      return (r && r.data) || { error: 'empty' };
+    } catch (e) { return { error: 'network' }; }
+  }
+  async function afterSigned(dnId) {
+    const dn = byId('fgs', dnId); if (!dn) return; const o = dn.orderId ? byId('orders', dn.orderId) : null; const ct = contactOf(o, dn); const sg = signedOf(dn) || {};
+    let res = null;
+    if (dn.waSentAt) res = { ok: true, already: true };
+    else if (!String(ct.phone || '').replace(/\D/g, '')) res = { error: 'no_phone' };
+    else res = await callWa(dnId);
+    const ok = !!(res && res.ok); const code = ok ? '' : String((res && res.error) || 'error');
+    if (canDn()) { try { await Store.update('fgs', dnId, ok ? { waSentAt: dn.waSentAt || nowISO(), waError: null } : { waError: code, waTriedAt: nowISO() }, { silent: true }); } catch (e) { /* ignore */ } }
+    try {
+      await notifyRole('manager', `اتسلّم إذن ${dn.number}${o ? ' — ' + (o.code || '') : ''}`, `${dn.clientName || ''}: ${itemsTxt(dn)}\nاستلمه: ${sg.receiverName || ''}${ok ? '\nاتبعت للعميل تأكيد على الواتساب ✓' : ''}`.replace(MONEY, '…'), { id: `dndone_${dn.id}`, fields: { link: `/#/fg/${dn.id}`, dnId: dn.id, source: 'dndone' } });
+      if (!ok) await notifyRole('manager', `ابعت تأكيد التسليم للعميل — ${dn.number}`, `${WHY_AR[code] || 'الرسالة مااتبعتتش'} — ابعتها من الواتساب بتاعك بزرار واحد:\n${dnText(dn)}`, { id: `dnwa_${dn.id}`, priority: 'high', fields: { link: `/#/fg/${dn.id}`, dnId: dn.id, source: 'dnwa', waLink: waMe(dn) } });
+    } catch (e) { console.warn('dn notify', e); }
+    if (ok && !res.already) toast(L('اتبعت للعميل تأكيد على الواتساب ✓', 'The client got the confirmation on WhatsApp ✓'));
+    else if (!ok) toast(L('تأكيد الواتساب مااتبعتش — مدير المصنع هيبعته', 'The WhatsApp confirmation did not go — the factory manager will send it'), 'err');
+    return res;
+  }
+  ACTIONS.dnxWaMe = async id => {
+    const dn = byId('fgs', id); if (!dn) return; window.open(waMe(dn), '_blank', 'noopener');
+    try { if (canDn()) await Store.update('fgs', id, { waManualAt: nowISO(), waManualBy: nm() }, { silent: true }); const tk = byId('tasks', `dnwa_${id}`); if (tk && tk.status !== 'done') await Store.update('tasks', tk.id, { status: 'done', doneAt: nowISO(), doneByName: nm() }, { silent: true }); } catch (e) { /* ignore */ }
+    try { render(false); } catch (e) { /* ignore */ }
+  };
+  ACTIONS.dnxWaRetry = async id => { const dn = byId('fgs', id); if (!dn || !isDone(dn) || !canDn()) return; toast(L('بيبعت…', 'Sending…')); const r = await afterSigned(id); if (r && r.ok) { const tk = byId('tasks', `dnwa_${id}`); if (tk && tk.status !== 'done') await Store.update('tasks', tk.id, { status: 'done', doneAt: nowISO(), doneByName: nm() }, { silent: true }); } try { render(false); } catch (e) { /* ignore */ } };
+
+  /* ---------- the note card (trip page, task page, note page) ---------- */
+  function waState(dn) {
+    if (!isDone(dn) || !sees()) return '';
+    if (dn.waSentAt) return `<div class="dnxwa good">${ic('wa')}<span>${esc(L('اتبعت للعميل تأكيد على الواتساب', 'Confirmation sent to the client on WhatsApp'))} · ${esc(dmy(dn.waSentAt))}</span></div>`;
+    const why = dn.waError ? (WHY()[dn.waError] || dn.waError) : L('لسه مااتبعتش', 'Not sent yet');
+    return `<div class="dnxwa warn">${ic('alert')}<span>${esc(L('تأكيد الواتساب', 'WhatsApp confirmation'))}: ${esc(why)}${dn.waManualAt ? ` · ${esc(L('اتبعت يدوي', 'sent by hand'))} ${esc(dmy(dn.waManualAt))}` : ''}</span><div class="row dnxacts"><button type="button" class="btn xs p" data-action="dnxWaMe" data-arg="${esc(dn.id)}">${ic('wa')}${esc(L('ابعتها من الواتساب بتاعك', 'Send it from your WhatsApp'))}</button>${canDn() ? `<button type="button" class="btn xs" data-action="dnxWaRetry" data-arg="${esc(dn.id)}">${esc(L('حاول تاني', 'Try again'))}</button>` : ''}</div></div>`;
+  }
+  function dnCard(dn, opt) {
+    opt = opt || {}; const o = dn.orderId ? byId('orders', dn.orderId) : null; const t = tripOf(dn); const ct = contactOf(o, dn); const sg = signedOf(dn); const Ls = linesOf(dn);
+    const acts = [`<button type="button" class="btn sm" data-action="dnxView" data-arg="${esc(dn.id)}">${ic('eye', 'file')}${esc(L('شوف الإذن', 'View the note'))}</button>`];
+    if (canSign(dn)) acts.push(`<button type="button" class="btn sm p" data-action="dnxSign" data-arg="${esc(dn.id)}">${ic('camera')}${esc(L('سلّمت — صوّر الإذن الممضي', 'Delivered — photograph the signed note'))}</button>`);
+    if (!opt.noAssign && fleetOk() && !isDone(dn) && dn.status !== 'cancelled' && (!t || needsAssign(t))) acts.push(`<button type="button" class="btn sm ${opt.page ? '' : 'p'}" data-action="dnxAssign" data-arg="${esc(dn.id)}">${ic('map')}${esc(t ? L('حدّد العربية والسواق', 'Pick the vehicle and driver') : L('مشوار تسليم', 'Delivery trip'))}</button>`);
+    return `<div class="card dnxc" id="dnx-${esc(dn.id)}"><div class="cardhead"><h3>${ic('file', 'inventory')}${esc(L('إذن تسليم', 'Delivery note'))} <span class="code ltr">${esc(dn.number || '')}</span></h3><div class="grow"></div>${stBadge(dn)}</div>
+      <div class="dnxmeta"><span class="notr">${esc(dn.clientName || '')}</span>${o ? `<span><span class="ltr">${esc(o.code || '')}</span> — <span class="notr">${esc(o.title || '')}</span></span>` : ''}${dn.address ? `<span>${ic('map')}${esc(dn.address)}</span>` : ''}${ct.name || ct.phone ? `<span>${ic('phone')}<span class="notr">${esc(ct.name || '')}</span>${ct.phone ? ` <a class="ltr" href="tel:${esc(String(ct.phone).replace(/[^\d+]/g, ''))}">${esc(ct.phone)}</a>` : ''}</span>` : ''}</div>
+      <div class="sdlines">${Ls.map(x => `<div class="sdln">${x.thumb ? `<img src="${esc(x.thumb)}" alt="">` : `<span class="sdnoimg">${ic('inventory')}</span>`}<div><b class="notr">${esc(x.name)}</b>${x.of ? `<small>${esc(L(`كده ${n2(x.after)} من ${n2(x.of)}`, `now ${n2(x.after)} of ${n2(x.of)}`))}</small>` : ''}</div><span class="sdq2">× ${n2(x.qty)}</span></div>`).join('')}</div>
+      ${opt.driver && !sg ? `<div class="dnxhint">${ic('info')}<span>${esc(L(`معاك إذن تسليم ${dn.number} — سلّمه ومضّي المستلم وصوّر الورقة الممضية من نفس المهمة`, `You carry delivery note ${dn.number} — hand it over, have the receiver sign and photograph the signed sheet from this same task`))}</span></div>` : ''}
+      ${sg ? `<div class="sdsigned dnxsigned">${ic('check')}<span>${esc(L('استلمه', 'Received by'))} <b class="notr">${esc(sg.receiverName || '')}</b>${sg.receiverTitle ? ' — ' + esc(sg.receiverTitle) : ''} · ${esc(dmy(sg.at))}</span>${sg.thumb ? `<img src="${esc(sg.thumb)}" alt="" data-action="dnxShot" data-arg="${esc(dn.id)}">` : ''}</div>` : ''}
+      ${opt.noWa ? '' : waState(dn)}
+      <div class="row dnxacts">${acts.join('')}</div></div>`;
+  }
+  ACTIONS.dnxShot = id => { const dn = byId('fgs', id); const sg = signedOf(dn); if (!sg) return; const f = sg.fileId ? byId('files', sg.fileId) : null; if (f && f.store && f.store !== 'thumb' && typeof openViewer === 'function') { openViewer([Object.assign({}, f, { name: `${L('الإذن الممضي', 'Signed note')} ${dn.number}`, note: '' })], 0, {}); return; } if (typeof lightbox === 'function') lightbox(sg.thumb || (f && f.thumb) || null, `${L('الإذن الممضي', 'Signed note')} ${dn.number}`); };
+  const dnOfTrip = t => (t && t.dnId ? byId('fgs', t.dnId) : null);
+  const tripStaff = () => !!S.session && (isAdmin() || fleetOk() || ['manager', 'vice', 'fleet', 'office', 'hr', 'store'].includes(R()));
+  if (typeof vTripDetail === 'function') vTripDetail = (base => function (id) {
+    const html = base.apply(this, arguments);
+    try { const t = byId('trips', id); const dn = dnOfTrip(t); if (!isDn2(dn) || !(tripStaff() || myTrip(t))) return html; const card = dnCard(dn, { driver: myTrip(t), noWa: !sees() }); const i = html.indexOf('<div class="card'); return i < 0 ? card + html : html.slice(0, i) + card + html.slice(i); } catch (e) { return html; }
+  })(vTripDetail);
+  if (typeof vTaskDetail === 'function') vTaskDetail = (base => function (t) {
+    const html = base.apply(this, arguments);
+    try {
+      if (!t) return html; const tr = t.tripId ? byId('trips', t.tripId) : null; const dn = isDn2(dnOfTrip(tr)) ? dnOfTrip(tr) : (t.dnId ? byId('fgs', t.dnId) : null); if (!isDn2(dn)) return html;
+      if (!(sees() || myTrip(tripOf(dn)))) return html;
+      let card = dnCard(dn, { driver: myTrip(tripOf(dn)), noWa: !sees() });
+      if ((t.source === 'dnwa' || /^dnwa_/.test(String(t.id))) && !dn.waSentAt && t.status !== 'done') card = `<div class="banner warn dnxwab">${ic('wa')}<span>${esc(L('الرسالة جاهزة — دوسة واحدة وتتبعت من الواتساب بتاعك.', 'The message is ready — one tap sends it from your WhatsApp.'))}</span><button type="button" class="btn sm p" data-action="dnxWaMe" data-arg="${esc(dn.id)}">${ic('wa')}${esc(L('ابعت للعميل', 'Send to the client'))}</button></div>` + card;
+      return card + html;
+    } catch (e) { return html; }
+  })(vTaskDetail);
+
+  /* the «delivered» step of a delivery-note trip is the signed sheet; ending the trip asks for it first */
+  if (ACTIONS.tripLeg) ACTIONS.tripLeg = (base => async function (id) {
+    try {
+      const t = byId('trips', id); const dn = dnOfTrip(t);
+      if (t && isDn2(dn) && t.status === 'started' && typeof tripNextLeg === 'function' && (tripNextLeg(t) || {}).key === 'received' && (myTrip(t) || fleetOk() || isAdmin())) {
+        const sg = signedOf(dn);
+        if (!sg && canSign(dn)) { openSign(dn.id, { leg: true }); return; }
+        if (sg) { const p = await quickPos(); await Store.update('trips', id, { legs: tripLegs(t).concat([{ key: 'received', at: nowISO(), pos: p, km: null, thumb: sg.thumb || null, note: `استلم: ${sg.receiverName || ''}`, status: 'ok' }]), receivedAt: nowISO() }); toast(L('تم التسليم ✓', 'Delivered ✓')); return; }
+      }
+    } catch (e) { console.warn('dn leg', e); }
+    return base.apply(this, arguments);
+  })(ACTIONS.tripLeg);
+  if (ACTIONS.tripEnd) ACTIONS.tripEnd = (base => async function (id) {
+    const t = byId('trips', id); const dn = dnOfTrip(t); const self = this; const args = arguments;
+    if (t && t.status === 'started' && isDn2(dn) && dn.status !== 'cancelled' && !signedOf(dn) && canSign(dn)) { toast(L('صوّر الإذن الممضي الأول', 'Photograph the signed note first')); openSign(dn.id, { leg: true, then: () => base.apply(self, args) }); return; }
+    return base.apply(this, arguments);
+  })(ACTIONS.tripEnd);
+
+  /* stock: a line that is not in the finished-goods stock never moves it */
+  { const base = dnDeliver; dnDeliver = async function (dn, proof) { if (dn && (dn.items || []).some(it => it.nostock)) return base.call(this, Object.assign({}, dn, { items: dn.items.filter(it => !it.nostock) }), proof); return base.apply(this, arguments); }; window.dnDeliver = dnDeliver; }
+
+  /* ---------- the note page (#/fg/<id>) ---------- */
+  function dnPage(dn) {
+    const o = dn.orderId ? byId('orders', dn.orderId) : null; const t = tripOf(dn);
+    const extra = [];
+    if (['draft', 'out'].includes(dn.status) && !isDone(dn) && canDn()) extra.push(`<button type="button" class="btn sm ghost" data-action="dnCancel" data-arg="${esc(dn.id)}">${esc(L('إلغاء الإذن', 'Cancel the note'))}</button>`);
+    return `<div class="toolbar"><a class="btn sm" href="#/fg">${ic('back')}${esc(L('المنتجات الجاهزة والتسليم', 'Finished goods & delivery'))}</a>${o ? `<a class="btn sm ghost ltr" href="#/orders/${esc(o.id)}">${esc(o.code || '')}</a>` : ''}<div class="grow"></div>${extra.join('')}</div>
+      ${dnCard(dn, { page: true })}
+      <div class="card dnxinfo"><div class="grid g3" style="gap:10px;font-size:13px"><div><div class="tiny muted">${esc(L('ميعاد التسليم', 'Planned date'))}</div>${esc(dmy(dn.plannedDate || dn.date))}</div><div><div class="tiny muted">${esc(L('اتعمل', 'Made'))}</div>${esc(dmy(dn.createdAt))} · <span class="notr">${esc(dn.byName || '')}</span></div><div><div class="tiny muted">${esc(L('رقم العقد عندهم', 'Their ref.'))}</div><span class="ltr">${esc(dn.clientRef || '—')}</span></div></div>${dn.note ? `<div class="small" style="margin-top:8px">${esc(dn.note)}</div>` : ''}</div>
+      ${t ? `<div class="card"><div class="cardhead"><h3>${esc(L('المشوار', 'The trip'))}</h3></div>${typeof tripItem === 'function' ? tripItem(t, { compact: true }) : `<a href="#/fleet/${esc(t.id)}">${esc(t.number || '')}</a>`}</div>` : ''}`;
+  }
+  if (typeof EXTRA_VIEWS !== 'undefined' && typeof EXTRA_VIEWS.fg === 'function') EXTRA_VIEWS.fg = (base => r => { if (r && r.id) { const dn = byId('fgs', r.id); if (isDn2(dn)) return dnPage(dn); } return base(r); })(EXTRA_VIEWS.fg);
+
+  /* ---------- the project (order) page ---------- */
+  function orderCard(o) {
+    const Ls = contract(o); const dns = sortBy(dnsOf(o.id), d => d.createdAt || '', true); const ct = contactOf(o, null);
+    if (!Ls.length && !dns.length && !canDn()) return '';
+    return `<div class="card dnxo" id="sdsupply"><div class="cardhead"><h3>${ic('inventory')}${esc(L('التسليم للعميل', 'Delivery to the client'))}</h3><div class="grow"></div>${canDn() && W() && Ls.length ? `<button type="button" class="btn sm p" data-action="dnxNew" data-arg="${esc(o.id)}">${ic('plus')}${esc(L('إذن تسليم', 'Delivery note'))}</button>` : ''}</div>
+      <div class="dnxct">${ic('phone')}<span>${esc(L('مسؤول التواصل', 'Contact person'))}:</span>${ct.name || ct.phone ? `<b class="notr">${esc(ct.name || '')}</b>${ct.phone ? `<span class="ltr">${esc(ct.phone)}</span>` : ''}${ct.fromClient ? `<small class="muted">(${esc(L('من بيانات العميل', 'from the client record'))})</small>` : ''}` : `<span class="muted">${esc(L('مش متسجّل — التأكيد مش هيتبعت أوتوماتيك', 'Not set — the confirmation cannot go by itself'))}</span>`}${canOrderW() ? `<button type="button" class="btn xs ghost" data-action="dnxContact" data-arg="${esc(o.id)}">${ic('edit')}${esc(L('تعديل', 'Edit'))}</button>` : ''}</div>
+      ${Ls.length ? `<div class="sdprog">${Ls.map(l => { const cn = counts(o.id, l.k); const pc = l.qty ? Math.min(100, Math.round(cn.done / l.qty * 100)) : 0; const pp = l.qty ? Math.min(100 - pc, Math.round(cn.pend / l.qty * 100)) : 0; return `<div class="sdpr dnxpr"><span class="notr">${esc(l.name)}</span><b>${esc(L(`اتسلّم ${n2(cn.done)} من ${n2(l.qty)}`, `delivered ${n2(cn.done)} of ${n2(l.qty)}`))}${cn.pend ? `<small> · ${esc(L(`في الطريق ${n2(cn.pend)}`, `on the way ${n2(cn.pend)}`))}</small>` : ''}</b><i><em style="width:${pc}%"></em><u style="width:${pp}%"></u></i></div>`; }).join('')}</div>` : ''}
+      ${dns.length ? `<div class="aplines" style="margin-top:8px">${dns.map(d => `<a class="apline" href="#/fg/${esc(d.id)}"><b class="ltr">${esc(d.number || '')}</b><span>${esc(dmy(d.date || d.createdAt))}</span><span class="grow"></span>${stBadge(d)}</a>`).join('')}</div>` : ''}</div>`;
+  }
+  if (typeof vOrderDetail === 'function') vOrderDetail = (base => function (id) {
+    const h = base.apply(this, arguments);
+    try {
+      const o = byId('orders', id); if (!o || !sees()) return h; const c = orderCard(o); if (!c) return h;
+      const k = h.indexOf('<div class="card"><div class="cardhead"><h3>مراحل التصنيع</h3>'); return k < 0 ? h + c : h.slice(0, k) + c + h.slice(k);
+    } catch (e) { return h; }
+  })(vOrderDetail);
+
+  window.nfDn = { dnSheet, dnText, linesOf, counts, contactOf, signedOf, isDone, tripOf, finalize, afterSigned, waMe };
+
+  document.head.insertAdjacentHTML('beforeend', `<style>
+.dnxc .cardhead h3,.dnxo .cardhead h3{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.dnxc .cardhead h3 svg,.dnxo .cardhead h3 svg{width:18px;height:18px}
+.dnxmeta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin:-2px 0 10px;color:var(--ink-2,var(--muted))}.dnxmeta>span{display:inline-flex;align-items:center;gap:4px;min-width:0}.dnxmeta svg{width:14px;height:14px;flex:none}.dnxmeta a{color:inherit}
+.dnxacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.dnxacts .btn{display:inline-flex;align-items:center;gap:6px}
+.dnxhint{display:flex;gap:8px;align-items:flex-start;margin-top:10px;padding:8px 10px;border-radius:12px;background:var(--acc-soft,var(--surface-2));font-size:13px;line-height:1.55}.dnxhint svg{width:16px;height:16px;flex:none;margin-top:2px}
+.dnxwa{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:10px;padding:8px 10px;border-radius:12px;font-size:13px}.dnxwa svg{width:16px;height:16px;flex:none}.dnxwa span{flex:1;min-width:160px}.dnxwa .dnxacts{margin-top:0}
+.dnxwa.good{background:var(--good-soft,#e3f6e8);color:var(--good-ink,#1b6b34)}.dnxwa.warn{background:var(--warn-soft,#fff4dc);color:var(--warn-ink,#7a5200)}
+.dnxwab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.dnxwab span{flex:1;min-width:180px}
+.dnxsigned img{cursor:zoom-in}
+.dnxct{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:13px;margin:-2px 0 10px}.dnxct svg{width:15px;height:15px}.dnxct small{font-size:11.5px}
+.dnxpr u{display:block;height:100%;background:var(--acc,#2a78d6);opacity:.45}.dnxpr i{display:flex}.dnxpr b small{font-weight:500;color:var(--muted)}
+.dnxhd{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.dnxhd span{color:var(--muted);font-size:13px}
+.dnxcam{display:inline-flex!important;align-items:center;gap:8px;cursor:pointer;max-width:100%}.dnxcam span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnxprev .mf{flex-wrap:wrap}.dnxs .sdsigns.dnxsg{grid-template-columns:1fr 1.3fr .8fr}
+.dnxs{color-scheme:light}.dnxs .sdr{min-width:270px}.dnxkv{width:100%;border-collapse:collapse;background:transparent!important}.dnxkv tr{background:transparent!important}.sdoc .dnxkv th,.sdoc .dnxkv td{position:static;background:transparent!important;border:0!important;box-shadow:none!important;vertical-align:top}.dnxkv th{width:1%;font-size:11px;font-weight:500;color:#555!important;text-align:right;white-space:nowrap;padding:3px 0 3px 12px!important}.dnxkv th small{font-size:9.5px;opacity:.75}.dnxkv td{font-size:12.5px;font-weight:700;text-align:start;padding:3px 0!important;color:#141414!important}.dnxs .sdr .dnxkv td{white-space:nowrap;text-align:left}
+.dnxs .sdtab th{background:#f3f3f5!important;color:#141414!important;border-bottom:2px solid var(--sd-ac)!important}.dnxs .sdtab td{background:#fff!important;color:#141414!important;border-bottom:1px solid #e6e6ea!important}
+.dnxs .sdsigns>div,.dnxs .sdcols{background:#fff!important;color:#141414!important}.dnxs .sdf span:last-child{white-space:nowrap}
+@media (max-width:820px){.dnxm .sddl{gap:8px;padding:8px}.dnxm .sddl img,.dnxm .sdnoimg{width:40px;height:40px}.dnxm .sddb b{white-space:normal}.dnxm .sddl>input[type=number]{width:64px!important}}
+</style>`);
+})();
+/* =====================================================================
+   v7.96 — «Forgot password» with a 6-digit code on the person's own WhatsApp (owner brief claude/forgot-pw-whatsapp-brief.md).
+   The three systems (factory / studio / construction), phone and computer, Arabic and English.
+   Wraps ACTIONS.forgotPw AFTER the studio e-mail step (99zzZzP-stu-mailcode.js, inject('forgot')) and keeps it; the base form
+   (26-backend.js) and its submit logic stay as they are — this part only:
+     · rewrites the banner, puts «Send me the code on WhatsApp» next to the phone box (Edge «forgot-wa», no sign-in needed;
+       the server sends the code only to the number on the person's own record, valid 10 minutes, single use),
+       a status line «Sent to +20 10•• ••• •472 — valid 10 minutes» and «Send again» after 60 s;
+     · the code box: one-time-code / numeric; the HR request button (sbAskReset, unchanged) is hidden until WhatsApp fails,
+       there is no number on file, or the person taps «I did not get a code»;
+     · nf_reset_password answers 'locked' (5 wrong codes → 1 hour): a clear message instead of «wrong code»;
+     · after a successful reset the login form signs in with the new password at once (the usual sign-in → the password
+       is synced to the other Ninety systems the person has, as today).
+   ===================================================================== */
+(function () {
+  if (window.__NF_FWA__) return; window.__NF_FWA__ = 1;
+  if (typeof ACTIONS === 'undefined' || typeof ACTIONS.forgotPw !== 'function') return;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const on = () => typeof sbOn === 'function' && sbOn();
+  const MSG = {
+    not_found: ['الرقم غير مسجّل', 'This number is not registered'],
+    no_access: ['حسابك بدون صلاحية دخول — اطلب من الموارد البشرية', 'Your account has no access — ask HR'],
+    not_activated: ['حسابك لسه ما اتفعّلش — فعّله من «أول مرة؟»', 'Your account is not activated yet — use “First time?”'],
+    rate: ['طلبت كود كتير — استنى شوية', 'You asked for too many codes — wait a while'],
+    locked: ['اتقفل ساعة بسبب محاولات غلط كتير', 'Locked for an hour after too many wrong tries'],
+    no_phone: ['مفيش رقم مسجّل على حسابك — اطلب من الموارد البشرية', 'There is no phone number on your account — ask HR'],
+    wa_failed: ['الواتساب مابعتش الكود دلوقتي — اطلب من الموارد البشرية', 'WhatsApp could not send the code right now — ask HR'],
+    error: ['حصلت مشكلة — جرّب تاني', 'Something went wrong — try again']
+  };
+  const say = st => { const m = MSG[st] || MSG.error; return L(m[0], m[1]); };
+  const H = s => (typeof esc === 'function' ? esc(s) : String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
+  const form = () => document.getElementById('mform');
+  const mine = () => { const f = form(); return f && f.querySelector('#fwa-send') ? f : null; };
+  let timer = null, pendingPw = null;
+
+  /* ---------- the forgot form ---------- */
+  function showHr(f) { const b = f && f.querySelector('[data-action="sbAskReset"]'); if (b) { b.hidden = false; b.style.display = ''; } }
+  function enhance() {
+    const f = form(); if (!f || f.querySelector('#fwa-send')) return;
+    const phone = f.querySelector('[name="phone"]'), code = f.querySelector('[name="code"]'); if (!phone || !code) return;
+    f.classList.add('fwa');
+    const sp = f.querySelector('.banner.info.full span');
+    if (sp) sp.textContent = L('اكتب رقم موبايلك ودوس «ابعتلي الكود على الواتساب». هيوصلك كود 6 أرقام على واتساب رقمك المسجّل. اكتبه هنا مع كلمة السر الجديدة.', 'Type your mobile number and tap “Send me the code on WhatsApp”. A 6-digit code arrives on the WhatsApp of your registered number. Type it here with your new password.');
+    const row = document.createElement('div'); row.className = 'fwa-row';
+    phone.parentNode.insertBefore(row, phone); row.appendChild(phone);
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn p'; btn.id = 'fwa-send'; btn.setAttribute('data-action', 'fwaSend'); btn.textContent = L('ابعتلي الكود على الواتساب', 'Send me the code on WhatsApp');
+    row.appendChild(btn);
+    const st = document.createElement('div'); st.id = 'fwa-st'; st.className = 'fwa-st'; st.hidden = true;
+    row.parentNode.appendChild(st);
+    const studioMail = !!f.querySelector('#mcemail');
+    const lbl = (code.closest('.field') || f).querySelector('label');
+    if (lbl) lbl.textContent = studioMail ? L('الكود اللي وصلك على الواتساب أو الإيميل (6 أرقام)', 'The code you received on WhatsApp or by email (6 digits)') : L('الكود اللي وصلك على الواتساب (6 أرقام)', 'The code you received on WhatsApp (6 digits)');
+    code.setAttribute('autocomplete', 'one-time-code'); code.setAttribute('inputmode', 'numeric'); code.setAttribute('maxlength', '6'); code.setAttribute('pattern', '[0-9]*');
+    const hr = f.querySelector('[data-action="sbAskReset"]');
+    if (hr) { hr.textContent = L('اطلب من الموارد البشرية', 'Ask HR'); hr.hidden = true; hr.style.display = 'none'; }
+    wrapRpc();
+  }
+  function status(f, html, kind) { const st = f.querySelector('#fwa-st'); if (!st) return; st.hidden = false; st.className = 'fwa-st ' + (kind || 'ok'); st.innerHTML = html; }
+  function cooldown(btn, secs) {
+    if (timer) clearInterval(timer); let n = secs; btn.disabled = true;
+    const tick = () => { if (!document.body.contains(btn)) { clearInterval(timer); timer = null; return; } if (n <= 0) { clearInterval(timer); timer = null; btn.disabled = false; btn.textContent = L('ابعت تاني', 'Send again'); return; } btn.textContent = L('ابعت تاني', 'Send again') + ` (${n})`; n--; };
+    tick(); timer = setInterval(tick, 1000);
+  }
+  async function callEdge(login) {
+    const c = (typeof nfConfig === 'function' && nfConfig()) || {};
+    const base = String(c.supabaseUrl || (S.sb && S.sb.supabaseUrl) || '').replace(/\/$/, ''); const key = c.supabaseAnonKey || (S.sb && S.sb.supabaseKey) || '';
+    if (!/^https?:\/\//.test(base)) return { status: 'wa_failed' };
+    const r = await fetch(base + '/functions/v1/forgot-wa', { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, key ? { apikey: key, Authorization: 'Bearer ' + key } : {}), body: JSON.stringify({ action: 'send', login, lang: en() ? 'en' : 'ar' }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok && !j.status) return { status: r.status === 404 ? 'wa_failed' : 'error' };
+    return j;
+  }
+  ACTIONS.fwaSend = async () => {
+    const f = mine(); if (!f) return; const btn = f.querySelector('#fwa-send');
+    const raw = (f.querySelector('[name="phone"]') || {}).value || ''; const login = typeof sbLoginId === 'function' ? sbLoginId(raw) : String(raw).trim();
+    if (!login) { toast(L('اكتب رقم الموبايل الأول', 'Enter your mobile number first'), 'err'); return; }
+    const t0 = btn.textContent; btn.disabled = true; btn.textContent = L('بيتبعت…', 'Sending…');
+    let j = null;
+    try { j = await callEdge(login); } catch (e) { j = { status: 'wa_failed' }; }
+    const s = String((j && j.status) || 'error');
+    if (s === 'ok') {
+      const m = `<bdi dir="ltr">${H(j.masked || '')}</bdi>`;
+      status(f, `${L(`اتبعت على ${m} — صالح 10 دقايق`, `Sent to ${m} — valid for 10 minutes`)} <button type="button" class="linkbtn" data-action="fwaNoCode">${L('مش واصلني كود', 'I did not get a code')}</button>`, 'ok');
+      cooldown(btn, 60);
+      const c = f.querySelector('[name="code"]'); if (c) c.focus();
+      toast(L('الكود اتبعت على الواتساب', 'The code was sent on WhatsApp'));
+      return;
+    }
+    btn.disabled = false; btn.textContent = t0;
+    status(f, H(say(s)), 'err'); toast(say(s), 'err');
+    if (s === 'wa_failed' || s === 'no_phone' || s === 'error') showHr(f);
+  };
+  ACTIONS.fwaNoCode = () => { const f = mine(); if (!f) return; showHr(f); const b = f.querySelector('[data-action="sbAskReset"]'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); };
+
+  /* ---------- nf_reset_password: 'locked' message + sign in right after a successful reset ---------- */
+  function wrapRpc() {
+    if (!S.sb || S.sb.__fwaRpc || typeof S.sb.rpc !== 'function') return;
+    const orig = S.sb.rpc; S.sb.__fwaRpc = true;
+    S.sb.rpc = function (fn, args) {
+      const q = orig.apply(this, arguments);
+      if (fn !== 'nf_reset_password' || !mine()) return q;
+      return Promise.resolve(q).then(r => {
+        if (r && !r.error && r.data === 'locked') return { data: null, error: { message: say('locked') } };
+        if (r && !r.error && r.data === 'ok') { pendingPw = String((args && args.p_password) || ''); setTimeout(autoLogin, 50); }
+        return r;
+      });
+    };
+  }
+  function autoLogin(tries) {
+    tries = tries || 0; if (!pendingPw) return;
+    const lf = document.getElementById('loginform'), pw = document.getElementById('lg-pass'), u = document.getElementById('lg-user');
+    if (form() || !lf || !pw || !u || !u.value) { if (tries < 40) setTimeout(() => autoLogin(tries + 1), 100); else pendingPw = null; return; }
+    pw.value = pendingPw; pendingPw = null;
+    if (typeof lf.requestSubmit === 'function') lf.requestSubmit(); else lf.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  }
+
+  const base = ACTIONS.forgotPw;
+  ACTIONS.forgotPw = function () { const r = base.apply(this, arguments); if (on()) setTimeout(enhance, 0); return r; };
+
+  const css = document.createElement('style');
+  css.textContent = `#mform.fwa .fwa-row{display:flex;gap:8px;flex-wrap:wrap;align-items:stretch}
+#mform.fwa .fwa-row>input{flex:1 1 170px;min-width:0}
+#mform.fwa .fwa-row>#fwa-send{flex:0 1 auto;white-space:normal;max-width:100%}
+#mform.fwa .fwa-st{display:block;margin-top:8px;font-size:12.5px;line-height:1.6;padding:8px 10px;border-radius:10px;background:var(--info-bg,rgba(40,120,200,.08));color:var(--ink,inherit)}
+#mform.fwa .fwa-st.err{background:var(--crit-bg,rgba(200,60,60,.08));color:var(--crit-ink,#b3261e)}
+#mform.fwa .fwa-st .linkbtn{background:none;border:0;padding:0 4px;color:var(--acc,#2878c8);text-decoration:underline;cursor:pointer;font:inherit}
+#mform.fwa [data-action="sbAskReset"][hidden],#mform.fwa .fwa-st[hidden]{display:none!important}
+#mform.fwa .fwa-st bdi{display:inline;unicode-bidi:isolate}`;
+  document.head.appendChild(css);
+})();
+/* =====================================================================
+   v7.97 — the «Accounts» sheet: several worker accounts on ONE phone (owner brief claude/multi-account-brief.md, approved with the PIN,
+   17 Oct). For workers who have no phone: the department head / HR / the factory manager / Bahaa keeps their accounts on his
+   own phone and switches between them (punch, advance, leave, permission, the worker's own portal).
+   · Tap your name in the menu → the «Accounts» sheet: every account on this phone (name, job, system), ✓ on the open one,
+     «Sign out» per account (removes it from THIS phone only), «Add account». Small circles under the name switch fast.
+   · Add: the worker's phone / username + his password once (or his activation code when not activated yet). The worker's own
+     credentials are his consent; a separate, non-persisting auth client signs him in so the host's session is never touched.
+     Server: the host asks nf_devacct_offer (a 5-minute nonce), the WORKER's session redeems it with nf_devacct_link, which
+     re-checks the host's permission and records a «devaccts» doc {hostId, workerId, deviceId, at}.
+   · Who may add others (PIN-approved): owner / factory manager (manager) / HR (Saeed, role hr) → anyone; the people named in
+     settings general policy.devAcctIds (Bahaa) → anyone; department heads → people of their departments only; everyone else:
+     no «Add account».
+   · Sessions: each account's refresh + access token is kept in localStorage «nf.accts.v1», AES-GCM encrypted with a
+     NON-EXTRACTABLE device key kept in IndexedDB («nf-acct»). Only the open account's session lives in the supabase client.
+     A switch saves the open account's latest tokens, sets the target's with auth.setSession and RELOADS the page, so no data,
+     cache or module state of one account survives into another (the per-uid disk cache is cleared by dcReady as well).
+   · Protection: every account opens with its owner's confirmation — the phone owner with the device biometric (Face ID /
+     fingerprint, the existing passkey / native Face ID) or his password; a worker with his FACE through the camera (the
+     registered face used for attendance), a personal 4-digit PIN he sets, or his password. A cold start with a worker
+     account open returns to the phone owner's account, locked. Two minutes idle on a worker account → back to the locked
+     «Accounts» sheet.
+   · A punch from another person's phone must be the worker's face through the camera (the device biometric proves the phone
+     owner, not the worker — it is refused for guests) + the location as usual. Every punch / request made from a host phone is
+     stamped «from the phone of <host>» (verify.via on the attendance row, viaHostId / viaHostName on the request); the server accepts
+     the stamp only when the devaccts link exists (server/sql/v797-multi-account.sql).
+   · Notifications: a worker account never registers this device for push (the subscription stays the phone owner's), so the
+     worker's notifications only show inside the app while his account is open.
+   Factory only (not Studioz / Construction), hosted (Supabase) mode only. Phone + computer, Arabic + English, day + night.
+   ===================================================================== */
+(function () {
+  if (window.__NF_ACCT797__) return; window.__NF_ACCT797__ = 1;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const fab = () => !((typeof isStuSys === 'function' && isStuSys()) || (typeof isStudioz === 'function' && isStudioz()) || (typeof isConstruction === 'function' && isConstruction()));
+  const hosted = () => typeof sbOn === 'function' && sbOn() && !!S.sb;
+  const on = () => fab() && hosted();
+  const KEY = 'nf.accts.v1', SW = 'nf.acct.sw', OPEN = 'nf.acct.open';
+  const IDLE_MS = 120000, PIN_TRIES = 5;
+  const SYS = 'Ninety Fabrication';
+  let _switching = false, _key = null, lastAct = Date.now();
+  if (typeof ICONS === 'object') {
+    if (!ICONS.lock) ICONS.lock = '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
+    if (!ICONS.users) ICONS.users = '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2c3 .2 5.5 2.6 5.5 5.8"/>';
+  }
+
+  /* ---------- the store (metadata in clear, tokens / PIN encrypted) ---------- */
+  function load() { try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); return v && Array.isArray(v.list) ? v : null; } catch (e) { return null; } }
+  function save(s) { try { if (!s || !s.list.some(x => !x.host)) localStorage.removeItem(KEY); else localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* private mode */ } }
+  const ent = (s, uid) => (s && s.list.find(x => x.uid === uid)) || null;
+  const hostOf = s => (s && s.list.find(x => x.host)) || null;
+  const meUid = () => (S.sbUser && S.sbUser.id) || '';
+  function guestActive() { const s = load(); const e = ent(s, meUid()); return !!(on() && e && !e.host); }
+  function lockedNow() { if (!on()) return false; const s = load(); return !!(s && s.locked && ent(s, meUid())); }
+
+  /* ---------- the device key: AES-GCM 256, non-extractable, kept in IndexedDB ---------- */
+  function idb() { return new Promise(res => { try { const r = indexedDB.open('nf-acct', 1); r.onupgradeneeded = () => { try { r.result.createObjectStore('k'); } catch (e) { /* exists */ } }; r.onsuccess = () => res(r.result); r.onerror = () => res(null); } catch (e) { res(null); } }); }
+  const idbGet = (db, k) => new Promise(res => { try { const q = db.transaction('k', 'readonly').objectStore('k').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch (e) { res(null); } });
+  const idbPut = (db, k, v) => new Promise(res => { try { const tx = db.transaction('k', 'readwrite'); tx.objectStore('k').put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => res(false); } catch (e) { res(false); } });
+  async function devKey() {
+    if (_key) return _key; if (!(window.crypto && crypto.subtle)) throw new Error('no-crypto');
+    const db = await idb(); if (!db) throw new Error('no-idb');
+    let k = await idbGet(db, 'main');
+    if (!k) { k = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']); if (!(await idbPut(db, 'main', k))) throw new Error('no-idb'); }
+    _key = k; return k;
+  }
+  const b64 = u8 => { let s = ''; const a = new Uint8Array(u8); for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s); };
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  async function enc(obj) { const k = await devKey(); const iv = crypto.getRandomValues(new Uint8Array(12)); const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, new TextEncoder().encode(JSON.stringify(obj))); return { iv: b64(iv), ct: b64(ct) }; }
+  async function dec(t) { if (!t || !t.iv) return null; const k = await devKey(); const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(t.iv) }, k, unb64(t.ct)); return JSON.parse(new TextDecoder().decode(pt)); }
+  async function pinHash(uid, pin, salt) {
+    const s = salt || b64(crypto.getRandomValues(new Uint8Array(16)));
+    const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(pin)), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(s + '|' + uid), iterations: 120000, hash: 'SHA-256' }, km, 256);
+    return { s, h: b64(bits) };
+  }
+
+  /* ---------- sessions ---------- */
+  async function curTokens() { try { const { data } = await S.sb.auth.getSession(); const x = data && data.session; return x ? { at: x.access_token, rt: x.refresh_token, uid: x.user && x.user.id } : null; } catch (e) { return null; } }
+  function tmpClient() { const c = nfConfig(); return window.supabase.createClient(c.supabaseUrl, c.supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'nf-acct-tmp-' + Math.random().toString(36).slice(2) } }); }
+  const revoke = async c => { try { await c.auth.signOut({ scope: 'local' }); } catch (e) { /* ignore */ } };
+  /* every account but the open one is kept as its last tokens (nothing refreshes them); the open one follows TOKEN_REFRESHED */
+  let _capT = null;
+  function captureSoon() { clearTimeout(_capT); _capT = setTimeout(captureNow, 400); }
+  async function captureNow() {
+    if (_switching) return; const s = load(); const t = await curTokens(); if (!s || !t) return; const e = ent(s, t.uid); if (!e) return;
+    try { e.tok = await enc({ at: t.at, rt: t.rt }); const s2 = load(); const e2 = ent(s2, t.uid); if (s2 && e2) { e2.tok = e.tok; save(s2); } } catch (x) { /* ignore */ }
+  }
+  function teardown() {
+    try { (S.unsub || []).forEach(u => { try { u(); } catch (e) { /* ignore */ } }); } catch (e) { /* ignore */ }
+    S.unsub = []; S._sbSubscribed = false; if (S.db && S.db.dispose) { try { S.db.dispose(); } catch (e) { /* ignore */ } }
+    try { S.db = sbBackend(S.sb); } catch (e) { /* ignore */ }
+    COLS.forEach(c => { S.data[c] = new Map(); }); S.loaded = {}; S.session = null;
+  }
+  const reload = () => { if (typeof window.__nfAcctReload === 'function') window.__nfAcctReload(); else location.reload(); };
+  function cover(msg) {
+    let c = document.getElementById('acswitch'); if (!c) { document.body.insertAdjacentHTML('beforeend', `<div id="acswitch" class="acswitch"><div><div class="nfspin"></div><div class="acswm"></div></div></div>`); c = document.getElementById('acswitch'); }
+    c.querySelector('.acswm').textContent = msg || '';
+  }
+  async function switchTo(uid, o = {}) {
+    if (_switching) return false; const s = load(); const t = ent(s, uid); if (!t) return false;
+    _switching = true; cover(L(`جارٍ فتح حساب ${t.name}…`, `Opening ${t.name}'s account…`));
+    try {
+      const prev = await curTokens();
+      if (prev) { const e = ent(s, prev.uid); if (e) e.tok = await enc({ at: prev.at, rt: prev.rt }); }
+      let tok = null; try { tok = await dec(t.tok); } catch (e) { tok = null; }
+      if (!tok) throw new Error('tok');
+      try { closeModal(); } catch (e) { /* ignore */ }
+      teardown();
+      const r = await S.sb.auth.setSession({ access_token: tok.at, refresh_token: tok.rt });
+      const ns = r && r.data && r.data.session;
+      if (r.error || !ns || !ns.user || ns.user.id !== uid) {
+        /* the account's session is gone (signed out elsewhere / revoked): back to the previous account, the dead one is dropped */
+        if (prev) { try { await S.sb.auth.setSession({ access_token: prev.at, refresh_token: prev.rt }); } catch (e) { /* ignore */ } }
+        if (!t.host) s.list = s.list.filter(x => x.uid !== uid);
+        save(s); try { sessionStorage.setItem(SW, prev ? prev.uid : ''); sessionStorage.setItem('nf.acct.msg', L(`حساب ${t.name} خرج من الموبايل ده — ضيفه تاني`, `${t.name}'s account was signed out on this phone — add it again`)); } catch (e) { /* ignore */ }
+        reload(); return false;
+      }
+      t.tok = await enc({ at: ns.access_token, rt: ns.refresh_token });
+      s.active = uid; s.locked = true; save(s);
+      try { sessionStorage.setItem(SW, uid); if (!o.cold) sessionStorage.setItem(OPEN, uid); } catch (e) { /* ignore */ }
+      reload(); return true;
+    } catch (e) {
+      console.warn('acct switch', e); _switching = false; const c = document.getElementById('acswitch'); if (c) c.remove();
+      toast(L('تعذّر فتح الحساب — جرّب تاني', 'Could not open the account — try again'), 'err'); if (!S.session) { sbStartData(); }
+      return false;
+    }
+  }
+  /* the account leaves this phone: unlink on the server (best effort) + revoke its refresh token */
+  async function revokeEntry(e) {
+    let tok = null; try { tok = await dec(e.tok); } catch (x) { tok = null; } if (!tok) return;
+    const c = tmpClient();
+    try { const r = await c.auth.setSession({ access_token: tok.at, refresh_token: tok.rt }); if (!r.error && e.linkId) await c.rpc('nf_devacct_unlink', { p_id: e.linkId }); } catch (x) { /* ignore */ }
+    await revoke(c);
+  }
+  function wipe(s) { const g = (s && s.list || []).filter(x => !x.host); try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ } g.forEach(x => { revokeEntry(x).catch(() => { }); }); }
+  async function removeAccount(uid) {
+    const s = load(); const e = ent(s, uid); if (!e || e.host) return;
+    if (uid === meUid()) {
+      /* the open (guest) account signs out → back to the phone owner, locked */
+      const h = hostOf(s); _switching = true; cover(L('جارٍ الخروج…', 'Signing out…'));
+      try { if (e.linkId) await S.sb.rpc('nf_devacct_unlink', { p_id: e.linkId }); } catch (x) { /* ignore */ }
+      try { await S.sb.auth.signOut({ scope: 'local' }); } catch (x) { /* ignore */ }
+      s.list = s.list.filter(x => x.uid !== uid); s.active = h ? h.uid : ''; s.locked = true; save(s);
+      let tok = null; try { tok = h ? await dec(h.tok) : null; } catch (x) { tok = null; }
+      teardown(); if (tok) { try { await S.sb.auth.setSession({ access_token: tok.at, refresh_token: tok.rt }); } catch (x) { /* ignore */ } }
+      try { sessionStorage.setItem(SW, h ? h.uid : ''); } catch (x) { /* ignore */ }
+      reload(); return;
+    }
+    s.list = s.list.filter(x => x.uid !== uid); save(s);
+    revokeEntry(e).catch(() => { });
+    toast(L(`${e.name} خرج من الموبايل ده`, `${e.name} was removed from this phone`));
+  }
+
+  /* ---------- who may add others ---------- */
+  function scope() {
+    const out = { any: false, depts: [] }; const ss = S.session; if (!ss || !on()) return out;
+    const s = load(); const h = hostOf(s); if (h && h.uid !== meUid()) return out;   /* only the phone owner adds */
+    const r = role(); if (r === 'admin' || r === 'manager' || r === 'hr') { out.any = true; return out; }
+    const p = (S.settings && S.settings.policy) || {}; const ids = Array.isArray(p.devAcctIds) ? p.devAcctIds.map(String) : [];
+    if (ss.workerId && ids.includes(String(ss.workerId))) { out.any = true; return out; }
+    const w = ss.workerId ? byId('workers', ss.workerId) : null;
+    const d = new Set(r === 'head' ? (ss.deptIds || []) : []); if (w && w.role !== 'head' && Array.isArray(w.headDepts)) w.headDepts.filter(Boolean).forEach(x => d.add(x));
+    out.depts = [...d]; return out;
+  }
+  const canAdd = () => { const c = scope(); return c.any || c.depts.length > 0; };
+
+  /* ---------- the sheet ---------- */
+  const COLORS = ['#5b7c99', '#7c6a9a', '#5f8f6e', '#a0705a', '#4f8a8b', '#8a7f4f', '#9a5f7c'];
+  const colorOf = uid => { let h = 0; for (const c of String(uid)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
+  const ini = n => esc(String(n || '?').trim().charAt(0) || '?');
+  const clean = n => String(n || '').replace(/[<>&"]/g, '');
+  function jobOf(e) { const r = e.role && typeof ROLES === 'object' ? ROLES[e.role] : ''; return e.job || r || ''; }
+  function rowsHTML(s, mode) {
+    const act = meUid(); const host = hostOf(s); const meHost = host && host.uid === act;
+    const list = s ? s.list.slice().sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0)) : [];
+    return list.map(e => {
+      const isOn = e.uid === act; const removable = mode === 'sheet' && !e.host && (meHost || isOn);
+      return `<div class="acrow ${isOn ? 'on' : ''}" data-acsel="${esc(e.uid)}" role="button" tabindex="0">
+        <span class="acav" style="background:${colorOf(e.uid)}">${ini(e.name)}</span>
+        <span class="acnm"><b>${esc(e.name || '')}</b><small>${esc(jobOf(e))}${jobOf(e) ? ' · ' : ''}${SYS}${e.host ? ` · ${esc(L('صاحب الموبايل', 'phone owner'))}` : ''}</small></span>
+        ${isOn ? `<span class="acok" title="${esc(L('الحساب المفتوح', 'The open account'))}">${mode === 'lock' ? icon('lock') : icon('check')}</span>` : ''}
+        ${removable ? `<button type="button" class="btn xs ghost acout" data-acout="${esc(e.uid)}">${icon('logout')}<span>${esc(L('خروج', 'Sign out'))}</span></button>` : ''}
+      </div>`;
+    }).join('');
+  }
+  function ensureSelfList() {
+    /* the sheet always shows at least the open account */
+    let s = load(); if (s) return s;
+    const ss = S.session || {}; return { v: 1, host: meUid(), active: meUid(), locked: false, list: [{ uid: meUid(), pid: ss.id, wid: ss.workerId || '', name: ss.name || '', role: ss.role || '', host: true }] };
+  }
+  function sheetBody() {
+    const s = ensureSelfList(); const c = scope(); const g = guestActive(); const e = ent(s, meUid());
+    const logRoles = ['admin', 'hr', 'manager', 'head'].includes(role()) || (S.session && S.session.deptIds && S.session.deptIds.length);
+    return `<div class="acsh">
+      <p class="small ink2 acsub">${esc(g ? L('إنت فاتح حسابك من موبايل حد تاني — طلباتك وبصمتك بتتسجّل «من موبايل» صاحبه.', 'You are on your account from someone else\'s phone — your requests and punches are marked «from the phone of» its owner.') : L('الحسابات المتسجّلة على الموبايل ده. دوس على حساب علشان تفتحه — كل حساب بيتفتح بتأكيد صاحبه.', 'The accounts on this phone. Tap one to open it — every account opens with its owner\'s confirmation.'))}</p>
+      <div class="aclist">${rowsHTML(s, 'sheet')}</div>
+      ${canAdd() && !g ? `<button type="button" class="btn p acadd" data-acadd="1">${icon('plus')}<span>${esc(L('إضافة حساب', 'Add account'))}</span></button>
+        <div class="tiny muted acscope">${esc(c.any ? L('تقدر تضيف أي حد في المصنع (للي مامعهوش موبايل).', 'You can add anyone in the factory (for people without a phone).') : L(`تقدر تضيف ناس قسمك بس: ${c.depts.map(deptName).join('، ')}`, `You can add people of your department only: ${c.depts.map(deptName).join(', ')}`))}</div>` : ''}
+      ${g && e ? `<button type="button" class="btn sm acpin" data-acpin="1">${icon('lock')}<span>${esc(e.pinx ? L('غيّر رقمي السري', 'Change my PIN') : L('اعمل رقم سري 4 أرقام', 'Set a 4-digit PIN'))}</span></button>` : ''}
+      ${!g && logRoles ? `<button type="button" class="btn sm ghost aclog" data-aclog="1">${icon('report')}<span>${esc(L('سجل الحسابات على الموبايلات', 'Accounts on phones — log'))}</span></button>` : ''}
+    </div>`;
+  }
+  function wireList(root, mode) {
+    root.addEventListener('click', async ev => {
+      const out = ev.target.closest('[data-acout]'); if (out) { ev.preventDefault(); ev.stopPropagation(); const uid = out.dataset.acout; const s = load(); const e = ent(s, uid); if (!e) return; if (!(await confirmDlg(L(`خروج ${e.name} من الموبايل ده؟ (الحساب نفسه مايتمسحش)`, `Remove ${e.name} from this phone? (The account itself stays.)`), L('خروج', 'Sign out')))) { openSheet(); return; } await removeAccount(uid); if (uid !== meUid()) openSheet(); return; }
+      if (ev.target.closest('[data-acadd]')) { ev.preventDefault(); addDialog(); return; }
+      if (ev.target.closest('[data-acpin]')) { ev.preventDefault(); pinDialog(); return; }
+      if (ev.target.closest('[data-aclog]')) { ev.preventDefault(); logDialog(); return; }
+      const row = ev.target.closest('[data-acsel]'); if (!row) return; ev.preventDefault();
+      const uid = row.dataset.acsel;
+      if (mode === 'lock') { if (uid === meUid()) { S._acUnlockFor = uid; paintLock(true); } else switchTo(uid); return; }
+      if (uid === meUid()) { closeModal(); return; }
+      switchTo(uid);
+    });
+  }
+  function openSheet() {
+    if (!on() || !S.session) return;
+    openModal({ title: L('الحسابات', 'Accounts'), footer: null, cls: 'acsheet', body: sheetBody(), onOpen: f => wireList(f, 'sheet') });
+  }
+  ACTIONS.acctSheet = () => { try { $('#side') && $('#side').classList.remove('open'); $('#sidecover') && $('#sidecover').classList.add('hidden'); } catch (e) { /* ignore */ } openSheet(); };
+  ACTIONS.acctGo = uid => { if (!uid || uid === meUid()) { openSheet(); return; } switchTo(uid); };
+
+  /* ---------- add an account ---------- */
+  function addDialog() {
+    const c = scope(); if (!(c.any || c.depts.length)) { toast(L('مش متاح لك تضيف حسابات غيرك', 'You cannot add other people\'s accounts'), 'err'); return; }
+    let code = false;
+    const body = () => `<div class="form acaddf">
+      <div class="banner info full" style="margin:0">${icon('info')}<span>${esc(code ? L('العامل لسه ما فعّلش حسابه: رقم موبايله + كود التفعيل من الـ HR + كلمة سر يختارها.', 'The worker has not activated his account yet: his phone + the activation code from HR + a password he chooses.') : L('رقم موبايل العامل (أو اسم المستخدم) وكلمة سره — مرة واحدة بس. هو اللي يكتبها بنفسه.', 'The worker\'s phone (or username) and his password — once only. He types it himself.'))}</span></div>
+      ${field(L('رقم الموبايل / اسم المستخدم', 'Phone / username'), inp('login', '', 'inputmode="tel" class="ltr" required autocomplete="off" placeholder="01xxxxxxxxx"'), 'full')}
+      ${code ? `${field(L('كود التفعيل (6 أرقام من الـ HR)', 'Activation code (6 digits from HR)'), inp('code', '', 'inputmode="numeric" maxlength="6" class="ltr" required autocomplete="off"'), 'full')}${pwFields()}`
+        : field(L('كلمة سر العامل', 'The worker\'s password'), '<input name="pw" type="password" class="ltr" autocomplete="off" required>', 'full')}
+      ${field(L('رقم سري 4 أرقام للعامل (اختياري — يفتح بيه حسابه بدل الوش)', 'A 4-digit PIN for the worker (optional — opens his account instead of the face)'), '<input name="pin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" class="ltr" autocomplete="off">', 'full')}
+      <button type="button" class="btn sm ghost full actoggle">${esc(code ? L('عنده كلمة سر؟ ادخل بيها', 'Has a password? Use it') : L('لسه ما اتفعّلش؟ فعّل بكود التفعيل', 'Not activated yet? Activate with the code'))}</button>
+    </div>`;
+    const open = () => openModal({ title: L('إضافة حساب على الموبايل ده', 'Add an account to this phone'), submitLabel: L('إضافة', 'Add'), cls: 'acsheet', body: body(),
+      onOpen: f => { const t = f.querySelector('.actoggle'); if (t) t.addEventListener('click', () => { code = !code; open(); }); },
+      onSubmit: async f => addFlow(formData(f), code) });
+    open();
+  }
+  async function addFlow(d, code) {
+    const login = sbLoginId(d.login || ''); const pin = arDigits(String(d.pin || '')).trim();
+    if (!login) { toast(L('اكتب رقم الموبايل أو اسم المستخدم', 'Write the phone or username'), 'err'); return false; }
+    if (pin && !/^\d{4}$/.test(pin)) { toast(L('الرقم السري 4 أرقام', 'The PIN is 4 digits'), 'err'); return false; }
+    const s0 = load(); if (s0 && s0.list.some(x => x.login && x.login === login)) { toast(L('الحساب ده متضاف بالفعل', 'This account is already on this phone'), 'err'); return false; }
+    try { await devKey(); } catch (e) { toast(L('الموبايل ده مش بيقدر يحفظ الحسابات بأمان (المتصفح قديم أو وضع التصفح الخفي)', 'This phone cannot keep the accounts safely (an old browser or private mode)'), 'err'); return false; }
+    const tmp = tmpClient(); const email = sbEmail(login);
+    if (code) {
+      const cd = arDigits(String(d.code || '')).trim(); if (!cd) { toast(L('اكتب كود التفعيل', 'Write the activation code'), 'err'); return false; } if (!checkPw(d)) return false;
+      const chk = await tmp.rpc('nf_check_code', { p_login: login, p_code: cd }); if (chk.error) { toast(sbErrText(chk.error), 'err'); return false; }
+      if (chk.data !== 'ok' && chk.data !== 'reset') { toast(chk.data === 'not_found' ? L('الرقم غير مسجّل في السيستم', 'This number is not registered') : chk.data === 'no_access' ? L('الحساب ده بدون صلاحية دخول — راجع الموارد البشرية', 'This account has no access — see HR') : L('كود التفعيل غير صحيح أو انتهت صلاحيته', 'The activation code is wrong or expired'), 'err'); return false; }
+      if (chk.data === 'reset') { const r = await tmp.rpc('nf_reset_password', { p_login: login, p_code: cd, p_password: d.nw }); if (r.error || r.data !== 'ok') { toast(r.error ? sbErrText(r.error) : L('تعذّر ضبط كلمة السر', 'Could not set the password'), 'err'); return false; } }
+      else { const r = await tmp.auth.signUp({ email, password: d.nw, options: { data: { login, code: cd } } }); if (r.error) { toast(sbErrText(r.error), 'err'); return false; } }
+      const g = await tmp.auth.getSession(); if (!(g.data && g.data.session)) { const r = await tmp.auth.signInWithPassword({ email, password: d.nw }); if (r.error) { toast(sbErrText(r.error), 'err'); return false; } }
+    } else {
+      if (!d.pw) { toast(L('اكتب كلمة سر العامل', 'Write the worker\'s password'), 'err'); return false; }
+      const r = await tmp.auth.signInWithPassword({ email, password: d.pw }); if (r.error) { toast(sbErrText(r.error), 'err'); return false; }
+    }
+    const g = await tmp.auth.getSession(); const ses = g.data && g.data.session;
+    if (!ses || !ses.user) { toast(L('تعذّر الدخول بالحساب', 'Could not sign in with the account'), 'err'); return false; }
+    if (ses.user.id === meUid()) { await revoke(tmp); toast(L('ده حسابك إنت', 'This is your own account'), 'err'); return false; }
+    const s1 = load(); if (ent(s1, ses.user.id)) { await revoke(tmp); toast(L('الحساب ده متضاف بالفعل', 'This account is already on this phone'), 'err'); return false; }
+    let wid = null; try { const r = await tmp.rpc('nf_worker_id'); wid = r && r.data; } catch (e) { wid = null; }
+    let w = null; if (wid) { try { const r = await tmp.from('docs').select('col,id,data').eq('col', 'workers').eq('id', wid); w = r && r.data && r.data[0] ? r.data[0].data : null; } catch (e) { w = null; } }
+    if (!wid || !w) { await revoke(tmp); toast(L('الحسابات الإدارية مش بتتضاف على موبايل حد تاني — للعمال بس', 'Management accounts are not added to someone else\'s phone — workers only'), 'err'); return false; }
+    const c = scope();
+    if (!c.any && !c.depts.includes(w.deptId || '')) { await revoke(tmp); toast(L(`${w.name} مش في قسمك — تقدر تضيف ناس قسمك بس`, `${w.name} is not in your department — you can add people of your department only`), 'err'); return false; }
+    /* the server re-checks: the host's offer (his session) + the worker's redemption (the worker's session) */
+    const off = await S.sb.rpc('nf_devacct_offer', { p_device: devId() });
+    if (off.error || !off.data) { await revoke(tmp); toast(L('السيرفر رفض — مش متاح لك تضيف حسابات', 'The server refused — you cannot add accounts'), 'err'); return false; }
+    const ln = await tmp.rpc('nf_devacct_link', { p_nonce: off.data, p_device: devId() });
+    const lk = ln && ln.data;
+    if (ln.error || !lk || !lk.ok) { await revoke(tmp); const why = (lk && lk.error) || (ln.error && ln.error.message) || ''; toast(/dept/.test(why) ? L(`${w.name} مش في قسمك — تقدر تضيف ناس قسمك بس`, `${w.name} is not in your department — you can add people of your department only`) : L('السيرفر رفض إضافة الحساب', 'The server refused to add the account'), 'err'); return false; }
+    /* the host's own entry first (his latest tokens), then the worker's */
+    const s = load() || { v: 1, host: meUid(), active: meUid(), locked: false, list: [] };
+    if (!hostOf(s)) { const ht = await curTokens(); if (!ht) { await revoke(tmp); toast(L('تعذّر الحفظ', 'Could not save'), 'err'); return false; } const ss = S.session || {}; s.list.unshift({ uid: meUid(), pid: ss.id, wid: ss.workerId || '', name: ss.name || '', role: ss.role || '', host: true, login: (S.sbUser.user_metadata && S.sbUser.user_metadata.login) || String(S.sbUser.email || '').split('@')[0], tok: await enc({ at: ht.at, rt: ht.rt }), at: nowISO() }); s.host = meUid(); }
+    s.hostPid = lk.hostId || (S.session && S.session.id) || ''; s.hostName = clean(lk.hostName || (S.session && S.session.name) || '');
+    const e = { uid: ses.user.id, pid: 'w:' + wid, wid, name: w.name || login, role: w.role || '', job: w.trade || '', dept: w.deptId || '', login, linkId: lk.id || '', tok: await enc({ at: ses.access_token, rt: ses.refresh_token }), at: nowISO() };
+    if (pin) e.pinx = await enc(await pinHash(e.uid, pin)); e.pinFails = 0;
+    s.list.push(e); s.active = meUid(); save(s);
+    /* the temporary client is dropped WITHOUT signing out (that would revoke the stored refresh token) */
+    toast(L(`اتضاف ${e.name} ✓ — دوس على اسمه علشان تفتح حسابه`, `${e.name} was added ✓ — tap his name to open his account`));
+    setTimeout(() => { openSheet(); render(false); }, 30);
+    return true;
+  }
+
+  /* ---------- the guest's own PIN ---------- */
+  function pinDialog() {
+    if (!guestActive()) return;
+    openModal({ title: L('رقمك السري (4 أرقام)', 'Your PIN (4 digits)'), submitLabel: L('حفظ', 'Save'), cls: 'acsheet', body: `<div class="form">
+      ${field(L('الرقم السري', 'PIN'), '<input name="p1" type="password" inputmode="numeric" maxlength="4" class="ltr" autocomplete="off" required>', 'full')}
+      ${field(L('تأكيد الرقم السري', 'Confirm the PIN'), '<input name="p2" type="password" inputmode="numeric" maxlength="4" class="ltr" autocomplete="off" required>', 'full')}</div>`,
+      onSubmit: async f => { const d = formData(f); const p1 = arDigits(String(d.p1 || '')).trim(), p2 = arDigits(String(d.p2 || '')).trim();
+        if (!/^\d{4}$/.test(p1)) { toast(L('الرقم السري 4 أرقام', 'The PIN is 4 digits'), 'err'); return false; } if (p1 !== p2) { toast(L('الرقمين مش زي بعض', 'The two PINs differ'), 'err'); return false; }
+        const s = load(); const e = ent(s, meUid()); if (!e) return; e.pinx = await enc(await pinHash(e.uid, p1)); e.pinFails = 0; save(s); toast(L('الرقم السري اتحفظ على الموبايل ده ✓', 'The PIN is saved on this phone ✓')); } });
+  }
+
+  /* ---------- the log: accounts on phones (owner / HR / factory manager / heads for their departments — RLS) ---------- */
+  async function logDialog() {
+    openModal({ title: L('سجل الحسابات على الموبايلات', 'Accounts on phones — log'), footer: null, cls: 'acsheet', body: `<div id="aclogb" class="small muted">${esc(L('جارٍ التحميل…', 'Loading…'))}</div>` });
+    let rows = []; try { const r = await S.sb.from('docs').select('id,data').eq('col', 'devaccts'); rows = (r.data || []).map(x => x.data).filter(Boolean); } catch (e) { rows = []; }
+    const b = document.getElementById('aclogb'); if (!b) return;
+    rows.sort((a, c) => String(c.at || '').localeCompare(String(a.at || '')));
+    b.innerHTML = rows.length ? `<div class="tablewrap"><table class="tbl"><thead><tr><th>${esc(L('العامل', 'Worker'))}</th><th>${esc(L('على موبايل', 'On the phone of'))}</th><th>${esc(L('القسم', 'Department'))}</th><th>${esc(L('من', 'Since'))}</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td>${esc(x.workerName || '')}</td><td>${esc(x.hostName || '')}</td><td>${esc(deptName(x.deptId) || '')}</td><td class="num">${esc(fmtDate(String(x.at || '').slice(0, 10)))}</td><td>${x.removedAt ? `<span class="badge">${esc(L('اتشال', 'Removed'))}</span>` : `<span class="badge good">${esc(L('موجود', 'Active'))}</span>`}</td></tr>`).join('')}</tbody></table></div>` : `<span class="muted">${esc(L('مفيش حسابات على موبايلات حد', 'No accounts on anyone\'s phone'))}</span>`;
+  }
+
+  /* ---------- the lock screen (the «Accounts» sheet, full page) ---------- */
+  let _lockKey = '';
+  function unlockPanel(e, isOn) {
+    if (!isOn || S._acUnlockFor !== e.uid) return '';
+    if (!S.session || !S.loaded.workers) return `<div class="acunl"><span class="small muted">${esc(L('جارٍ التحميل…', 'Loading…'))}</span></div>`;
+    const b = [];
+    if (e.host) {
+      const w = S.session.workerId ? byId('workers', S.session.workerId) : null; const nat = !!(window.nfNativeBio && window.nfNativeBio.available && window.nfNativeBio.available());
+      if ((w && w.deviceCred && (nat || deviceBioAvailable())) || nat) b.push(`<button type="button" class="btn p" data-acun="device">${icon('shield')}<span>${esc(L('بصمة الموبايل / Face ID', 'Phone fingerprint / Face ID'))}</span></button>`);
+    } else {
+      const w = S.session.workerId ? byId('workers', S.session.workerId) : null;
+      if (w && w.face && w.face.d && camAvailable()) b.push(`<button type="button" class="btn p" data-acun="face">${icon('camera')}<span>${esc(L('بوشّك بالكاميرا', 'With your face (camera)'))}</span></button>`);
+      if (e.pinx) b.push(`<button type="button" class="btn" data-acun="pin">${icon('lock')}<span>${esc(L('الرقم السري', 'PIN'))}</span></button>`);
+    }
+    b.push(`<button type="button" class="btn ghost" data-acun="pw">${icon('settings')}<span>${esc(L('كلمة السر', 'Password'))}</span></button>`);
+    return `<div class="acunl"><div class="small ink2">${esc(e.host ? L('أكّد إنك صاحب الموبايل', 'Confirm you are the phone owner') : L(`أكّد إنك ${e.name}`, `Confirm you are ${e.name}`))}</div><div class="acunb">${b.join('')}</div><div class="acunf"></div></div>`;
+  }
+  function lockHTML(s) {
+    const act = meUid(); const list = s.list.slice().sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0));
+    const rows = list.map(e => rowsHTML({ list: [e] }, 'lock') + unlockPanel(e, e.uid === act)).join('');
+    return `<div class="aclock"><div class="acbox"><div class="brand">${typeof brandBlock === 'function' ? brandBlock(26) : SYS}</div>
+      <h2>${esc(L('الحسابات', 'Accounts'))}</h2><p class="small ink2">${esc(L('اختار حسابك — كل حساب بيتفتح بتأكيد صاحبه.', 'Pick your account — every account opens with its owner\'s confirmation.'))}</p>
+      <div class="aclist" id="aclist">${rows}</div></div></div><div id="modalroot"></div><div class="toasts" id="toasts"></div>`;
+  }
+  function paintLock(force) {
+    const root = $('#root'); if (!root) return; const s = load(); if (!s) return;
+    const k = JSON.stringify([meUid(), s.list.map(x => x.uid + (x.pinx ? 'p' : '')), S._acUnlockFor || '', !!S.session, !!(S.loaded && S.loaded.workers), en()]);
+    const box = root.querySelector('.aclock');
+    if (box && !force && k === _lockKey) return;
+    _lockKey = k;
+    if (box) { const l = root.querySelector('#aclist'); const tmp = document.createElement('div'); tmp.innerHTML = lockHTML(s); const nl = tmp.querySelector('#aclist'); if (l && nl) l.innerHTML = nl.innerHTML; }
+    else { root.innerHTML = lockHTML(s); const lk = root.querySelector('.aclock'); wireList(lk, 'lock'); lk.addEventListener('click', onUnlockClick); }
+    try { document.documentElement.setAttribute('dir', en() ? 'ltr' : 'rtl'); document.documentElement.setAttribute('lang', en() ? 'en' : 'ar'); } catch (e) { /* ignore */ }
+  }
+  async function onUnlockClick(ev) {
+    const b = ev.target.closest('[data-acun]'); if (!b) return; ev.preventDefault(); ev.stopPropagation();
+    const how = b.dataset.acun; const s = load(); const e = ent(s, meUid()); if (!e) return;
+    const fbox = b.closest('.acunl').querySelector('.acunf');
+    if (how === 'face') {
+      const w = byId('workers', S.session.workerId); if (!w) return;
+      S._acModalOK = true; let r = null; try { r = await faceVerify(w, { title: L(`التحقق بالوجه — ${w.name}`, `Face check — ${w.name}`) }); } catch (x) { r = null; } finally { S._acModalOK = false; }
+      if (r && r.ok) return unlocked(e, 'face'); toast(r && r.reason === 'cancel' ? L('اتلغى', 'Cancelled') : L('الوش ما اتأكدش — جرّب تاني أو بالرقم السري', 'The face did not match — try again or use the PIN'), 'err'); return;
+    }
+    if (how === 'device') {
+      const w = S.session.workerId ? byId('workers', S.session.workerId) : null; let ok = false;
+      const nat = !!(window.nfNativeBio && window.nfNativeBio.available && window.nfNativeBio.available());
+      try { ok = w && w.deviceCred ? await deviceVerify(w) : nat ? await window.nfNativeBio.auth(L('أكّد إنك صاحب الموبايل', 'Confirm you are the phone owner')) : false; } catch (x) { ok = false; }
+      if (ok) return unlocked(e, 'device'); toast(L('بصمة الموبايل ما اتأكدتش', 'The phone biometric did not confirm'), 'err'); return;
+    }
+    if (how === 'pin' || how === 'pw') {
+      fbox.innerHTML = `<form class="acpinf" autocomplete="off"><input name="v" type="password" ${how === 'pin' ? 'inputmode="numeric" maxlength="4"' : ''} class="ltr" autocomplete="off" placeholder="${esc(how === 'pin' ? L('الرقم السري', 'PIN') : L('كلمة السر', 'Password'))}" required><button type="submit" class="btn p">${esc(L('افتح', 'Open'))}</button></form>`;
+      const f = fbox.querySelector('form'); const i = f.querySelector('input'); setTimeout(() => i.focus(), 30);
+      f.addEventListener('submit', async x => {
+        x.preventDefault(); const v = arDigits(String(i.value || '')).trim(); if (!v) return; const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
+        try {
+          if (how === 'pin') {
+            const s2 = load(); const e2 = ent(s2, meUid()); if (!e2 || !e2.pinx) return; let ok = false;
+            try { const p = await dec(e2.pinx); const h = await pinHash(e2.uid, v, p.s); ok = h.h === p.h; } catch (y) { ok = false; }
+            if (ok) { e2.pinFails = 0; save(s2); return unlocked(e2, 'pin'); }
+            e2.pinFails = (+e2.pinFails || 0) + 1; if (e2.pinFails >= PIN_TRIES) { delete e2.pinx; e2.pinFails = 0; save(s2); toast(L('الرقم السري اتقفل بعد محاولات كتير — افتح بوشّك أو بكلمة السر', 'The PIN is locked after too many tries — use your face or password'), 'err'); S._acUnlockFor = e2.uid; paintLock(true); return; }
+            save(s2); toast(L(`الرقم السري غلط (باقي ${PIN_TRIES - e2.pinFails})`, `Wrong PIN (${PIN_TRIES - e2.pinFails} left)`), 'err'); i.value = ''; return;
+          }
+          const c = tmpClient(); const r = await c.auth.signInWithPassword({ email: sbEmail(e.login || ''), password: v });
+          if (r.error || !r.data || !r.data.user || r.data.user.id !== e.uid) { toast(L('كلمة السر غلط', 'Wrong password'), 'err'); i.value = ''; return; }
+          await revoke(c); return unlocked(e, 'pw');
+        } finally { btn.disabled = false; }
+      });
+    }
+  }
+  function unlocked(e, how) {
+    const s = load(); if (!s) return; s.locked = false; save(s); S._acUnlockFor = null; lastAct = Date.now(); _lockKey = '';
+    if (S.session) { S.session.faceAt = 0; S.session.deviceAt = 0; S.session.acUnlock = how; }
+    try { sessionStorage.removeItem(OPEN); } catch (x) { /* ignore */ }
+    const root = $('#root'); if (root) root.innerHTML = '';
+    render(true); toast(L(`أهلاً ${e.name}`, `Welcome ${e.name}`));
+  }
+  function lockNow() {
+    const s = load(); if (!s || s.locked) return; s.locked = true; save(s); S._acUnlockFor = null; _lockKey = '';
+    try { closeModal(); } catch (e) { /* ignore */ } const root = $('#root'); if (root) root.innerHTML = ''; render(true);
+  }
+  window.nfAcct = { load, guestActive, lockedNow, switchTo, lockNow, idleTick: now => idleTick(now), scope };
+
+  /* ---------- idle: 2 minutes on a worker account → the locked sheet ---------- */
+  ['pointerdown', 'keydown', 'touchstart', 'wheel', 'input'].forEach(t => document.addEventListener(t, () => { lastAct = Date.now(); }, { capture: true, passive: true }));
+  function idleTick(now) { if (!guestActive() || lockedNow() || _switching) return; if ((now || Date.now()) - lastAct >= IDLE_MS) lockNow(); }
+  setInterval(() => idleTick(), 5000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) idleTick(); });
+
+  /* ---------- hooks into the app ---------- */
+  render = (base => function (full) {
+    if (lockedNow() && !_switching) { paintLock(false); return; }
+    if (document.querySelector('#root > .aclock')) { const r = $('#root'); if (r) r.innerHTML = ''; full = true; }
+    return base.call(this, full);
+  })(render);
+  /* while locked, only the unlock's own face window may open (no other account content over the lock screen) */
+  openModal = (base => function () { if (lockedNow() && !S._acModalOK) return; return base.apply(this, arguments); })(openModal);
+  /* the menu: tap your name → the sheet; small circles to switch. The factory side menu (.side .userchip) and the owner's Ninety
+     home side (.nhome .nside .uchip, which has no RENDER_HOOKS) */
+  function decorate() {
+    if (!on() || !S.session) return;
+    document.documentElement.classList.toggle('nf-guest', guestActive());
+    const s = load();
+    const dots = () => s && s.list.length > 1 ? `<div class="acdots">${s.list.slice().sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0)).map(e => `<button type="button" class="acdot ${e.uid === meUid() ? 'on' : ''}" data-action="acctGo" data-arg="${esc(e.uid)}" title="${esc(e.name || '')}" style="background:${colorOf(e.uid)}">${ini(e.name)}</button>`).join('')}<button type="button" class="acdot more" data-action="acctSheet" title="${esc(L('الحسابات', 'Accounts'))}">${icon('users')}</button></div>` : '';
+    [['#root .side .userchip', '.n'], ['#root .nhome .nside .uchip', 'b']].forEach(([cs, ns]) => {
+      const chip = document.querySelector(cs); if (!chip) return;
+      const nm = chip.querySelector(ns); const box = nm && nm.parentElement;
+      if (box && box.dataset.action !== 'acctSheet') { box.dataset.action = 'acctSheet'; box.setAttribute('role', 'button'); box.classList.add('acchip'); box.title = L('الحسابات', 'Accounts'); }
+      const old = chip.parentNode.querySelector(':scope > .acdots'); const html = dots();
+      if (old && old.__h === html) return; if (old) old.remove();
+      if (html) { chip.insertAdjacentHTML('afterend', html); const n = chip.parentNode.querySelector(':scope > .acdots'); if (n) n.__h = html; }
+    });
+  }
+  RENDER_HOOKS.push(decorate);
+  render = (base => function () { const r = base.apply(this, arguments); try { if (!lockedNow()) decorate(); } catch (e) { /* ignore */ } return r; })(render);
+  /* sign out from a worker account = that account leaves this phone (back to the owner, locked);
+     the phone owner signing out takes every account on this phone with him */
+  document.addEventListener('click', ev => {
+    const a = ev.target.closest && ev.target.closest('[data-action="logout"]'); if (!a || !on()) return; const s = load(); if (!s) return;
+    if (guestActive()) { ev.preventDefault(); ev.stopImmediatePropagation(); removeAccount(meUid()); return; }
+    wipe(s);
+  }, true);
+
+  /* ---------- the punch from a host phone: the worker's face through the camera, stamped with the host ---------- */
+  const via = () => { const s = load(); return s ? { id: s.hostPid || '', name: clean(s.hostName || (hostOf(s) || {}).name || '') } : null; };
+  if (typeof punchVerify === 'function') punchVerify = (base => async function (w) {
+    if (!guestActive()) return base.apply(this, arguments);
+    const hasFace = !!(w && w.face && w.face.d) && camAvailable() && punchMethodsOf(w).selfie !== false;
+    if (!hasFace) return { ok: false, tried: ['face'], devOn: true, hasFace: false };
+    const r = await faceVerify(w, { title: L('التحقق بالوجه قبل البصمة', 'Face check before the punch') });
+    if (r && r.ok) { S.session.faceAt = 0; return { ok: true, verify: { face: r.dist, live: r.live !== false, guest: true } }; }
+    if (r && r.reason === 'cancel') return { ok: false, cancelled: true };
+    return { ok: false, frame: r && r.frame, tried: ['face'], devOn: true, hasFace: true, faceR: r };
+  })(punchVerify);
+  if (typeof deviceVerify === 'function') deviceVerify = (base => async function () { if (guestActive()) return false; return base.apply(this, arguments); })(deviceVerify);
+  if (typeof ACTIONS.deviceEnroll === 'function') ACTIONS.deviceEnroll = (base => async function () { if (guestActive()) { toast(L('بصمة الموبايل بتأكد صاحب الموبايل مش إنت — البصمة من هنا بوشّك بس', 'The phone biometric confirms the phone owner, not you — from here you punch with your face only'), 'err'); return; } return base.apply(this, arguments); })(ACTIONS.deviceEnroll);
+  if (typeof ACTIONS.selfPunch === 'function') ACTIONS.selfPunch = (base => async function (arg, btn) {
+    if (!guestActive()) return base.apply(this, arguments);
+    const w = S.session && S.session.workerId ? byId('workers', S.session.workerId) : null;
+    if (!w || !(w.face && w.face.d)) { toast(L('البصمة من موبايل حد تاني بالوش بس — ومفيش بصمة وش متسجّلة لك. اطلب من الموارد البشرية تسجّلها.', 'A punch from someone else\'s phone is by face only — and you have no registered face. Ask HR to register it.'), 'err'); return; }
+    if (!camAvailable()) { toast(L('الكاميرا مش متاحة — البصمة من موبايل حد تاني بالوش بس', 'The camera is not available — a punch from someone else\'s phone is by face only'), 'err'); return; }
+    S.session.faceAt = 0; S.session.deviceAt = 0;
+    return base.apply(this, arguments);
+  })(ACTIONS.selfPunch);
+  if (typeof kioskPunch === 'function') kioskPunch = (base => async function (w, opts = {}) {
+    if (!guestActive() || !w) return base.apply(this, arguments);
+    const v = via(); const o = Object.assign({}, opts, { verify: Object.assign({}, opts.verify || {}, { via: v }) });
+    return base.call(this, w, o);
+  })(kioskPunch);
+  /* requests made from a host phone carry the host */
+  const saveBase = Store.save;
+  Store.save = async function (col, doc, opts) {
+    if (col === 'requests' && doc && guestActive() && !doc.viaHostId && !(S.data.requests && S.data.requests.has(doc.id))) { const v = via(); if (v && v.id) { doc.viaHostId = v.id; doc.viaHostName = v.name; } }
+    return saveBase.apply(this, arguments);
+  };
+  if (typeof reqDesc === 'function') reqDesc = (base => function (r) { const d = base.apply(this, arguments); if (!r || !r.viaHostName) return d; return `${d || ''} · ${L('من موبايل', 'from the phone of')} ${clean(r.viaHostName)}`; })(reqDesc);
+
+  /* ---------- a worker account never registers this device for push (the subscription stays the owner's) ---------- */
+  function guardPush(client) {
+    if (!client || client._nfAcctPush) return; client._nfAcctPush = true;
+    const patch = fx => {
+      if (!fx || typeof fx.invoke !== 'function' || fx._nfAcct) return fx; const inv = fx.invoke.bind(fx); fx._nfAcct = true;
+      fx.invoke = async (name, o) => {
+        const act = o && o.body && o.body.action;
+        if (name === 'push' && ['subscribe', 'apns-register', 'fcm-register'].includes(act) && guestActive()) return { data: null, error: { message: L('إشعارات حساب العامل مابتتسجّلش على موبايل حد تاني', 'A worker account does not register notifications on someone else\'s phone') } };
+        return inv(name, o);
+      };
+      return fx;
+    };
+    let d = null; for (let o = client; o && !d; o = Object.getPrototypeOf(o)) d = Object.getOwnPropertyDescriptor(o, 'functions');
+    if (d && typeof d.get === 'function') { const g = d.get; try { Object.defineProperty(client, 'functions', { configurable: true, get() { return patch(g.call(client)); } }); } catch (e) { /* ignore */ } }
+    else patch(client.functions);
+  }
+  function listen(client) {
+    if (!client || client._nfAcctL) return; client._nfAcctL = true;
+    try { client.auth.onAuthStateChange((ev, ses) => {
+      if (_switching) return;
+      if (ses && (ev === 'TOKEN_REFRESHED' || ev === 'SIGNED_IN')) captureSoon();
+      if (ev === 'SIGNED_OUT') { const s = load(); const h = hostOf(s); if (s && h && s.active && s.active !== h.uid) { /* the open worker account's session ended → it leaves; the owner comes back locked */ s.list = s.list.filter(x => x.uid !== s.active); s.active = h.uid; s.locked = true; save(s); setTimeout(() => { if (!_switching && !S.sbUser) switchTo(h.uid, { cold: true }); }, 300); } }
+    }); } catch (e) { /* ignore */ }
+  }
+  /* boot. boot() (99-boot.js) has already called sbBoot before this part loads (it is waiting for the stored session), so the
+     decision is taken on the first sbStartData: a cold start (not a switch) with a worker account
+     open → the phone owner's account, locked; someone else signed in on this phone → the stored accounts leave. */
+  let BOOT = { flag: null, done: false };
+  try { BOOT.flag = sessionStorage.getItem(SW); sessionStorage.removeItem(SW); } catch (e) { /* ignore */ }
+  function bootDecide() {
+    if (S.sb) { guardPush(S.sb); listen(S.sb); }
+    let msg = null; try { msg = sessionStorage.getItem('nf.acct.msg'); sessionStorage.removeItem('nf.acct.msg'); } catch (e) { /* ignore */ }
+    if (msg) setTimeout(() => toast(msg, 'err'), 1500);
+    const s = load(); const u = meUid(); const flag = BOOT.flag; BOOT.flag = null;
+    if (!s || !fab() || !u) return false;
+    const e = ent(s, u); const h = hostOf(s);
+    if (!e) { wipe(s); return false; }
+    if (!e.host && flag !== u && h) { s.locked = true; save(s); setTimeout(() => switchTo(h.uid, { cold: true }), 0); return true; }
+    if (s.active !== u) { s.active = u; save(s); }
+    try { if (sessionStorage.getItem(OPEN) === u) S._acUnlockFor = u; sessionStorage.removeItem(OPEN); } catch (x) { /* ignore */ }
+    if (s.locked && !S._acUnlockFor && flag === u) S._acUnlockFor = u;
+    lastAct = Date.now(); captureSoon();
+    return false;
+  }
+  sbStartData = (base => function () {
+    if (!BOOT.done) { BOOT.done = true; let stop = false; try { stop = bootDecide(); } catch (e) { console.warn('acct boot', e); } if (stop) return; }
+    else { try { const s = load(); if (s && meUid() && !ent(s, meUid())) wipe(s); } catch (e) { /* ignore */ } if (S.sb) { guardPush(S.sb); listen(S.sb); } }
+    return base.apply(this, arguments);
+  })(sbStartData);
+  document.addEventListener('nf:ready', () => { if (S.sb) { guardPush(S.sb); listen(S.sb); } });
+
+  document.head.insertAdjacentHTML('beforeend', `<style>
+.acchip{cursor:pointer;border-radius:10px}
+.acchip .n::after,.acchip > b::after{content:'';display:inline-block;width:6px;height:6px;margin-inline-start:6px;border-inline-end:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-2px) rotate(45deg);opacity:.6}
+.acdots{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 14px 10px;flex:none}
+.acdot{width:30px;height:30px;border-radius:50%;border:2px solid transparent;color:#fff;font:600 13px var(--font);display:grid;place-items:center;cursor:pointer;padding:0;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.acdot.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--surface)}
+.acdot.more{background:var(--surface-2)!important;color:var(--ink)}
+.acdot svg{width:16px;height:16px}
+.acsh .acsub{margin:0 0 10px}
+.aclist{display:flex;flex-direction:column;gap:6px}
+.acrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);cursor:pointer;min-height:56px}
+.acrow.on{border-color:var(--accent);background:var(--accent-soft)}
+.acav{width:40px;height:40px;flex:none;border-radius:50%;display:grid;place-items:center;color:#fff;font:600 16px var(--font)}
+.acnm{flex:1;min-width:0;display:flex;flex-direction:column}
+.acnm b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acnm small{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acok{color:var(--accent);display:grid;place-items:center;flex:none}
+.acok svg{width:18px;height:18px}
+.acout{flex:none}
+.acadd{width:100%;justify-content:center;margin-top:12px}
+.acscope{margin-top:6px;text-align:center}
+.acpin,.aclog{width:100%;justify-content:center;margin-top:10px}
+.aclock{min-height:100vh;min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;background:var(--bg);padding:max(24px,env(safe-area-inset-top)) 16px 24px;box-sizing:border-box}
+.acbox{width:100%;max-width:440px;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:20px 16px;box-shadow:var(--shadow);box-sizing:border-box;margin-top:4vh}
+.acbox .brand{display:flex;justify-content:center;margin-bottom:6px}
+.acbox h2{margin:6px 0 2px;text-align:center;font-size:20px;color:var(--ink)}
+.acbox > p{text-align:center;margin:0 0 14px}
+.acunl{border:1px dashed var(--line);border-radius:14px;padding:10px 12px;margin:-2px 0 4px;display:flex;flex-direction:column;gap:8px;background:var(--surface-2)}
+.acunb{display:flex;gap:8px;flex-wrap:wrap}
+.acunb .btn{flex:1 1 140px;justify-content:center}
+.acpinf{display:flex;gap:8px}
+.acpinf input{flex:1;min-width:0;width:100%;font-size:18px;letter-spacing:4px;text-align:center;box-sizing:border-box}
+.acpinf .pwwrap{flex:1;min-width:0;display:flex}
+.acswitch{position:fixed;inset:0;z-index:10000;background:color-mix(in srgb,var(--bg) 92%,transparent);display:grid;place-items:center;color:var(--muted);font-size:14px;text-align:center}
+.acswitch .nfspin{margin:0 auto 12px}
+html.nf-guest #pushreq,html.nf-guest #nf-pushfix{display:none!important}
+@media (max-width:820px){
+  .modal.acsheet{align-self:flex-end;width:100%;max-width:100%;border-radius:20px 20px 0 0;margin:0;max-height:88vh}
+  .overlay:has(.modal.acsheet){align-items:flex-end;padding:0}
+}
+</style>`);
+})();
+/* =====================================================================
+   v7.98 — one picture picker for the whole system (Mahmoud: «everywhere in the system, when I press upload / attach picture,
+   give me options: attach a picture, open the camera, or take a screenshot»).
+   Every <input type=file> whose accept mentions «image» — clicked directly, through a wrapping <label>, through label[for],
+   or opened from code with input.click() / input.showPicker() — shows a small sheet (bottom sheet on the phone, a small card on
+   the computer) with three rows instead of the native chooser:
+     1. a picture from the device / a file  → the native chooser WITHOUT capture (gallery + files);
+     2. open the camera                      → phone: capture="environment" (or the input's own «user»); computer: a live
+                                               preview with a shutter (getUserMedia), falls back to the plain chooser;
+     3. a screenshot                         → computer: one frame of getDisplayMedia; phone: a hint + the gallery
+                                               (a phone screenshot is saved to Photos). While the sheet is open, pasting an
+                                               image (Ctrl/Cmd+V) attaches it directly.
+   Inputs that came with a capture attribute (live photos: drivers, fleet, delivery…) still get the sheet, camera first.
+   A produced picture is put into input.files (DataTransfer) and «input» + «change» are fired, so every existing handler
+   works unchanged. Skipped: data-nopick, disabled, non-image accept. If the sheet cannot render the native click runs.
+   iOS: the native chooser is opened synchronously inside the tap on the row.
+   The document scanner (99zzZzZC-doc-scan.js) patched input.click() before this part: image inputs now get this sheet, with
+   «Scan document» as a fourth row where the scanner applies; other inputs still go through the scanner's own choice.
+   ===================================================================== */
+(function () {
+  if (window.__NF_IMGPICK__) return; window.__NF_IMGPICK__ = 1;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  if (typeof ICONS === 'object') {
+    if (!ICONS.image) ICONS.image = '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>';
+    if (!ICONS.monitor) ICONS.monitor = '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>';
+  }
+  const ico = (n, fb) => { try { return (typeof icon === 'function' && typeof ICONS === 'object' && ICONS[n]) ? icon(n) : fb; } catch (e) { return fb; } };
+  const esc2 = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  /* the browser's own click (HTMLElement.prototype), not the scanner's wrapper on HTMLInputElement.prototype */
+  const P = HTMLInputElement.prototype; const nativeFn = HTMLElement.prototype.click; const prevClick = P.click; const origShow = P.showPicker;
+  let passing = 0; let cur = null;
+  const wants = el => !!el && el.tagName === 'INPUT' && String(el.type).toLowerCase() === 'file' && !el.disabled && !el.hasAttribute('data-nopick') && /image/i.test(el.getAttribute('accept') || '');
+  const isMob = () => {
+    try {
+      const ua = navigator.userAgent || '';
+      if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+      if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+      return navigator.maxTouchPoints > 0 && !!window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    } catch (e) { return false; }
+  };
+  const isIOS = () => { try { const ua = navigator.userAgent || ''; return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1); } catch (e) { return false; } };
+  /* the same rule the document scanner uses (selfies, avatars and vehicle photos are not documents) */
+  const scanOK = el => { try { return typeof window.nfScanTo === 'function' && (el.getAttribute('capture') || '') !== 'user' && !el.matches('#photo-file, [id*="avatar"], [id*="vehphoto"], .nfc-me input, [data-noscan], .nfscan *'); } catch (e) { return false; } };
+  const hint = m => { try { if (typeof toast === 'function') toast(m); } catch (e) { /* ignore */ } };
+  const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
+
+  /* the native chooser, with capture removed (null), set (string) or kept (undefined); the original attribute is restored */
+  function nativeClick(input, cap) {
+    const had = input.hasAttribute('capture'), old = input.getAttribute('capture');
+    passing++;
+    try {
+      if (cap === null) input.removeAttribute('capture'); else if (cap) input.setAttribute('capture', cap);
+      nativeFn.call(input);
+    } finally {
+      passing--;
+      try { if (had) input.setAttribute('capture', old); else input.removeAttribute('capture'); } catch (e) { /* ignore */ }
+    }
+  }
+
+  /* puts the picture(s) into the input and fires the usual events (a new pick replaces the old files, like the native chooser) */
+  function inject(input, files) {
+    files = [].concat(files || []).filter(Boolean); if (!input || !files.length) return false;
+    if (!input.multiple) files = files.slice(0, 1);
+    let done = false;
+    try { const dt = new DataTransfer(); files.forEach(f => dt.items.add(f)); input.files = dt.files; done = input.files && input.files.length === files.length; } catch (e) { done = false; }
+    if (!done) {
+      try { const arr = files.slice(); arr.item = i => arr[i] || null; Object.defineProperty(input, 'files', { configurable: true, get: () => arr }); } catch (e) { return false; }
+    }
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) { return false; }
+    return true;
+  }
+
+  const mimeFor = input => { const a = String(input.getAttribute('accept') || '').toLowerCase(); return (/png/.test(a) && !/image\/\*|jpe?g/.test(a)) ? 'image/png' : 'image/jpeg'; };
+  function grab(v, input, prefix) {
+    return new Promise((res, rej) => {
+      try {
+        let w = v.videoWidth, h = v.videoHeight; if (!w || !h) { rej(new Error('no frame')); return; }
+        const k = Math.min(1, 3000 / Math.max(w, h)); w = Math.round(w * k); h = Math.round(h * k);
+        const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(v, 0, 0, w, h);
+        const type = mimeFor(input);
+        c.toBlob(b => { if (!b) { rej(new Error('no blob')); return; } res(new File([b], `${prefix}-${stamp()}.${type === 'image/png' ? 'png' : 'jpg'}`, { type, lastModified: Date.now() })); }, type, 0.9);
+      } catch (e) { rej(e); }
+    });
+  }
+  const stopStream = s => { try { if (s) s.getTracks().forEach(t => t.stop()); } catch (e) { /* ignore */ } };
+
+  /* when the page re-rendered while the sheet was open, the same input is found again by its place */
+  function pathOf(el) {
+    try {
+      if (!el.isConnected) return null; if (el.id) return '#' + CSS.escape(el.id);
+      const parts = []; let n = el;
+      while (n && n !== document.body && n.parentElement) { parts.unshift(n.tagName.toLowerCase() + ':nth-child(' + ([...n.parentElement.children].indexOf(n) + 1) + ')'); n = n.parentElement; }
+      return n === document.body ? 'body>' + parts.join('>') : null;
+    } catch (e) { return null; }
+  }
+  const live = st => { if (st.input.isConnected || !st.path) return st.input; try { const r = document.querySelector(st.path); return wants(r) ? r : st.input; } catch (e) { return st.input; } };
+
+  const CSS_TXT = `
+#nfimgpick{position:fixed;inset:0;z-index:2147483200;display:flex;align-items:flex-end;justify-content:center;font-family:inherit;-webkit-tap-highlight-color:transparent}
+#nfimgpick.dsk{align-items:center;padding:16px}
+#nfimgpick.nfip-hide{visibility:hidden}
+#nfimgpick .nfip-bd{position:absolute;inset:0;background:rgba(10,12,14,.42);animation:nfipFade .16s ease}
+#nfimgpick .nfip-card{position:relative;box-sizing:border-box;width:100%;max-width:520px;max-height:92vh;overflow:auto;overscroll-behavior:contain;background:var(--surface,#fff);color:var(--ink,#111);border-radius:20px 20px 0 0;padding:8px 14px calc(14px + env(safe-area-inset-bottom,0px));box-shadow:var(--shadow-lg,0 24px 60px -24px rgba(0,0,0,.3));animation:nfipUp .2s ease}
+#nfimgpick .nfip-card::before{content:"";display:block;width:38px;height:5px;border-radius:3px;background:var(--line-2,#ccc);margin:0 auto 8px}
+#nfimgpick.dsk .nfip-card{width:min(390px,100%);border-radius:18px;padding:14px;animation:nfipPop .16s ease}
+#nfimgpick.dsk .nfip-card::before{display:none}
+#nfimgpick .nfip-hd{display:flex;align-items:center;gap:8px;margin:0 2px 10px}
+#nfimgpick .nfip-hd b{flex:1;min-width:0;font-size:16px;font-weight:800}
+#nfimgpick .nfip-x{flex:none;width:34px;height:34px;border-radius:50%;border:0;background:var(--surface-2,#f2f2f2);color:var(--ink,#111);font:inherit;font-size:15px;line-height:1;cursor:pointer}
+#nfimgpick .nfip-row{display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-height:64px;padding:10px 12px;margin:0 0 8px;border:1px solid var(--line,#e5e5e5);border-radius:14px;background:var(--surface-2,#f6f6f6);color:var(--ink,#111);font:inherit;text-align:start;cursor:pointer;touch-action:manipulation}
+#nfimgpick .nfip-row:hover{border-color:var(--line-2,#ccc)}
+#nfimgpick .nfip-row:focus-visible,#nfimgpick .nfip-btn:focus-visible,#nfimgpick .nfip-x:focus-visible{outline:2px solid var(--accent,#4f7a64);outline-offset:2px}
+#nfimgpick .nfip-row.on{border-color:var(--accent,#4f7a64);background:var(--accent-soft,rgba(79,122,100,.13))}
+#nfimgpick .nfip-ic{flex:none;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--accent-soft,rgba(79,122,100,.13));color:var(--accent,#4f7a64);font-size:20px}
+#nfimgpick .nfip-row.on .nfip-ic{background:var(--accent,#4f7a64);color:var(--accent-ink,#fff)}
+#nfimgpick .nfip-ic svg{width:22px;height:22px}
+#nfimgpick .nfip-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+#nfimgpick .nfip-tx b{font-size:15px;font-weight:700}
+#nfimgpick .nfip-tx small{font-size:12.5px;color:var(--muted,#777);overflow-wrap:anywhere}
+#nfimgpick .nfip-hint{font-size:12.5px;color:var(--muted,#777);text-align:center;margin:2px 0 0}
+#nfimgpick kbd{font:inherit;font-size:11.5px;padding:1px 6px;border:1px solid var(--line-2,#ccc);border-radius:6px;background:var(--surface-2,#f6f6f6);direction:ltr;display:inline-block}
+#nfimgpick .nfip-vid{display:block;width:100%;max-height:52vh;border-radius:12px;background:#000;object-fit:contain}
+#nfimgpick .nfip-acts{display:flex;gap:8px;margin-top:10px}
+#nfimgpick .nfip-btn{flex:1;min-width:0;min-height:46px;border-radius:12px;border:1px solid var(--line,#e5e5e5);background:var(--surface-2,#f6f6f6);color:var(--ink,#111);font:inherit;font-weight:700;cursor:pointer}
+#nfimgpick .nfip-btn.p{background:var(--accent,#4f7a64);color:var(--accent-ink,#fff);border-color:transparent}
+#nfimgpick .nfip-btn[disabled]{opacity:.55;cursor:default}
+#nfimgpick .nfip-msg{padding:12px;border-radius:12px;background:var(--surface-2,#f6f6f6);color:var(--ink-2,#333);font-size:14px;line-height:1.6;margin-bottom:4px}
+@keyframes nfipFade{from{opacity:0}to{opacity:1}}
+@keyframes nfipUp{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+@keyframes nfipPop{from{transform:scale(.97);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){#nfimgpick .nfip-bd,#nfimgpick .nfip-card{animation:none}}`;
+  function css() { if (document.getElementById('nfimgpick-css')) return; const s = document.createElement('style'); s.id = 'nfimgpick-css'; s.textContent = CSS_TXT; (document.head || document.documentElement).appendChild(s); }
+
+  const ROWS = {
+    file: () => ({ ic: ico('image', '🖼️'), t: L('صورة من الجهاز / ملف', 'Attach a picture'), s: L('من الصور أو الملفات', 'From your photos or files') }),
+    cam: () => ({ ic: ico('camera', '📷'), t: L('افتح الكاميرا', 'Open the camera'), s: L('صوّر دلوقتي', 'Take a photo now') }),
+    scan: () => ({ ic: ico('quote', '📄'), t: L('مسح مستند', 'Scan document'), s: L('زي السكانر — بيقص الورقة ويعدّلها', 'Like a scanner — crops and straightens the paper') }),
+    shot: m => ({ ic: ico('monitor', '🖥️'), t: L('لقطة شاشة', 'Screenshot'), s: m ? L('خد سكرين شوت الأول وبعدين اختارها من الصور', 'Take a screenshot first, then pick it from your photos') : L('صورة من الشاشة أو من نافذة', 'Capture your screen or a window') })
+  };
+  const rowHTML = (k, on, m) => { const r = ROWS[k](m); return `<button type="button" class="nfip-row${on ? ' on' : ''}" data-k="${k}"><span class="nfip-ic">${r.ic}</span><span class="nfip-tx"><b>${esc2(r.t)}</b><small>${esc2(r.s)}</small></span></button>`; };
+
+  function menu(st) {
+    const order = st.cap ? ['cam', 'file', 'shot'] : ['file', 'cam', 'shot'];
+    if (scanOK(st.input)) order.push('scan');
+    st.body.innerHTML = order.map(k => rowHTML(k, st.cap && k === 'cam', st.mob)).join('') + (st.mob ? '' : `<div class="nfip-hint">${esc2(L('أو الصق صورة', 'or paste an image'))} <kbd>Ctrl+V</kbd></div>`);
+    st.view = 'menu'; try { const f = st.body.querySelector('.nfip-row'); if (f && !st.mob) f.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+  }
+
+  function open(input) {
+    try {
+      if (!document.body) return false;
+      if (cur) close();
+      css();
+      const mob = isMob(), cap = input.hasAttribute('capture') ? (input.getAttribute('capture') || 'environment') : '';
+      const root = document.createElement('div'); root.id = 'nfimgpick'; root.className = mob ? 'mob' : 'dsk';
+      root.setAttribute('dir', en() ? 'ltr' : 'rtl'); root.setAttribute('lang', en() ? 'en' : 'ar');
+      root.innerHTML = `<div class="nfip-bd" data-close="1"></div><div class="nfip-card" role="dialog" aria-modal="true" aria-label="${esc2(L('إرفاق صورة', 'Add a picture'))}"><div class="nfip-hd"><b>${esc2(L('إرفاق صورة', 'Add a picture'))}</b><button type="button" class="nfip-x" data-close="1" aria-label="${esc2(L('إغلاق', 'Close'))}">✕</button></div><div class="nfip-body"></div></div>`;
+      const st = { input, path: pathOf(input), root, body: root.querySelector('.nfip-body'), mob, cap, stream: null, view: 'menu', prevFocus: document.activeElement };
+      document.body.appendChild(root);
+      cur = st; menu(st);
+      root.addEventListener('click', ev => onClick(st, ev));
+      ['pointerdown', 'mousedown', 'touchstart'].forEach(n => root.addEventListener(n, e => e.stopPropagation(), { passive: true }));
+      if (!root.isConnected || !root.querySelector('.nfip-row')) { close(); return false; }
+      return true;
+    } catch (e) { try { close(); } catch (e2) { /* ignore */ } return false; }
+  }
+
+  function close() {
+    const st = cur; cur = null; if (!st) return;
+    stopStream(st.stream); st.stream = null; st.dead = true;
+    try { st.root.remove(); } catch (e) { /* ignore */ }
+    try { if (st.prevFocus && st.prevFocus.focus && st.prevFocus.isConnected) st.prevFocus.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+  }
+
+  function onClick(st, ev) {
+    ev.stopPropagation();
+    const t = ev.target;
+    if (t.closest('[data-close]')) { ev.preventDefault(); close(); return; }
+    const b = t.closest('[data-k],[data-do]'); if (!b || b.disabled) return;
+    const input = live(st);
+    const k = b.getAttribute('data-k') || b.getAttribute('data-do');
+    if (k === 'file' || k === 'pick') { close(); nativeClick(input, null); return; }
+    if (k === 'cam') {
+      if (st.mob) { close(); nativeClick(input, st.cap || 'environment'); return; }
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { close(); nativeClick(input, null); return; }
+      camView(st); return;
+    }
+    if (k === 'shot') {
+      if (st.mob || !(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) {
+        close(); hint(L('خد سكرين شوت من الموبايل الأول وبعدين اختارها من الصور', 'Take a screenshot on your phone first, then pick it from your photos')); nativeClick(input, null); return;
+      }
+      shotDesktop(st); return;
+    }
+    if (k === 'scan') { close(); try { window.nfScanTo(input); } catch (e) { nativeClick(input, null); } return; }
+    if (k === 'snap') { snap(st, b); return; }
+    if (k === 'back') { stopStream(st.stream); st.stream = null; menu(st); }
+  }
+
+  /* computer: live camera preview inside the sheet */
+  async function camView(st) {
+    st.view = 'cam';
+    st.body.innerHTML = `<video class="nfip-vid" autoplay playsinline muted></video><div class="nfip-acts"><button type="button" class="nfip-btn p" data-do="snap" disabled>${esc2(L('صوّر', 'Take photo'))}</button><button type="button" class="nfip-btn" data-do="back">${esc2(L('رجوع', 'Back'))}</button></div>`;
+    const v = st.body.querySelector('video');
+    let s;
+    try { s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
+    catch (e) { s = null; }
+    if (st.dead || cur !== st || st.view !== 'cam') { stopStream(s); return; }
+    if (!s) {
+      st.body.innerHTML = `<div class="nfip-msg">${esc2(L('الكاميرا مش متاحة على الجهاز ده أو الإذن مرفوض — اختار صورة من الجهاز.', 'The camera is not available on this device or permission was denied — pick a picture instead.'))}</div><div class="nfip-acts"><button type="button" class="nfip-btn p" data-do="pick">${esc2(L('اختار صورة', 'Choose a picture'))}</button><button type="button" class="nfip-btn" data-do="back">${esc2(L('رجوع', 'Back'))}</button></div>`;
+      return;
+    }
+    st.stream = s; v.srcObject = s;
+    try { await v.play(); } catch (e) { /* autoplay with muted normally works */ }
+    const sb = st.body.querySelector('[data-do=snap]'); if (sb) { sb.disabled = false; try { sb.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+  }
+  async function snap(st, b) {
+    const v = st.body.querySelector('video'); if (!v) return; b.disabled = true;
+    try { const f = await grab(v, st.input, 'photo'); const input = live(st); close(); inject(input, f); }
+    catch (e) { b.disabled = false; }
+  }
+
+  /* computer: one frame of the shared screen, the sheet hidden while the browser asks */
+  async function shotDesktop(st) {
+    st.root.classList.add('nfip-hide');
+    let s = null;
+    try { s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false, selfBrowserSurface: 'include', surfaceSwitching: 'exclude', preferCurrentTab: false }); }
+    catch (e) { s = null; }
+    if (st.dead || cur !== st) { stopStream(s); return; }
+    if (!s) { st.root.classList.remove('nfip-hide'); return; }
+    let f = null;
+    try {
+      const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.srcObject = s;
+      await v.play().catch(() => {});
+      await new Promise(r => { let n = 0; const tick = () => { if ((v.videoWidth && v.readyState >= 2) || ++n > 40) r(); else setTimeout(tick, 50); }; tick(); });
+      await new Promise(r => setTimeout(r, 300));
+      f = await grab(v, st.input, 'screenshot');
+    } catch (e) { f = null; }
+    finally { stopStream(s); }
+    if (st.dead || cur !== st) return;
+    if (!f) { st.root.classList.remove('nfip-hide'); hint(L('ما قدرناش ناخد لقطة الشاشة', 'Could not capture the screen')); return; }
+    const input = live(st); close(); inject(input, f);
+  }
+
+  /* intercept: direct clicks, wrapping labels and label[for] (capture phase, before the browser opens its chooser) */
+  document.addEventListener('click', ev => {
+    if (passing) return;
+    const t = ev.target; if (!t || !t.closest) return;
+    if (t.closest('#nfimgpick')) return;
+    let input = null;
+    if (t.tagName === 'INPUT') input = t;
+    else {
+      const lb = t.closest('label'); if (!lb) return;
+      const inter = t.closest('a[href],button,select,textarea,input,[contenteditable=true]');
+      if (inter && lb.contains(inter) && inter !== lb) return;
+      input = lb.control;
+    }
+    if (!wants(input)) return;
+    if (open(input)) ev.preventDefault();
+  }, true);
+
+  /* intercept: input.click() / input.showPicker() from code */
+  P.click = function () { if (passing) return nativeFn.apply(this, arguments); if (wants(this) && open(this)) return; return prevClick.apply(this, arguments); };
+  if (typeof origShow === 'function') P.showPicker = function () { if (!passing && wants(this) && open(this)) return; return origShow.apply(this, arguments); };
+
+  window.addEventListener('keydown', ev => { if (cur && ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } }, true);
+  window.addEventListener('paste', ev => {
+    if (!cur) return;
+    try {
+      const cd = ev.clipboardData; if (!cd) return;
+      let fs = [...(cd.files || [])].filter(f => /^image\//.test(f.type));
+      if (!fs.length && cd.items) fs = [...cd.items].filter(i => i.kind === 'file' && /^image\//.test(i.type)).map(i => i.getAsFile()).filter(Boolean);
+      if (!fs.length) return;
+      ev.preventDefault(); ev.stopPropagation();
+      fs = fs.map((f, i) => (f.name && f.name !== 'image.png') ? f : new File([f], `pasted-${stamp()}${i ? '-' + i : ''}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type, lastModified: Date.now() }));
+      const input = live(cur); close(); inject(input, fs);
+    } catch (e) { /* ignore */ }
+  }, true);
+
+  window.nfImgPickInject = inject;
+  window.nfImgPick = { open: el => wants(el) && open(el), close, isOpen: () => !!cur, isMobile: isMob, isIOS };
+})();
+/* =====================================================================
+   v7.98 — «Paid from» on every transfer the owner makes (Mahmoud, 17 Oct: «any part with advance transfers or any transfer at all
+   must ask me: the personal account, Ninety or LOF»).
+   · Every «Paid from» select of the owner (srcOptions) starts on the account he picked last on this device (localStorage
+     'nf.payFrom'; first time «personal»). Other roles see the same lists as before.
+   · Flows that never asked now ask, in the dialog with the transfer picture or — when the picture goes up the moment it is picked
+     — in the «matches ✓» dialog right after:
+       – a single advance / weekly-pay line the owner transfers himself (the server books it on the payer's custody or
+         'owner_wallet') → expenses adv_<advance> / wkp_<line>.account;
+       – the deposit of an outside-work order (it was not booked anywhere) → extorders.deposit.from + expense extdep_<order>;
+       – a PetroApp fuel top-up (was booked on 'bank') → that expense's account.
+   · A transfer picture whose result comes back later (slow network / app closed) asks as soon as no other dialog is open.
+   · Owner only (isAdmin). Server code untouched: records the server writes are patched once they sync (up to ~6 s).
+   ===================================================================== */
+(function () {
+  if (window.__NF_PAYFROM__) return; window.__NF_PAYFROM__ = 1;
+  if (typeof srcOptions !== 'function' || typeof ownerAccts !== 'function') return;
+  const L = (a, b) => (typeof I18N !== 'undefined' && I18N.lang === 'en' ? b : a);
+  const KEY = 'nf.payFrom';
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const owner = () => { try { return !!S.session && isAdmin() && (typeof moneyOn !== 'function' || moneyOn()); } catch (e) { return false; } };
+  const isOwnAcct = v => !!v && ownerAccts().some(a => a.id === v);
+  const first = () => (ownerAccts().find(a => a.id === 'personal') || ownerAccts()[0] || { id: 'personal' }).id;
+  function def() {
+    let v = null; try { v = localStorage.getItem(KEY) || localStorage.getItem('nf.poSrc'); } catch (e) { v = null; }
+    return isOwnAcct(v) ? v : first();
+  }
+  function keep(v) { if (!isOwnAcct(v)) return; try { localStorage.setItem(KEY, v); } catch (e) { /* private window */ } }
+
+  /* 1) every owner «Paid from» list starts on the last account he picked */
+  srcOptions = (base => function (sel, withWallets) { if (owner() && (!sel || sel === 'personal')) sel = def(); return base.call(this, sel, withWallets); })(srcOptions);
+  /* the pick is remembered when the dialog is sent (any «from» / «src» / «to» select that lists the owner's accounts) */
+  document.addEventListener('submit', e => {
+    const f = e.target; if (!f || f.id !== 'mform' || !owner()) return;
+    f.querySelectorAll('select[name=from],select[name=src],select[name=to],select[name=payFrom]').forEach(s => { if ([...s.options].some(o => isOwnAcct(o.value))) keep(s.value); });
+  }, true);
+
+  const fieldHTML = (name, withWallets, sel) => field(L('حوّلت من', 'Paid from'), `<select name="${name || 'from'}" data-payfrom="1">${srcOptions(sel || def(), !!withWallets)}</select>`, 'full');
+  async function waitDoc(col, id, ms) { let d = byId(col, id); for (let t = 0; !d && t < (ms || 6000); t += 500) { await sleep(500); d = byId(col, id); } return d; }
+
+  /* 2) a single advance / weekly line the owner transferred himself */
+  const apExpId = p => (p.weekly ? 'wkp_' + p.id : 'adv_' + (p.advanceId || p.id));
+  async function apSet(apId, from) {
+    const p = byId('advpay', apId); if (!p || !from) return;
+    const e = await waitDoc('expenses', apExpId(p)); if (!e || e.account === from) return;
+    const w = typeof walletOf === 'function' ? walletOf(from) : null;
+    try { await Store.update('expenses', e.id, { account: from, holderId: w ? String(w.holder) : null, payFrom: from }, { silent: true }); } catch (err) { console.warn('pay from', err); }
+  }
+  /* a question asked after the fact (late picture result): waits until no other dialog is open */
+  async function askLater(title, onPick) {
+    for (let i = 0; i < 120 && document.getElementById('mform'); i++) await sleep(800);
+    if (document.getElementById('mform') || !owner()) return;
+    openModal({ title, submitLabel: L('تمام', 'OK'), body: `<div class="form">${fieldHTML('from', false)}</div>`, onSubmit: async f => { const v = (formData(f).from || def()); keep(v); await onPick(v); } });
+  }
+  window.nfPayFrom = { def, keep, field: fieldHTML, apSet, askLater, owner };
+
+  /* late picture results — the advance module registers these before the queue exists, so they are registered here */
+  if (window.nfTrf) {
+    nfTrf.on('apverify', async (r, ctx) => {
+      if (typeof window.nfApDone === 'function') await window.nfApDone(ctx.id, r, true);
+      const p = byId('advpay', ctx.id);
+      if (r && r.status === 'paid' && p && owner()) askLater(L(`تحويل سلفة ${p.workerName || ''} ✓`, `Advance transfer — ${p.workerName || ''} ✓`), v => apSet(ctx.id, v));
+    });
+    nfTrf.on('abfund', async (r, ctx) => {
+      const b = byId('advbatch', ctx.id); if (!b) return;
+      if (r && r.status === 'funded') {
+        if (typeof window.nfAbFunded === 'function') { try { await window.nfAbFunded(b, r.to, r.ref); } catch (e) { /* ignore */ } }
+        toast(L(`دفعة السلف ${b.code || ''} اتبعتت لـ${r.toName || ''} ✓`, `Advance batch ${b.code || ''} sent to ${r.toName || ''} ✓`));
+        if (owner() && window.nfAdvFrom) askLater(L(`دفعة السلف ${b.code || ''} اتبعتت ✓`, `Advance batch ${b.code || ''} sent ✓`), v => window.nfAdvFrom([ctx.id], v));
+      } else toast(L(`تحويل دفعة السلف ${b.code || ''} مش مطابق — افتح الدفعة`, `The transfer for advance batch ${b.code || ''} does not match — open the batch`), 'err');
+    });
+  }
+
+  /* 3) dialogs built elsewhere get the field injected: the next openModal while «ask» is set */
+  let ask = null, saving = null;
+  openModal = (base => function (o) {
+    if (ask && o && typeof o.body === 'string' && typeof o.onSubmit === 'function') {
+      const a = ask; ask = null; const fld = fieldHTML('payFrom', false);
+      let body = o.body; const i = a.before ? body.indexOf(a.before) : -1;
+      if (i >= 0) body = body.slice(0, i) + fld + body.slice(i); else { const j = body.lastIndexOf('</div>'); body = j < 0 ? body + fld : body.slice(0, j) + fld + body.slice(j); }
+      const sub = o.onSubmit;
+      o = Object.assign({}, o, { body, onSubmit: async f => { a.pick = (f.querySelector('[name=payFrom]') || {}).value || def(); if (a.match) saving = a; try { return await sub(f); } finally { if (saving === a) saving = null; } } });
+    }
+    return base.call(this, o);
+  })(openModal);
+  Store.save = (base => async function (col, doc, o) { if (saving && col === 'expenses' && doc && saving.match(doc)) doc = Object.assign({}, doc, { account: saving.pick, holderId: null }); return base.call(this, col, doc, o); })(Store.save);
+  /* the action opens its dialog synchronously; «ask» never outlives that call */
+  function withAsk(a, fn) { ask = a; try { return fn(); } finally { if (ask === a) ask = null; } }
+
+  /* the deposit of an outside-work order */
+  if (ACTIONS.extDeposit) ACTIONS.extDeposit = (base => async function (id) {
+    const x0 = byId('extorders', id); if (!owner() || !x0 || x0.deposit) return base.apply(this, arguments);
+    const a = { before: '<div class="field full"><label>' }; const args = arguments;
+    await withAsk(a, () => base.apply(this, args));   /* resolves when the deposit is saved */
+    const x = byId('extorders', id); if (!a.pick || !x || !x.deposit || x.deposit.from) return;
+    const from = a.pick; const dp = x.deposit; const now = nowISO();
+    await Store.update('extorders', id, { deposit: Object.assign({}, dp, { from, fromName: acctLabel(from) }) });
+    if (+dp.amount > 0 && !byId('expenses', 'extdep_' + id)) {
+      let who = ''; try { who = typeof sfName === 'function' ? sfName(x.servFactoryId, x.branchId) : ''; } catch (e) { who = ''; }
+      await Store.save('expenses', { id: 'extdep_' + id, date: todayISO(), month: monthOf(todayISO()), amount: +dp.amount, cat: 'subcontract', account: from, orderId: x.orderId || null, extId: id, extOrderId: x.orderId || null, payee: who || '', ref: x.number || '', note: `${L('دفعة مقدمة — تشغيل خارجي', 'Deposit — outside work')} ${x.number || ''}${dp.note ? ' · ' + dp.note : ''}`, src: 'extdep', fileIds: dp.fileIds || [], thumb: dp.thumb || null, byName: (S.session && S.session.name) || '', createdAt: now }, { silent: true });
+    }
+  })(ACTIONS.extDeposit);
+
+  /* a PetroApp fuel top-up */
+  if (ACTIONS.octaneTransfer) ACTIONS.octaneTransfer = (base => function () {
+    if (!owner()) return base.apply(this, arguments);
+    const a = { match: d => d.payee === 'PetroApp' && d.src === 'manual' }; const args = arguments;
+    return withAsk(a, () => base.apply(this, args));
+  })(ACTIONS.octaneTransfer);
+})();
+/* =====================================================================
+   v7.99 — brief claude/owner-chains-brief.md (Mahmoud 17 Oct, go-ahead + PIN):
+   · the accounts manager = Saeed Ashraf — ONE resolver for the whole app: window.nfAccMgr() → { id, wid, name } (settings.policy.accMgrId,
+     else the active worker of the accounts department with role hr, first by name). The Edge functions resolve the same way
+     (server/remind/esc.ts accMgrOf, server/advpay). Used by: the advance-transfer review (99zzK-adv-wallet — his task, his buttons),
+     the «not seen» escalation (95 — his tasks are not escalated; the Edge «remind» tells the owner after 48 h), the extra hours /
+     overtime approvals (99zzZzW, 99zzZzZ9, 99zzZzZZzt — his step).
+   · «Call» on the purchase page (like a task): the requester / creator and whoever's step it is now (the pending approval of this purchase);
+     the call is logged on the purchase (a line in its comments: who called whom, answered + duration / declined / no answer).
+   Arabic and English, phone and desktop. No money in any text.
+   ===================================================================== */
+(function () {
+  if (window.__NF_OWNCHAINS__) return; window.__NF_OWNCHAINS__ = 1;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const OFF = ['inactive', 'suspended', 'stopped'];
+
+  /* ---------- the accounts manager ---------- */
+  window.nfAccMgr = () => {
+    try {
+      const pol = (S.settings && S.settings.policy) || {}; const pid = String(pol.accMgrId || '').replace(/^w:/, '');
+      if (pid) { const w = byId('workers', pid); return { id: pid, wid: 'w:' + pid, name: (w && w.name) || '' }; }
+      const c = list('workers').filter(w => w && w.id && w.deptId === 'acct' && w.role === 'hr' && !OFF.includes(String(w.status || '')) && !w.left).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+      return c.length ? { id: c[0].id, wid: 'w:' + c[0].id, name: c[0].name || '' } : null;
+    } catch (e) { return null; }
+  };
+  window.nfIsAccMgr = () => { const a = window.nfAccMgr(); const s = S.session; return !!(a && s && (String(s.workerId || '') === a.id || String(s.id || '') === a.wid)); };
+
+  /* ---------- «Call» on the purchase page ---------- */
+  const api = () => window.nfCalls || null;
+  const avail = () => { const a = api(); return !!(a && typeof a.available === 'function' && a.available()); };
+  const myUid = () => (S.sbUser && S.sbUser.id) || '';
+  const fmtT = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  const canP = p => !!p && !!S.session && (typeof canSee !== 'function' || canSee('purchases'));
+  const label = r => (typeof CHAIN_LABEL !== 'undefined' && CHAIN_LABEL[r]) || r;
+  /* the pending approval of this purchase → the role (or person) whose step it is */
+  function stepOf(p) {
+    try {
+      const rs = list('requests').filter(r => r && r.purchaseId === p.id && r.status === 'pending');
+      const r = rs.find(x => p.approval && x.id === p.approval.reqId) || rs[0]; if (!r) return null;
+      const rl = typeof reqStage === 'function' ? reqStage(r).role : (Array.isArray(r.chain) ? r.chain[r.step || 0] : null);
+      return rl ? { role: rl, deptId: r.deptId || p.deptId || null } : null;
+    } catch (e) { return null; }
+  }
+  function people(p, dir) {
+    const out = new Map(); const me = myUid();
+    const add = (d, why) => { if (!d || !d.uid || d.uid === me || out.has(d.uid)) return; out.set(d.uid, { uid: d.uid, name: d.name || '', why }); };
+    const byPid = pid => { if (!pid) return null; const s = String(pid); if (s.startsWith('sb:')) return dir.find(d => d.uid === s.slice(3)) || null; const b = s.replace(/^w:/, ''); return dir.find(d => d.person_id === 'w:' + b || d.person_id === s) || null; };
+    add(byPid(p.requestedBy), L('صاحب الطلب', 'Requester'));
+    if (p.createdBy && p.createdBy !== p.requestedBy) add(byPid(p.createdBy), L('عمل الطلب', 'Created it'));
+    const st = stepOf(p);
+    if (st) {
+      const why = L(`الخطوة دلوقتي: ${label(st.role)}`, `Current step: ${label(st.role)}`);
+      if (st.role === 'head') { (typeof deptHeads === 'function' && st.deptId ? deptHeads(st.deptId) : []).forEach(h => add(byPid(h.id), why)); }
+      else if (st.role === 'hr' && window.nfAccMgr()) add(byPid(window.nfAccMgr().id), why);
+      else dir.filter(d => d.role === st.role).forEach(d => add(d, why));
+    }
+    return [...out.values()];
+  }
+  ACTIONS.poCall = async id => {
+    const p = byId('purchases', id); if (!canP(p) || !avail()) return;
+    let dir = []; try { dir = (await api().dir()) || []; } catch (e) { dir = []; }
+    const ps = people(p, dir);
+    if (!ps.length) { toast(L('مفيش حد من أصحاب الطلب ده متاح للاتصال', 'Nobody on this purchase can be called'), 'err'); return; }
+    const row = x => `<div class="item" style="cursor:default"><div class="main"><div class="title">${esc(x.name)}</div><div class="why tiny muted">${esc(x.why || '')}</div></div><button type="button" class="btn sm p" data-action="poCallGo" data-arg="${esc(p.id)}|${esc(x.uid)}|0">${icon('phone')}${esc(L('صوت', 'Voice'))}</button><button type="button" class="btn sm" data-action="poCallGo" data-arg="${esc(p.id)}|${esc(x.uid)}|1">${icon('camera')}${esc(L('فيديو', 'Video'))}</button></div>`;
+    openModal({ title: L('اتصال بخصوص الطلب', 'Call about this purchase'), body: `<div class="small muted" style="margin-bottom:8px">${esc(p.number || '')}</div><div class="list tcall-list">${ps.map(row).join('')}</div>`, footer: `<button type="button" class="btn" data-action="closemodal">${esc(L('إلغاء', 'Cancel'))}</button>` });
+  };
+  ACTIONS.poCallGo = arg => {
+    const [pid, uid, v] = String(arg || '').split('|'); const p = byId('purchases', pid); if (!p || !uid || !avail()) return; closeModal();
+    api().start(uid, v === '1', { taskId: 'po:' + p.id, title: `${L('طلب شراء', 'Purchase')} ${p.number || ''}`.trim(), important: false });
+  };
+  window.nfPoCallPeople = (id, dir) => { const p = byId('purchases', id); return p ? people(p, dir || []) : []; };
+  if (typeof vPurchaseDetail === 'function') vPurchaseDetail = (base => function (id) {
+    const h = base.apply(this, arguments);
+    try {
+      const p = byId('purchases', id); if (!canP(p) || !avail()) return h;
+      const bar = `<div class="pocallbar"><button type="button" class="btn sm" data-action="poCall" data-arg="${esc(p.id)}">${icon('phone')}<span>${esc(L('اتصال', 'Call'))}</span></button></div>`;
+      return bar + h;
+    } catch (e) { return h; }
+  })(vPurchaseDetail);
+  /* the call's line on the purchase (its comments) — the task calls keep their own hook (99zzZzZZe-task-calls) */
+  const prev = window.nfCallHook;
+  window.nfCallHook = function (evt, c, x) {
+    if (typeof prev === 'function') { try { prev(evt, c, x); } catch (e) { /* ignore */ } }
+    try {
+      if (evt !== 'end' || !c || !c.ctx || c.dir !== 'out' || !/^po:/.test(String(c.ctx.taskId || ''))) return;
+      const id = String(c.ctx.taskId).slice(3); const p = byId('purchases', id); const a = api(); if (!p || !a) return;
+      const calleeName = (a.dirOf && a.dirOf(c.callee) || {}).name || ''; const myName = c.myName || (S.session && S.session.name) || '';
+      const answered = c.state === 'active' || (c.secs || 0) > 0; const st = String((x && x.status) || c.remoteStatus || '');
+      const res = answered ? `${L('اترد', 'answered')} ${fmtT(c.secs || 0)}` : st === 'declined' ? L('رفض المكالمة', 'declined') : st === 'busy' ? L('كان في مكالمة تانية', 'was on another call') : L('مردّش', 'no answer');
+      const m = { id: uid(), at: nowISO(), by: (S.session && S.session.id) || '', byName: myName, kind: 'call', text: `📞 ${myName} ${L('اتصل بـ', 'called')} ${calleeName} — ${res}` };
+      const calls = (p.calls || []).concat([{ at: m.at, by: m.by, byName: myName, to: c.callee, toName: calleeName, video: !!c.video, answered, secs: c.secs || 0, status: st || null }]).slice(-100);
+      Store.update('purchases', id, { comments: (p.comments || []).concat([m]).slice(-300), calls, lastCommentAt: m.at }, { silent: true }).catch(() => { });
+    } catch (e) { /* the call itself is fine */ }
+  };
+  document.head.insertAdjacentHTML('beforeend', `<style>.pocallbar{display:flex;justify-content:flex-end;margin:0 0 10px}.pocallbar .btn{display:inline-flex;align-items:center;gap:6px}.pocallbar .btn svg{width:16px;height:16px}</style>`);
 })();
