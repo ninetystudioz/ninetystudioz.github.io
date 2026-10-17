@@ -39544,6 +39544,9 @@ html.apple .ngfly .cnt.crit,html.apple .ngfly .cnt.bad{background:#ff453a}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .nfdial{--lx-face:radial-gradient(120% 120% at 30% 18%,#3b3d42 0%,#202226 52%,#141518 100%);--lx-ring:linear-gradient(150deg,rgba(255,255,255,.55),rgba(255,255,255,.14) 42%,rgba(255,255,255,.06) 62%,rgba(255,255,255,.4));--lx-ink:#eceef2;--lx-shadow:0 14px 30px -12px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.08);--lx-pill:rgba(28,29,32,.8);--lx-pill-ink:#eceef2;--lx-pill-line:rgba(255,255,255,.12);--lx-veil:rgba(0,0,0,.46);--lx-badge:#d0453f}}
 :root[data-theme="dark"] .nfdial{--lx-face:radial-gradient(120% 120% at 30% 18%,#3b3d42 0%,#202226 52%,#141518 100%);--lx-ring:linear-gradient(150deg,rgba(255,255,255,.55),rgba(255,255,255,.14) 42%,rgba(255,255,255,.06) 62%,rgba(255,255,255,.4));--lx-ink:#eceef2;--lx-shadow:0 14px 30px -12px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.08);--lx-pill:rgba(28,29,32,.8);--lx-pill-ink:#eceef2;--lx-pill-line:rgba(255,255,255,.12);--lx-veil:rgba(0,0,0,.46);--lx-badge:#d0453f}
 .nfdial .nfd-main{position:fixed;left:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;border:1px solid transparent;background:var(--lx-face) padding-box,var(--lx-ring) border-box;color:var(--lx-ink);box-shadow:var(--lx-shadow);z-index:66;display:grid;place-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .22s ease}
+/* v7.93 (Mahmoud 17 Oct): at night the «+» takes the Ninety steel blue of the new dark palette */
+:root[data-theme="dark"] .nfdial .nfd-main{background:radial-gradient(120% 120% at 30% 18%,#6d8bb7 0%,#56739f 52%,#3e5880 100%) padding-box,linear-gradient(150deg,rgba(255,255,255,.45),rgba(255,255,255,.1) 45%,rgba(255,255,255,.3)) border-box!important;color:#fff!important}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .nfdial .nfd-main{background:radial-gradient(120% 120% at 30% 18%,#6d8bb7 0%,#56739f 52%,#3e5880 100%) padding-box,linear-gradient(150deg,rgba(255,255,255,.45),rgba(255,255,255,.1) 45%,rgba(255,255,255,.3)) border-box!important;color:#fff!important}}
 .nfdial .nfd-main svg{width:26px;height:26px;transition:transform .28s cubic-bezier(.2,.8,.2,1)}
 .nfdial .nfd-main.solo svg{width:24px;height:24px}
 .nfdial.open .nfd-main svg{transform:rotate(45deg)}
@@ -41508,18 +41511,20 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   --radius:18px; --radius-sm:12px;
   --side-bg:#f6f4ee; --side-ink:#22281f; --side-muted:#7b8476; --side-line:rgba(60,75,55,.10); --side-hover:rgba(110,125,110,.11); --side-on:#4f7a64; --side-on-bg:#fffdf8; --nf-side:#f6f4ee;
   --nf-side-ink:#22281f; --nf-side-muted:#7b8476; --mh-logo:none; --mh-ink:#22281f;`;
+  /* v7.93 (Mahmoud 17 Oct: «apply this dark colour to the whole Ninety system — nothing to do with the Ökoplan system»): the night
+     palette is the Ninety home's near-black blue-grey with the Ninety steel blue — the teal / navy that came from the Ökoplan look is gone */
   const DARK = `
-  --bg:#08161d; --surface:#0f2530; --surface-2:#132c38; --surface-3:rgba(94,145,167,.16); --card:rgba(15,37,48,.9);
-  --ink:#e6eef2; --ink-2:#c3d1d8; --muted:#8fa3b0; --line:#1c3a48; --line-2:#24495a;
-  --primary:#5e91a7; --primary-ink:#06121a; --accent:#5e91a7; --accent-ink:#06121a; --accent-soft:rgba(94,145,167,.18); --accent-2:#79c8c2;
-  --good:#79c8c2; --warn:#d8b07a; --serious:#f0855f; --crit:#f05a43;
-  --good-soft:rgba(121,200,194,.15); --warn-soft:rgba(216,176,122,.15); --serious-soft:rgba(240,133,95,.15); --crit-soft:rgba(240,90,67,.16);
-  --good-ink:#9fdad5; --warn-ink:#e6c696; --serious-ink:#f5a98a; --crit-ink:#f7907e;
-  --glass:#0f2530; --glass-solid:#0f2530; --glass-brd:transparent;
-  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px -16px rgba(0,0,0,.65); --shadow-lg:0 24px 60px -24px rgba(0,0,0,.75);
-  --wall:radial-gradient(560px 520px at 108% -8%,rgba(16,47,61,.95),transparent 68%),radial-gradient(560px 560px at -12% 106%,rgba(94,145,167,.16),transparent 68%),linear-gradient(170deg,#0b1f29 0%,#08161d 55%,#061117 100%);
-  --side-bg:#061117; --side-ink:#e6eef2; --side-muted:#8fa3b0; --side-line:#1c3a48; --side-hover:rgba(94,145,167,.14); --side-on:#5e91a7; --side-on-bg:#0f2530; --nf-side:#061117;
-  --nf-side-ink:#e6eef2; --nf-side-muted:#8fa3b0; --mh-logo:invert(1); --mh-ink:#e6eef2;`;
+  --bg:#080c11; --surface:#0f151c; --surface-2:#141c25; --surface-3:rgba(86,115,159,.16); --card:rgba(15,21,28,.92);
+  --ink:#e8edf2; --ink-2:#c2cad3; --muted:#8a95a3; --line:#1d2732; --line-2:#273443;
+  --primary:#56739f; --primary-ink:#fff; --accent:#56739f; --accent-ink:#fff; --accent-soft:rgba(86,115,159,.18); --accent-2:#7d9cc8;
+  --good:#6fbf8f; --warn:#e3b55e; --serious:#ec9a6a; --crit:#ec8a86;
+  --good-soft:rgba(111,191,143,.14); --warn-soft:rgba(227,181,94,.15); --serious-soft:rgba(236,154,106,.15); --crit-soft:rgba(236,138,134,.15);
+  --good-ink:#9bd6b2; --warn-ink:#ecc98a; --serious-ink:#f3b68f; --crit-ink:#f3aaa6;
+  --glass:#0f151c; --glass-solid:#0f151c; --glass-brd:transparent;
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 26px -16px rgba(0,0,0,.7); --shadow-lg:0 24px 60px -24px rgba(0,0,0,.8);
+  --wall:linear-gradient(170deg,#0b1118 0%,#080c11 60%,#06090d 100%);
+  --side-bg:#06090d; --side-ink:#e8edf2; --side-muted:#8a95a3; --side-line:#1d2732; --side-hover:rgba(86,115,159,.14); --side-on:#56739f; --side-on-bg:#0f151c; --nf-side:#06090d;
+  --nf-side-ink:#e8edf2; --nf-side-muted:#8a95a3; --mh-logo:invert(1); --mh-ink:#e8edf2;`;
   /* v7.82 (Mahmoud 16 Oct: «the night look a few shades darker»): the navy of both night palettes went about 5 steps darker */
   const X = 'html.apple:not(.iph)';
   const XL = `
@@ -41531,14 +41536,14 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   --nf-side-ink:#22281f; --nf-side-muted:#7b8476; --mh-logo:none; --mh-ink:#22281f;
   --wall:radial-gradient(560px 520px at 108% -8%,rgba(172,204,182,.95),transparent 68%),radial-gradient(560px 560px at -12% 106%,rgba(240,212,172,.95),transparent 68%),linear-gradient(170deg,#d9e8dd 0%,#f3f1ea 48%,#f4e4cb 100%);`;
   const XD = `
-  --bg:#08161d; --surface:#0f2530; --surface-2:rgba(94,145,167,.12); --surface-3:rgba(94,145,167,.2);
-  --ink:#e6eef2; --ink-2:#c3d1d8; --muted:#8fa3b0; --line:#1c3a48; --line-2:#24495a;
-  --primary:#5e91a7; --primary-ink:#06121a; --accent:#5e91a7; --accent-ink:#06121a; --accent-soft:rgba(94,145,167,.18);
-  --crit:#f05a43; --crit-soft:rgba(240,90,67,.16); --crit-ink:#f7907e;
-  --glass:rgba(15,37,48,.78); --glass-solid:rgba(15,37,48,.97); --glass-brd:rgba(94,145,167,.12);
-  --side-bg:rgba(6,17,23,.96); --side-ink:#e6eef2; --side-muted:#8fa3b0; --side-line:#1c3a48; --side-hover:rgba(94,145,167,.14); --side-on:#e6eef2; --side-on-bg:#0f2530; --nf-side:rgba(6,17,23,.97);
-  --nf-side-ink:#e6eef2; --nf-side-muted:#8fa3b0; --mh-logo:invert(1); --mh-ink:#e6eef2;
-  --wall:radial-gradient(560px 520px at 108% -8%,rgba(16,47,61,.95),transparent 68%),radial-gradient(560px 560px at -12% 106%,rgba(94,145,167,.16),transparent 68%),linear-gradient(170deg,#0b1f29 0%,#08161d 55%,#061117 100%);`;
+  --bg:#080c11; --surface:#0f151c; --surface-2:rgba(86,115,159,.10); --surface-3:rgba(86,115,159,.18);
+  --ink:#e8edf2; --ink-2:#c2cad3; --muted:#8a95a3; --line:#1d2732; --line-2:#273443;
+  --primary:#56739f; --primary-ink:#fff; --accent:#56739f; --accent-ink:#fff; --accent-soft:rgba(86,115,159,.18);
+  --crit:#ec8a86; --crit-soft:rgba(236,138,134,.15); --crit-ink:#f3aaa6;
+  --glass:rgba(15,21,28,.8); --glass-solid:rgba(15,21,28,.97); --glass-brd:rgba(86,115,159,.12);
+  --side-bg:rgba(6,9,13,.97); --side-ink:#e8edf2; --side-muted:#8a95a3; --side-line:#1d2732; --side-hover:rgba(86,115,159,.14); --side-on:#e8edf2; --side-on-bg:#0f151c; --nf-side:rgba(6,9,13,.98);
+  --nf-side-ink:#e8edf2; --nf-side-muted:#8a95a3; --mh-logo:invert(1); --mh-ink:#e8edf2;
+  --wall:linear-gradient(170deg,#0b1118 0%,#080c11 60%,#06090d 100%);`;
   /* v7.82 (Mahmoud 16 Oct, computer screenshot: «when the mode is light, make these light»): on the Advanced look by day the menu, the
      Ninety home top bar and its side column are light like the page (the same rules as the Icons look); at night they stay dark. */
   const lightMenu = S => `
@@ -55562,7 +55567,7 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
   }
   if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => {
     const vw = document.getElementById('view'); const old = document.getElementById('nft-today'); if (old) old.remove();
-    if (!vw || !person() || !uiOn() || !isHome()) return; const arr = todayPlan(); if (!arr.length) return; const t = T();
+    if (!vw || !person() || !uiOn() || !isHome()) return; if (typeof isOwner === 'function' && isOwner()) return;   /* v7.93 (Mahmoud 17 Oct): not on the owner's home — everyone else keeps it */ const arr = todayPlan(); if (!arr.length) return; const t = T();
     const html = `<div class="card nft-plan" id="nft-today"><div class="cardhead"><h3>${esc(L('خطة النهارده', "Today's plan"))}</h3><a class="btn sm ghost" href="#/tasks">${esc(L('كل المهام', 'All tasks'))}</a></div><div class="list">${arr.map(x => { const g = x.dueDate ? dd(t, x.dueDate) : null; return `<a class="item" href="#/tasks/${esc(x.id)}"><div class="main"><div class="title">${esc(x.title || '')}</div><div class="meta">${g != null && g < 0 ? `<span class="badge crit">${esc(L('متأخرة', 'Late'))}</span>` : g === 0 ? `<span class="badge warn">${esc(L('النهارده', 'Today'))}</span>` : x.dueDate ? `<span>${esc(fmtDate(x.dueDate))}</span>` : ''}${x.priority === 'urgent' ? `<span class="badge crit">${esc(L('عاجلة', 'Urgent'))}</span>` : x.priority === 'high' ? `<span class="badge warn">${esc(L('مهمة', 'High'))}</span>` : ''}${x.status === 'doing' ? `<span class="badge">${esc(L('شغّال فيها', 'In progress'))}</span>` : ''}</div></div></a>`; }).join('')}</div></div>`;
     const top = document.getElementById('nfl-top'); if (top) top.insertAdjacentHTML('afterend', html); else vw.insertAdjacentHTML('afterbegin', html);
   });
