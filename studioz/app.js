@@ -56605,7 +56605,7 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
       /* v7.91 (owner 17 Oct): attendance sits in the card header; the rest are the number tiles; then «Needed from you» —
          the items behind the amber / red tiles, red first (no money widget here: its lines can carry amounts) */
       const aw = W[co].find(w => w.att); const ar = aw && res.v[aw.id];
-      if (ar && ar.total) att = `<button type="button" class="nw-att" data-action="nwTap" data-arg="${co}|${aw.id}"><span>حضور</span> <b>${ar.present}</b>/${ar.total}</button>`;
+      if (ar && ar.total) att = `<button type="button" class="nw-att" data-action="nwTap" data-arg="${co}|${aw.id}" title="${esc(aw.t)}">${ic('user')}<span class="nw-aw">حضور</span> <bdi dir="ltr"><b>${ar.present}</b>/${ar.total}</bdi></button>`;
       const tiles = ws.filter(w => !w.att);
       const seen = new Set(); const need = [];
       tiles.filter(w => w.tone && w.id !== 'money').sort((a, b) => (a.tone === 'bad' ? 0 : 1) - (b.tone === 'bad' ? 0 : 1)).forEach(w => (res.v[w.id].items || []).forEach(x => { const key = x.h + '|' + x.t; if (seen.has(key)) return; seen.add(key); need.push({ t: x.t, h: x.h, tone: w.tone, tag: TAG[w.id] || w.t }); }));
@@ -56613,7 +56613,7 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
         : `<div class="nw-need"><div class="nw-ok">مفيش حاجة مستنياك هنا ✓</div></div>`;
       body = tiles.length || need.length ? `<div class="nw-bd">${tiles.length ? `<div class="nw-grid" style="--n:${tiles.length <= 5 ? tiles.length : Math.ceil(tiles.length / 2)};--n3:${tiles.length <= 3 ? tiles.length : 3}">${tiles.map(w => widgetHTML(co, w, res.v[w.id])).join('')}</div>` : ''}${list}</div>` : `<div class="nw-off">مفيش ويدجتس — دوس «تعديل» واختار</div>`;
     }
-    return `<section class="nw-card" style="--c:${c}" data-co="${co}"><div class="nw-cap"><div class="nw-tt" data-action="ninetyGo" data-arg="${co}" title="${esc(nm)}"><i class="nw-dot"></i><span class="nw-k">${k.replace('NINETY · ', '<span class="nw-kp">NINETY · </span>')}</span></div>${att}<div class="nw-acts"><button type="button" class="nw-ed" data-action="nwEdit" data-arg="${co}" title="تعديل">${ic('edit')}<span>تعديل</span></button><button type="button" class="nw-go" data-action="ninetyGo" data-arg="${co}">${ic('external')}<span class="nw-l">دخول السيستم</span><span class="nw-s">افتح</span></button></div></div>${body}</section>`;
+    return `<section class="nw-card" style="--c:${c}" data-co="${co}"><div class="nw-cap"><div class="nw-tt" data-action="ninetyGo" data-arg="${co}" title="${esc(nm)}"><i class="nw-dot"></i><span class="nw-k notr">${nm}</span></div>${att}<div class="nw-acts"><button type="button" class="nw-ed" data-action="nwEdit" data-arg="${co}" title="تعديل">${ic('edit')}<span>تعديل</span></button><button type="button" class="nw-go" data-action="ninetyGo" data-arg="${co}">${ic('external')}<span class="nw-l">دخول السيستم</span><span class="nw-s">افتح</span></button></div></div>${body}</section>`;
   }
   function waitingTotal() {
     let n = 0; ORDER.forEach(co => { const r = CACHE[co]; if (!r || r.state !== 'ok') return; W[co].forEach(w => { if (w.tone && r.v[w.id] && chosen(co).includes(w.id)) n += r.v[w.id].n; }); }); return n;
@@ -56705,7 +56705,19 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
 }
 @media (max-width:1099px){#nhome .nw-ni.nw-more{display:none}}
 @media (min-width:821px){#nhome .nw-acts .nw-l{display:none}#nhome .nw-acts .nw-s{display:inline}#nhome .nw-acts .nw-ed span{display:none}}
-@media (max-width:820px),(min-width:1100px) and (max-width:1500px){#nhome .nw-kp{display:none}}
+/* v7.92 (owner 17 Oct): each card is called by its company name; a day / night switch next to the language switch; a darker page */
+#nhome .nw-k{letter-spacing:.02em!important;font-weight:600!important;font-size:13.5px!important;text-transform:none!important}
+#nhome .nw-theme{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:transparent;color:inherit;display:inline-grid;place-items:center;cursor:pointer;flex:none;padding:0}
+#nhome .nw-theme svg{width:17px;height:17px}
+#nhome .nside .nw-theme{border-color:var(--line-2,var(--line));color:var(--ink)}
+#nhome .nw-tg{display:inline-flex;align-items:center;gap:8px}
+.nhome .mhead .nw-tg{margin-inline-start:auto;margin-inline-end:10px}
+.nhome .mhead .nw-tg .langsw{margin:0!important}
+#nhome{--nf-fab:#335179;--nf-stu:#59616e;--nf-con:#33605b}
+:root[data-theme="dark"] #nhome{--nf-fab:#56739f;--nf-stu:#7d8594;--nf-con:#548580;--bg:#080c11;--surface:#0f151c;--surface-2:#141c25;--line:#1d2732}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) #nhome{--nf-fab:#56739f;--nf-stu:#7d8594;--nf-con:#548580;--bg:#080c11;--surface:#0f151c;--surface-2:#141c25;--line:#1d2732}}
+#nhome .nw-acts .nw-go{color:#fff!important}
+#nhome .nw-att{display:inline-flex;align-items:center;gap:3px}#nhome .nw-att svg{width:13px;height:13px;opacity:.75}#nhome .nw-att .nw-aw{display:none}
 @media (max-width:820px){
   .nhome .mhead{padding:calc(4px + env(safe-area-inset-top,0px)) 14px 6px!important}
   html.apple body:has(#nhome)::before{background:var(--nf-side)}
@@ -56742,6 +56754,21 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
   if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(later);
   new MutationObserver(() => { if (document.getElementById('nhome')) later(); }).observe(document.body || document.documentElement, { childList: true, subtree: true });
   window.addEventListener('resize', () => { try { fit(); } catch (e) { /* ignore */ } });
+  window.nfNinetyFit = fit;
+  /* day / night switch beside the language switch (phone header and the computer side column) */
+  function themeBtn() {
+    if (typeof ACTIONS === 'undefined' || !ACTIONS.themeToggle || typeof themeCurrent !== 'function') return;
+    const dark = themeCurrent() === 'dark'; const ic = n => (typeof icon === 'function' ? icon(n) : '');
+    const en = typeof I18N !== 'undefined' && I18N.lang === 'en';
+    const tip = dark ? (en ? 'Day mode' : 'الوضع النهاري') : (en ? 'Night mode' : 'الوضع الليلي');
+    document.querySelectorAll('#nhome .mhead .langsw, #nhome .nside .langsw').forEach(sw => {
+      let g = sw.parentNode; if (!g.classList.contains('nw-tg')) { const w = document.createElement('span'); w.className = 'nw-tg'; g.insertBefore(w, sw); w.appendChild(sw); g = w; }
+      let b = g.querySelector('.nw-theme'); const want = dark ? 'sun' : 'moon';
+      if (!b) { g.insertAdjacentHTML('afterbegin', `<button type="button" class="nw-theme" data-action="themeToggle"></button>`); b = g.querySelector('.nw-theme'); }
+      if (b.dataset.k !== want + tip) { b.dataset.k = want + tip; b.innerHTML = ic(want); b.title = tip; b.setAttribute('aria-label', tip); }
+    });
+  }
+  const fit0 = fit; fit = function () { try { themeBtn(); } catch (e) { /* ignore */ } return fit0.apply(this, arguments); };
   window.nfNinetyFit = fit;
 })();
 /* =====================================================================
