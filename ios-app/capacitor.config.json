@@ -3,8 +3,9 @@
   "appName": "Ninety",
   "webDir": "www",
   "server": {
-    "url": "https://mahmoudfawzy1212mf-crypto.github.io/",
+    "url": "https://ninetystudioz.github.io/",
     "allowNavigation": [
+      "ninetystudioz.github.io",
       "mahmoudfawzy1212mf-crypto.github.io",
       "*.supabase.co",
       "app.ninetystudioz.com"

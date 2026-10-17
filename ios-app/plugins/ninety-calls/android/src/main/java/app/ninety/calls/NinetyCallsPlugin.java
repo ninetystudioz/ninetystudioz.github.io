@@ -233,7 +233,7 @@ public class NinetyCallsPlugin extends Plugin {
             URL u = new URL(url);
             if (!"https".equals(u.getProtocol())) return false;
             String h = u.getHost();
-            return "mahmoudfawzy1212mf-crypto.github.io".equals(h) || "raw.githubusercontent.com".equals(h);
+            return "ninetystudioz.github.io".equals(h) || "mahmoudfawzy1212mf-crypto.github.io".equals(h) || "raw.githubusercontent.com".equals(h);
         } catch (Exception e) {
             return false;
         }
