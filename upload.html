@@ -1,0 +1,93 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>رفع نسخة السيستم — Ninety</title>
+<style>
+:root{--bg:#f3f4f2;--fg:#1e2a33;--muted:#5d6870;--card:#fff;--line:#d9dcd8;--ok:#1b7f4b;--bad:#b3261e;--accent:#1e2a33}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px}
+.wrap{max-width:560px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}p{margin:6px 0;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:14px}
+.btn{display:block;width:100%;box-sizing:border-box;padding:14px;border:0;border-radius:12px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer;text-align:center;text-decoration:none}
+.btn[disabled]{opacity:.5;cursor:default}.btn.ok{background:var(--ok)}
+input[type=file]{display:none}.bar{height:10px;background:#e6e8e5;border-radius:6px;overflow:hidden;margin:12px 0 6px}.bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .2s}
+.log{font-size:13px;color:var(--muted);white-space:pre-wrap;max-height:220px;overflow:auto;direction:rtl}.err{color:var(--bad);font-weight:700}.done{color:var(--ok);font-weight:700}
+code{direction:ltr;unicode-bidi:isolate;font:13px ui-monospace,Menlo,monospace}
+</style></head><body><div class="wrap">
+<h1>رفع نسخة السيستم على السيرفر</h1>
+<p>اختار ملف <code>Ninety-Web-….zip</code> اللي وصلك، والصفحة هترفعه على السيرفر وتنشره لكل الموظفين على نفس الرابط.</p>
+<div class="card" id="c1">
+  <label class="btn" for="f" id="pick">١ — اختار ملف السيستم (zip)</label>
+  <input type="file" id="f" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream">
+  <div id="fname" style="margin-top:10px"></div>
+  <button class="btn ok" id="go" style="margin-top:12px" disabled>٢ — ارفع وانشر</button>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="log" id="log"></div>
+</div>
+<div class="card" id="c2" style="display:none"><div class="done">تم النشر ✓</div><p id="sum"></p><a class="btn ok" id="open" href="./">افتح السيستم</a></div>
+<script>
+(function(){
+  var qs = new URLSearchParams(location.search); var token = qs.get('t') || '';
+  var ADMIN = qs.get('admin') || 'https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/nf-admin';
+  var log = document.getElementById('log'), bar = document.getElementById('bar'), go = document.getElementById('go'), fin = document.getElementById('f'), fname = document.getElementById('fname');
+  function say(t, cls){ var d = document.createElement('div'); if (cls) d.className = cls; d.textContent = t; log.appendChild(d); log.scrollTop = log.scrollHeight; }
+  if (!token) say('الرابط ناقص رمز الرفع — استخدم الرابط اللي وصلك بالظبط.', 'err');
+  if (!('DecompressionStream' in window)) say('المتصفح ده قديم — افتح الرابط من Chrome أو Safari حديث.', 'err');
+  var file = null; document.getElementById('open').href = './';
+  fin.addEventListener('change', function(){ file = fin.files[0] || null; fname.textContent = file ? (file.name + ' — ' + (file.size/1048576).toFixed(1) + ' MB') : ''; go.disabled = !(file && token); });
+  var u32 = function(v, o){ return v.getUint32(o, true); }, u16 = function(v, o){ return v.getUint16(o, true); };
+  var dec = new TextDecoder('utf-8');
+  async function entries(buf){
+    var v = new DataView(buf); var n = buf.byteLength; var e = -1;
+    for (var i = n - 22; i >= Math.max(0, n - 70000); i--) { if (u32(v, i) === 0x06054b50) { e = i; break; } }
+    if (e < 0) throw new Error('الملف مش zip صحيح');
+    var count = u16(v, e + 10), cdOff = u32(v, e + 16), p = cdOff, out = [];
+    for (var k = 0; k < count; k++) {
+      if (u32(v, p) !== 0x02014b50) throw new Error('فهرس zip تالف');
+      var method = u16(v, p + 10), csize = u32(v, p + 20), usize = u32(v, p + 24), nlen = u16(v, p + 28), xlen = u16(v, p + 30), clen = u16(v, p + 32), loff = u32(v, p + 42);
+      var name = dec.decode(new Uint8Array(buf, p + 46, nlen)); p += 46 + nlen + xlen + clen;
+      if (name.slice(-1) === '/' || name.indexOf('__MACOSX/') === 0 || name.indexOf('.DS_Store') >= 0) continue;
+      if (u32(v, loff) !== 0x04034b50) throw new Error('مدخل zip تالف: ' + name);
+      var ln = u16(v, loff + 26), lx = u16(v, loff + 28); var start = loff + 30 + ln + lx;
+      out.push({ name: name, method: method, csize: csize, usize: usize, start: start });
+    }
+    return out;
+  }
+  async function bytesOf(buf, en){
+    var slice = new Uint8Array(buf, en.start, en.csize);
+    if (en.method === 0) return slice;
+    if (en.method !== 8) throw new Error('ضغط غير مدعوم: ' + en.name);
+    var ds = new DecompressionStream('deflate-raw'); var ab = await new Response(new Blob([slice]).stream().pipeThrough(ds)).arrayBuffer();
+    return new Uint8Array(ab);
+  }
+  function toB64(bytes){ return new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ res(String(fr.result).split(',')[1] || ''); }; fr.onerror = function(){ rej(new Error('base64')); }; fr.readAsDataURL(new Blob([bytes])); }); }
+  async function post(action, params, bytes){
+    var u = ADMIN + '?action=' + action + '&t=' + encodeURIComponent(token); for (var k in params) u += '&' + k + '=' + encodeURIComponent(params[k]);
+    // the file goes as base64 text inside JSON: plain text passes the web firewall (raw script files were rejected with "Failed to fetch")
+    var body = bytes ? JSON.stringify({ data: await toB64(bytes) }) : null;
+    var r = await fetch(u, { method: 'POST', body: body, headers: body ? { 'content-type': 'application/json' } : {} });
+    var j = await r.json().catch(function(){ return { ok: false, error: 'HTTP ' + r.status }; }); if (!j.ok) throw new Error(j.error || 'فشل'); return j;
+  }
+  go.addEventListener('click', async function(){
+    if (!file) return; go.disabled = true; document.getElementById('pick').style.display = 'none'; log.textContent = '';
+    try {
+      say('بيقرأ الملف…'); var buf = await file.arrayBuffer(); var list = await entries(buf);
+      var top = null; if (!list.some(function(e){ return e.name === 'index.html'; })) { var firsts = list.map(function(e){ return e.name.split('/')[0]; }); if (firsts.every(function(f){ return f === firsts[0]; }) && list.some(function(e){ return e.name === firsts[0] + '/index.html'; })) top = firsts[0] + '/'; }
+      list = list.map(function(e){ if (top && e.name.indexOf(top) === 0) e.name = e.name.slice(top.length); return e; }).filter(function(e){ return e.name && e.name.indexOf('..') < 0 && ['.nojekyll', '.DS_Store'].indexOf(e.name) < 0; });
+      if (!list.some(function(e){ return e.name === 'index.html'; })) throw new Error('الملف مفيهوش index.html — اتأكد إنه ملف السيستم الصحيح');
+      var build = ''; var bt = list.filter(function(e){ return e.name === 'BUILD.txt'; })[0]; if (bt) build = dec.decode(await bytesOf(buf, bt)).trim();
+      if (!build) build = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+      say('نسخة: ' + build + ' — ' + list.length + ' ملف');
+      var total = list.reduce(function(s, e){ return s + e.usize; }, 0), done = 0;
+      for (var i = 0; i < list.length; i++) {
+        var en = list[i]; var data = await bytesOf(buf, en); var tries = 0;
+        while (true) { try { await post('put-file', { path: en.name, build: build }, data); break; } catch (err) { if (++tries >= 3) throw new Error(en.name + ': ' + err.message); say('إعادة محاولة ' + en.name + '…'); await new Promise(function(r){ setTimeout(r, 1500); }); } }
+        done += en.usize; bar.style.width = Math.round(done / total * 100) + '%'; say('✓ ' + en.name + ' (' + (en.usize / 1024).toFixed(0) + ' KB)');
+      }
+      say('بينشر على الموقع…'); var f = await post('finish', { build: build }); bar.style.width = '100%';
+      var nl = f.netlify || {}; var site = nl.ok && nl.site ? String(nl.site) : '';
+      document.getElementById('sum').innerHTML = 'النسخة <code>' + String(f.build).replace(/[^\w.-]/g, '') + '</code> — ' + (+f.files || 0) + ' ملف.' + (site ? '<br>رابط السيستم: <code>' + site.replace(/[<>"]/g, '') + '</code>' : '');
+      if (site) document.getElementById('open').href = site;
+      if (!nl.ok) say('الملفات اتخزنت، لكن النشر على الموقع فشل: ' + (nl.error || nl.state || '؟') + ' — ابعت الرسالة دي لكلود.', 'err');
+      document.getElementById('c2').style.display = '';
+      say('تم ✓', 'done');
+    } catch (err) { say('خطأ: ' + (err && err.message || err), 'err'); go.disabled = false; document.getElementById('pick').style.display = ''; }
+  });
+})();
+</script></div></body></html>

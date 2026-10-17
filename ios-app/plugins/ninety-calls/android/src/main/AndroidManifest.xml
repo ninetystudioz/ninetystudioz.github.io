@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v7.36: the app updates itself from the site (the new Ninety.apk, same signing key) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <application>
+        <!-- replaces the Capacitor push service (removed in the app manifest by scripts/configure-android.py): calls first, everything else goes on to Capacitor -->
+        <service android:name="app.ninety.calls.NinetyMessagingService" android:exported="false">
+            <intent-filter android:priority="10">
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <service android:name="app.ninety.calls.WorkService" android:exported="false" android:foregroundServiceType="remoteMessaging" />
+        <activity android:name="app.ninety.calls.IncomingCallActivity" android:exported="false" android:showWhenLocked="true" android:turnScreenOn="true" android:launchMode="singleInstance" android:excludeFromRecents="true" android:taskAffinity="app.ninety.calls.incoming" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+        <receiver android:name="app.ninety.calls.CallActionReceiver" android:exported="false" />
+        <!-- v7.36: self-update result (PackageInstaller) + «updated — tap to open» after the new version is in -->
+        <receiver android:name="app.ninety.calls.UpdateReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

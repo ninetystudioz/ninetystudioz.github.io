@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Ninety — تسجيل الدخول</title>
+<link rel="icon" href="../../icons/icon-192.png">
+<!-- v7.66: the sign-in / consent page of the factory's own OAuth 2.1 server (Supabase Auth → Authorization Path /oauth/consent/).
+     ChatGPT / Codex send the engineer here with ?authorization_id=…; she signs in with her own system account (or the session the
+     web app already has in this browser), sees who is asking and approves — the app then acts AS HER (no shared account).
+     Only the technical office and the owner can approve; everybody else can only refuse. Arabic + English; phone + computer. -->
+<style>
+:root{color-scheme:light dark;--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--mut:#6e6e73;--line:#e3e3e8;--ac:#111;--acink:#fff;--bad:#c62828;--soft:#f2f2f5}
+@media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--ink:#f5f5f7;--mut:#a1a1a6;--line:#38383a;--ac:#f5f5f7;--acink:#000;--soft:#2c2c2e}}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Tahoma,sans-serif}
+.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom))}
+.card{width:100%;max-width:420px;background:var(--card);border-radius:22px;padding:26px 22px;box-shadow:0 10px 40px rgba(0,0,0,.08);border:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:14px}.top img{width:44px;height:44px;border-radius:12px}.top b{font-size:17px;display:block}.top span{color:var(--mut);font-size:13px}
+h1{font-size:20px;margin:6px 0 6px;line-height:1.35}p{margin:6px 0}.mut{color:var(--mut);font-size:13.5px}
+.who{display:flex;align-items:center;gap:10px;background:var(--soft);border-radius:14px;padding:10px 12px;margin:12px 0}.av{width:36px;height:36px;border-radius:50%;background:var(--ac);color:var(--acink);display:grid;place-items:center;font-weight:700;flex:none}
+ul{margin:8px 0 4px;padding-inline-start:20px}li{margin:3px 0}
+label{display:block;font-size:13px;color:var(--mut);margin:12px 0 5px}input{width:100%;font:inherit;font-size:16px;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);direction:ltr}
+html[dir=rtl] input{text-align:right}
+.btn{display:block;width:100%;border:0;border-radius:13px;padding:12px 14px;font:inherit;font-weight:600;font-size:16px;cursor:pointer;margin-top:10px;background:var(--soft);color:var(--ink)}.btn.p{background:var(--ac);color:var(--acink)}.btn:disabled{opacity:.55;cursor:default}
+.row{display:flex;gap:10px}.row .btn{flex:1}
+.err{color:var(--bad);font-size:13.5px;min-height:18px;margin-top:8px}
+.lnk{background:none;border:0;color:var(--mut);font:inherit;font-size:13px;text-decoration:underline;cursor:pointer;padding:0}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px;gap:8px}
+.spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--ink);border-radius:50%;animation:s 1s linear infinite;margin:18px auto}@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card" id="app"><div class="spin"></div></div></div>
+<script src="../../config.js"></script>
+<script src="../../vendor/supabase.js"></script>
+<script>
+(function () {
+  'use strict';
+  var TX = {
+    ar: { brand: 'Ninety Fabrication', sub: 'المكتب الفني', loading: 'لحظة…', noId: 'اللينك ده ناقص — ارجع للتطبيق وابدأ تسجيل الدخول من تاني.', noCfg: 'السيستم مش متاح دلوقتي — جرّب كمان شوية.',
+      signin: 'ادخل بحسابك في السيستم', signinSub: 'نفس رقم الموبايل (أو اسم المستخدم) وكلمة السر اللي بتدخل بيهم Ninety.', user: 'رقم الموبايل أو اسم المستخدم', pass: 'كلمة السر', go: 'دخول', badLogin: 'رقم الموبايل أو كلمة السر غلط.', banned: 'حسابك موقوف — راجع الإدارة.',
+      asks: '«{c}» عايز يشتغل على السيستم باسمك', what: 'هيقدر:', w1: 'يدوّر في المنتجات ويفتح كارت المنتج (من غير أي أسعار)', w2: 'يعمل منتجات جديدة ويعدّل — كلها مسودات لحد ما المالك يعتمدها', w3: 'يرفع رسومات وملفات 3D على المنتجات', w4: 'يبعت المنتج للمالك يراجعه',
+      never: 'مش هيقدر يشوف فلوس أو يعتمد حاجة أو يمسح حاجة.', as: 'هتشتغل باسم', allow: 'موافق', deny: 'لأ', other: 'حساب تاني', onlyTech: 'الربط ده للمكتب الفني والمالك بس — حسابك مش من المكتب الفني.', done: 'تمام — ارجع لـ {c}.', denied: 'اترفض الطلب — ارجع لـ {c}.', fail: 'حصلت مشكلة: ', expired: 'الطلب ده انتهى — ارجع للتطبيق وابدأ من تاني.', redirect: 'بيرجّعك…', lang: 'English', scopes: 'البيانات المطلوبة', app: 'التطبيق' },
+    en: { brand: 'Ninety Fabrication', sub: 'Technical office', loading: 'One moment…', noId: 'This link is incomplete — go back to the app and start the sign-in again.', noCfg: 'The system is not available right now — try again shortly.',
+      signin: 'Sign in with your system account', signinSub: 'The same mobile number (or username) and password you use for Ninety.', user: 'Mobile number or username', pass: 'Password', go: 'Sign in', badLogin: 'Wrong mobile number or password.', banned: 'Your account is suspended — contact the management.',
+      asks: '“{c}” wants to work on the system as you', what: 'It will be able to:', w1: 'Search products and open product cards (never any prices)', w2: 'Create and edit products — all drafts until the owner approves them', w3: 'Upload drawings and 3D files to products', w4: 'Send a product to the owner for review',
+      never: 'It cannot see money, approve anything or delete anything.', as: 'You will work as', allow: 'Allow', deny: 'Deny', other: 'Another account', onlyTech: 'This connection is for the technical office and the owner only — your account is not in the technical office.', done: 'Done — go back to {c}.', denied: 'Request refused — go back to {c}.', fail: 'Something went wrong: ', expired: 'This request has expired — go back to the app and start again.', redirect: 'Taking you back…', lang: 'العربية', scopes: 'Requested data', app: 'App' }
+  };
+  var lang = 'ar'; try { lang = localStorage.getItem('nf.lang') || ((navigator.language || 'ar').slice(0, 2) === 'ar' ? 'ar' : 'en'); } catch (e) { /* private mode */ }
+  if (lang !== 'en') lang = 'ar';
+  var t = function (k, c) { return String((TX[lang] || TX.ar)[k] || k).replace('{c}', c || ''); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var app = document.getElementById('app');
+  var qs = new URLSearchParams(location.search); var AID = qs.get('authorization_id') || '';
+  var cfg = window.NF_CONFIG || {}; var sbMain = null, sb = null, details = null, me = null, view = 'load', err = '';
+  var arDigits = function (s) { return String(s == null ? '' : s).replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); }).replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); }); };
+  var normPhone = function (s) { var d = arDigits(String(s || '')).replace(/\D/g, ''); if (!d) return ''; if (d.indexOf('0020') === 0) d = '0' + d.slice(4); else if (d.indexOf('20') === 0 && d.length >= 12) d = '0' + d.slice(2); return d; };
+  var loginEmail = function (s) { var ph = normPhone(s); return (ph.length >= 8 ? ph : String(s || '').trim().toLowerCase()) + '@nf.local'; };
+  function setLang(l) { lang = l; document.documentElement.lang = l; document.documentElement.dir = l === 'en' ? 'ltr' : 'rtl'; document.title = 'Ninety — ' + (l === 'en' ? 'Sign in' : 'تسجيل الدخول'); draw(); }
+  function head() { return '<div class="top"><img src="../../icons/icon-192.png" alt=""><div><b>' + esc(t('brand')) + '</b><span>' + esc(t('sub')) + '</span></div></div>'; }
+  function foot(extra) { return '<div class="foot"><button class="lnk" id="lg">' + esc(t('lang')) + '</button>' + (extra || '') + '</div>'; }
+  function clientName() { return (details && details.client && (details.client.name || details.client.client_name)) || 'ChatGPT'; }
+  function draw() {
+    var h = head();
+    if (view === 'load') h += '<div class="spin"></div><p class="mut" style="text-align:center">' + esc(t('loading')) + '</p>';
+    else if (view === 'msg') h += '<h1>' + esc(err) + '</h1>' + foot();
+    else if (view === 'login') h += '<h1>' + esc(t('signin')) + '</h1><p class="mut">' + esc(t('signinSub')) + '</p><form id="f" autocomplete="on"><label for="u">' + esc(t('user')) + '</label><input id="u" name="username" autocomplete="username" inputmode="text" required><label for="p">' + esc(t('pass')) + '</label><input id="p" name="password" type="password" autocomplete="current-password" required><button class="btn p" id="go" type="submit">' + esc(t('go')) + '</button><div class="err" id="er">' + esc(err) + '</div></form>' + foot();
+    else if (view === 'consent') {
+      var ok = me && (me.role === 'tech' || me.role === 'admin');
+      var sc = String((details && details.scope) || '').trim();
+      h += '<h1>' + esc(t('asks', clientName())) + '</h1>' +
+        '<div class="who"><span class="av">' + esc(String(me.name || '?').trim().slice(0, 1)) + '</span><div><div class="mut">' + esc(t('as')) + '</div><b>' + esc(me.name || '') + '</b></div></div>' +
+        (ok ? '<p><b>' + esc(t('what')) + '</b></p><ul><li>' + esc(t('w1')) + '</li><li>' + esc(t('w2')) + '</li><li>' + esc(t('w3')) + '</li><li>' + esc(t('w4')) + '</li></ul><p class="mut">' + esc(t('never')) + '</p>' : '<p class="err">' + esc(t('onlyTech')) + '</p>') +
+        (sc ? '<p class="mut">' + esc(t('scopes')) + ': <span dir="ltr">' + esc(sc) + '</span></p>' : '') +
+        '<div class="row">' + (ok ? '<button class="btn p" id="yes">' + esc(t('allow')) + '</button>' : '') + '<button class="btn" id="no">' + esc(t('deny')) + '</button></div><div class="err" id="er">' + esc(err) + '</div>' +
+        foot('<button class="lnk" id="oth">' + esc(t('other')) + '</button>');
+    }
+    app.innerHTML = h;
+    var b = document.getElementById('lg'); if (b) b.onclick = function () { setLang(lang === 'en' ? 'ar' : 'en'); };
+    var f = document.getElementById('f'); if (f) { f.onsubmit = login; setTimeout(function () { var u = document.getElementById('u'); if (u) u.focus(); }, 30); }
+    var y = document.getElementById('yes'); if (y) y.onclick = function () { decide(true); };
+    var n = document.getElementById('no'); if (n) n.onclick = function () { decide(false); };
+    var o = document.getElementById('oth'); if (o) o.onclick = function () { sb = altClient(); me = null; err = ''; view = 'login'; draw(); };
+  }
+  function msg(text) { err = text; view = 'msg'; draw(); }
+  function altClient() { return window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'nf-oauth-alt' } }); }
+  async function who() {
+    var r = await sb.rpc('nf_meet_me'); var d = r && r.data; if (!d || !d.role) return null;
+    var name = '';
+    try { if (d.wid) { var w = await sb.from('docs').select('data->name').eq('col', 'workers').eq('id', d.wid).maybeSingle(); name = (w.data && w.data.name) || ''; } } catch (e) { /* name is optional */ }
+    if (!name) { try { var u = await sb.auth.getUser(); name = String((u.data.user && ((u.data.user.user_metadata && u.data.user.user_metadata.name) || u.data.user.email)) || '').split('@')[0]; } catch (e) { /* ignore */ } }
+    return { role: String(d.role), name: name };
+  }
+  async function afterSignIn() {
+    view = 'load'; draw();
+    me = await who().catch(function () { return null; });
+    if (!me) { err = ''; view = 'login'; draw(); return; }
+    var r = await sb.auth.oauth.getAuthorizationDetails(AID);
+    if (r.error) return msg(/expired|not.?found|invalid/i.test(r.error.message || '') ? t('expired') : t('fail') + (r.error.message || ''));
+    details = r.data || {};
+    if (details.redirect_url && !details.authorization_id) { if (me.role === 'tech' || me.role === 'admin') { msg(t('redirect')); location.replace(details.redirect_url); return; } }
+    err = ''; view = 'consent'; draw();
+  }
+  async function login(e) {
+    e.preventDefault(); var go = document.getElementById('go'); var er = document.getElementById('er'); go.disabled = true; er.textContent = '';
+    try {
+      var r = await sb.auth.signInWithPassword({ email: loginEmail(document.getElementById('u').value), password: document.getElementById('p').value });
+      if (r.error) { er.textContent = /banned/i.test(r.error.message || '') ? t('banned') : t('badLogin'); go.disabled = false; return; }
+      await afterSignIn();
+    } catch (x) { er.textContent = t('fail') + (x.message || x); go.disabled = false; }
+  }
+  async function decide(yes) {
+    var bs = app.querySelectorAll('button.btn'); for (var i = 0; i < bs.length; i++) bs[i].disabled = true;
+    try {
+      if (yes && !(me && (me.role === 'tech' || me.role === 'admin'))) yes = false;
+      var r = yes ? await sb.auth.oauth.approveAuthorization(AID, { skipBrowserRedirect: true }) : await sb.auth.oauth.denyAuthorization(AID, { skipBrowserRedirect: true });
+      if (r.error) throw r.error;
+      var url = r.data && (r.data.redirect_url || r.data.redirect_to);
+      msg(yes ? t('done', clientName()) : t('denied', clientName()));
+      if (url) location.replace(url);
+    } catch (x) { err = t('fail') + (x.message || x); view = 'consent'; draw(); }
+  }
+  async function start() {
+    setLang(lang);
+    if (!AID) return msg(t('noId'));
+    if (!window.supabase || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return msg(t('noCfg'));
+    sbMain = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+    sb = sbMain;
+    var s = await sb.auth.getSession().catch(function () { return { data: {} }; });
+    if (s && s.data && s.data.session) return afterSignIn();
+    /* a fresh sign-in here leaves nothing behind in this browser (the web app keeps its own sign-in rules) */
+    sb = altClient(); view = 'login'; draw();
+  }
+  window.__nfConsent = { state: function () { return { view: view, me: me, details: details, lang: lang }; } };
+  start().catch(function (x) { msg(t('fail') + (x && x.message || x)); });
+})();
+</script>
+</body>
+</html>

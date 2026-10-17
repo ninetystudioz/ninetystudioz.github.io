@@ -1,0 +1,140 @@
+# Ninety — iOS app build (Capacitor shell around the live web app) → TestFlight / App Store,
+# and (v6.78) the Android app → signed APK + AAB, copied to the website by the factory Edge function "app-build".
+# The iOS project is generated on the build Mac from package.json + capacitor.config.json + scripts/ (nothing secret in this repo).
+# Needs in Codemagic (UI): App Store Connect integration named "ninety-ci" + an iOS distribution certificate and an
+# App Store provisioning profile for app.ninety.fabrication under "Code signing identities".
+workflows:
+  ios-testflight:
+    name: Ninety iOS → TestFlight
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    working_directory: ios-app
+    integrations:
+      app_store_connect: ninety-ci
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: app.ninety.fabrication
+      node: 22
+      xcode: latest
+    # Builds by itself whenever the app files change (a push to main that touches ios-app/ or this file) — website-only
+    # publishes do not build. Manual «Start new build» still works.
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+      cancel_previous_builds: true
+    when:
+      changeset:
+        includes:
+          - 'ios-app/'
+          - 'codemagic.yaml'
+    scripts:
+      - name: Install
+        script: npm install --no-audit --no-fund
+      # v7.57: provisioning profile for the «Share» extension (App Store Connect API, integration key) — no profile → no extension
+      - name: Share extension signing
+        script: python3 scripts/share-signing.py
+      - name: Generate the iOS project
+        script: |
+          rm -rf ios
+          npx cap add ios
+          python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
+          python3 scripts/make-assets.py
+          python3 scripts/configure-ios.py
+          npx capacitor-assets generate --ios --iconBackgroundColor '#171b1f' --splashBackgroundColor '#171b1f'
+          npx cap sync ios
+      - name: Signing
+        script: xcode-project use-profiles
+      - name: Build number
+        script: |
+          cd ios/App
+          agvtool new-version -all $((BUILD_NUMBER + 100))
+      - name: Build the app (.ipa)
+        script: |
+          if ! xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"; then
+            if [ -f /tmp/pbx.noshare ]; then
+              echo "v7.57: the build with the Share extension failed - building the app without it"
+              cp /tmp/pbx.noshare ios/App/App.xcodeproj/project.pbxproj
+              cp /tmp/ent.noshare ios/App/App/App.entitlements
+              xcode-project use-profiles
+              (cd ios/App && agvtool new-version -all $((BUILD_NUMBER + 100)))
+              xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"
+            else
+              exit 1
+            fi
+          fi
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  android-apk:
+    name: Ninety Android → APK + AAB
+    max_build_duration: 40
+    instance_type: mac_mini_m2
+    working_directory: ios-app
+    environment:
+      node: 22
+      java: 21
+    # Builds by itself when the app files change. The signing key is NOT in Codemagic or the
+    # repo: the build asks the factory server for it (Edge "app-build", action signing), which checks with the Codemagic API
+    # that this exact build of this app is running before answering, once.
+    # v7.48: iOS-only files (the Apple Pencil plugin, the iOS project script) and this file do not rebuild the Android app —
+    # a new APK makes every Android phone update, so it is built only when something Android actually changed.
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+      cancel_previous_builds: true
+    when:
+      changeset:
+        includes:
+          - 'ios-app/'
+        excludes:
+          - 'ios-app/plugins/ninety-pencil/'
+          - 'ios-app/scripts/configure-ios.py'
+          - 'ios-app/share-ext/'
+          - 'ios-app/scripts/add-share-ext.rb'
+          - 'ios-app/scripts/share-signing.py'
+    scripts:
+      - name: Install
+        script: npm install --no-audit --no-fund
+      - name: Generate the Android project
+        script: |
+          rm -rf android
+          npx cap add android
+          python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
+          python3 scripts/make-assets.py
+          npx capacitor-assets generate --android --iconBackgroundColor '#171b1f' --splashBackgroundColor '#171b1f'
+          # v7.36b: capacitor-assets leaves Capacitor's default adaptive icon (the blue X) - draw the Ninety launcher icon over it
+          python3 scripts/android-icons.py
+      - name: Signing key from the Ninety server
+        script: |
+          set +x
+          curl -sS -X POST "https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/app-build" -H "content-type: application/json" -d "{\"action\":\"signing\",\"build\":\"$CM_BUILD_ID\"}" -o /tmp/signing.json
+          python3 scripts/configure-android.py
+          rm -f /tmp/signing.json
+      - name: Sync
+        script: npx cap sync android
+      - name: Build the app (.apk + .aab)
+        script: |
+          # v7.61: a failed APK build must fail the step (build 106 compiled nothing yet showed «success»)
+          set -e
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          # v7.36: the Play Store bundle must not update itself - drop the self-update permission, then build the .aab
+          (cd .. && python3 scripts/store-variant.py)
+          ./gradlew --no-daemon bundleRelease || echo "AAB build failed - the website APK is fine"
+          rm -f app/ninety.jks keystore.properties
+    artifacts:
+      - android/app/build/outputs/apk/release/*.apk
+      - android/app/build/outputs/bundle/release/*.aab

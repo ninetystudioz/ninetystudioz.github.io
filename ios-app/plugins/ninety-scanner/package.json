@@ -1,0 +1,15 @@
+{
+  "name": "ninety-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ninety — document scanner for the iOS app (Apple VisionKit VNDocumentCameraViewController, public API only)",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

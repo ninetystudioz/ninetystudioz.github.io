@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Ninety — IT setup form</title>
+<style>
+:root{color-scheme:light}
+body{margin:0;font:15px/1.6 system-ui,"Segoe UI",Tahoma,sans-serif;background:#f3f4f2;color:#1e2a33}
+.wrap{max-width:760px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:26px 0 8px;border-bottom:1px solid #d9dcd6;padding-bottom:6px}
+.muted{color:#6b7580;font-size:13px}
+.card{background:#fff;border:1px solid #e1e4df;border-radius:14px;padding:18px 18px 12px;margin-top:14px}
+label{display:block;margin:10px 0 4px;font-weight:600;font-size:14px}
+label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:500;margin:8px 0}
+label.chk input{margin-top:5px}
+input[type=text],input[type=email],input[type=password],textarea,select{width:100%;box-sizing:border-box;border:1px solid #cfd4cc;border-radius:10px;padding:10px 12px;font:inherit;background:#fff}
+.ltr{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+code{background:#eef0ec;padding:2px 6px;border-radius:6px;direction:ltr;unicode-bidi:embed;font-size:13px}
+pre{background:#1e2a33;color:#e8ebee;padding:10px 12px;border-radius:10px;direction:ltr;text-align:left;overflow:auto;font-size:12.5px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0}th,td{border:1px solid #e1e4df;padding:6px 8px;text-align:right;vertical-align:top}th{background:#f6f7f4}
+.btn{display:inline-block;border:0;border-radius:12px;padding:12px 22px;font:inherit;font-weight:700;background:#1d5fd1;color:#fff;cursor:pointer}
+.btn[disabled]{opacity:.5;cursor:default}
+.ok{background:#e7f6ec;border:1px solid #9fd7b2;color:#1d6a3a;padding:12px 14px;border-radius:12px;margin-top:14px}
+.err{background:#fdecec;border:1px solid #f0a8a8;color:#8a1f1f;padding:12px 14px;border-radius:12px;margin-top:14px}
+.en{color:#6b7580;font-size:12.5px;direction:ltr;text-align:left}
+.logo{font-weight:900;letter-spacing:.14em;font-size:13px;color:#6b7580}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">▮NINETY · STUDIO MANAGEMENT</div>
+  <h1>فورم الـIT — دومين وإيميلات سيستم Ninety</h1>
+  <p class="muted">املأ اللي اتعمل ودوس «حفظ» — البيانات بتروح للسيستم مباشرة، وبيانات Microsoft بتتحفظ مشفّرة على السيرفر ومش بتتعرض لحد. <span class="en">Fill in what was done and press Save; Microsoft app details are stored encrypted on the server only.</span></p>
+
+  <form id="f">
+  <div class="card">
+    <h2>1) دومين السيستم — DNS على ninetystudioz.com</h2>
+    <table><tr><th>النوع</th><th>Host</th><th>Value</th><th>TTL</th></tr><tr><td>CNAME</td><td><code>app</code></td><td><code>mahmoudfawzy1212mf-crypto.github.io</code></td><td>3600</td></tr></table>
+    <p class="muted">لو Cloudflare: السجل <b>DNS only</b> (مش Proxied). <span class="en">If Cloudflare: DNS only (grey cloud).</span></p>
+    <label class="chk"><input type="checkbox" name="cname"> اتعمل سجل CNAME لـ app</label>
+  </div>
+
+  <div class="card">
+    <h2>2) توثيق إرسال الإيميل (Brevo) — ninetystudioz.com و lof-eg.com</h2>
+    <p class="muted">سجلات DKIM وكود التحقق خاصة بالحساب وبتتاخد من شاشة Brevo (محمود بيبعتها). SPF: سجل واحد بس — يتضاف عليه <code>include:spf.brevo.com</code>. <span class="en">One SPF record per domain; add include:spf.brevo.com to the existing one.</span></p>
+    <pre>v=spf1 include:spf.protection.outlook.com include:spf.brevo.com -all</pre>
+    <label class="chk"><input type="checkbox" name="brevo_ninety"> ninetystudioz.com: brevo-code + DKIM + SPF + DMARC اتعملوا</label>
+    <label class="chk"><input type="checkbox" name="brevo_lof"> lof-eg.com: نفس السجلات اتعملت</label>
+    <label class="chk"><input type="checkbox" name="spf_merged"> SPF اتدمج في سجل واحد (مفيش سجلين SPF)</label>
+  </div>
+
+  <div class="card">
+    <h2>3) صناديق البريد</h2>
+    <p class="muted">الجديدة تتعمل <b>Shared mailbox</b> (من غير رخصة) وتتحوّل للناس المذكورين. <span class="en">New addresses as shared mailboxes (no licence), delivered to the people listed.</span></p>
+    <table><tr><th>العنوان</th><th>يوصل لمين</th></tr>
+      <tr><td><code>hello@ninetystudioz.com</code></td><td>محمود + محمد سابق</td></tr>
+      <tr><td><code>accounts@ninetystudioz.com</code></td><td>سعيد أشرف + محمود</td></tr>
+      <tr><td><code>alaa@lof-eg.com</code></td><td>آلاء</td></tr>
+      <tr><td><code>info@ninetystudioz.com</code> · <code>info@lof-eg.com</code></td><td>موجودين — تأكيد إنهم بيوصلوا لمحمود</td></tr></table>
+    <label class="chk"><input type="checkbox" name="box_hello"> hello@ninetystudioz.com اتعمل</label>
+    <label class="chk"><input type="checkbox" name="box_accounts"> accounts@ninetystudioz.com اتعمل</label>
+    <label class="chk"><input type="checkbox" name="box_alaa"> alaa@lof-eg.com اتعمل</label>
+    <label class="chk"><input type="checkbox" name="box_info"> info@ (الاتنين) متأكدين إنهم شغالين</label>
+    <label class="chk"><input type="checkbox" name="shared"> اتعملوا Shared mailboxes</label>
+    <label>بريد الشركة على إيه؟</label>
+    <select name="provider"><option value="m365">Microsoft 365 / Exchange Online</option><option value="google">Google Workspace</option><option value="other">غير كده (اكتب في الملاحظات)</option></select>
+  </div>
+
+  <div class="card">
+    <h2>4) تطبيق Microsoft 365 لقراءة البريد من جوه السيستم</h2>
+    <p class="muted">Entra admin center ← App registrations ← New registration: الاسم <code>Ninety System Mail</code>، Single tenant، بدون Redirect URI. ثم API permissions ← Microsoft Graph ← <b>Application permissions</b>: <code>Mail.Read</code> + <code>Mail.Send</code> + <code>User.Read.All</code> ← <b>Grant admin consent</b>. ثم Certificates &amp; secrets ← New client secret (24 شهر) — انسخ <b>Value</b> مش Secret ID.</p>
+    <p class="muted">قصر الصلاحية على الصناديق الأربعة (Exchange Online PowerShell): <span class="en">restrict the app to the four mailboxes:</span></p>
+    <pre>New-DistributionGroup -Name "NinetySystemMail" -Type Security -Members info@ninetystudioz.com,hello@ninetystudioz.com,accounts@ninetystudioz.com,mahmoud.fawzy@ninetystudioz.com
+New-ApplicationAccessPolicy -AppId &lt;Application ID&gt; -PolicyScopeGroupId NinetySystemMail@ninetystudioz.com -AccessRight RestrictAccess -Description "Ninety system mail"</pre>
+    <label>Tenant ID (Directory ID)</label><input type="text" name="ms_tenant" class="ltr" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+    <label>Application (client) ID</label><input type="text" name="ms_client" class="ltr" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+    <label>Client secret — Value</label><input type="password" name="ms_secret" class="ltr" autocomplete="new-password">
+    <label class="chk"><input type="checkbox" name="policy"> Application Access Policy اتعملت على الصناديق الأربعة</label>
+    <p class="muted">لو مش Microsoft 365 سيب الخانات دي فاضية واكتب في الملاحظات. <span class="en">Not on Microsoft 365? Leave these empty and tell us in the notes.</span></p>
+  </div>
+
+  <div class="card">
+    <h2>5) بياناتك وملاحظات</h2>
+    <label>اسمك</label><input type="text" name="contact" required>
+    <label>إيميلك</label><input type="email" name="email" class="ltr">
+    <label>ملاحظات (أي حاجة اتأجلت أو مختلفة)</label><textarea name="notes" rows="4"></textarea>
+  </div>
+
+  <p style="margin-top:18px"><button class="btn" type="submit" id="save">حفظ وإرسال للسيستم</button></p>
+  <div id="msg"></div>
+  </form>
+</div>
+<script>
+(function () {
+  const API = 'https://rekmppawmxerlqxqpqni.supabase.co/functions/v1/itform';
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const f = document.getElementById('f'), msg = document.getElementById('msg'), btn = document.getElementById('save');
+  if (!token) { msg.innerHTML = '<div class="err">اللينك ناقص الكود — اطلب اللينك الصحيح من محمود.</div>'; btn.disabled = true; }
+  f.addEventListener('submit', async ev => {
+    ev.preventDefault(); const d = Object.fromEntries(new FormData(f).entries()); const on = n => f.querySelector('[name="' + n + '"]').checked;
+    const boxes = ['box_hello', 'box_accounts', 'box_alaa', 'box_info'].filter(on).map(n => n.slice(4));
+    const body = { token, cname: on('cname'), brevo_ninety: on('brevo_ninety'), brevo_lof: on('brevo_lof'), spf_merged: on('spf_merged'), boxes, shared: on('shared'), policy: on('policy'), provider: d.provider, ms_tenant: d.ms_tenant, ms_client: d.ms_client, ms_secret: d.ms_secret, contact: d.contact, email: d.email, notes: d.notes };
+    btn.disabled = true; btn.textContent = 'جارٍ الحفظ…'; msg.innerHTML = '';
+    try {
+      const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); const j = await r.json().catch(() => ({}));
+      if (j.ok) { msg.innerHTML = '<div class="ok">اتحفظ ✓ — شكرًا. ' + (j.msSaved ? 'بيانات Microsoft اتحفظت على السيرفر.' : 'بيانات Microsoft ما اتبعتتش (ينفع تتبعت بعدين من نفس اللينك).') + '</div>'; f.querySelector('[name=ms_secret]').value = ''; btn.textContent = 'اتحفظ'; }
+      else { msg.innerHTML = '<div class="err">' + (j.error === 'bad_token' ? 'اللينك انتهى أو غلط — اطلب لينك جديد من محمود.' : j.error === 'bad_ms' ? 'بيانات Microsoft مش صح: Tenant ID وClient ID لازم يكونوا GUID، والـSecret هو الـValue مش الـID.' : 'حصلت مشكلة: ' + (j.detail || j.error || r.status)) + '</div>'; btn.disabled = false; btn.textContent = 'حفظ وإرسال للسيستم'; }
+    } catch (e) { msg.innerHTML = '<div class="err">مفيش اتصال — جرّب تاني.</div>'; btn.disabled = false; btn.textContent = 'حفظ وإرسال للسيستم'; }
+  });
+})();
+</script>
+</body>
+</html>

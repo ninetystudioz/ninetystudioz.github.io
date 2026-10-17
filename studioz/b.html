@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Ninety Studioz — Board</title>
+<!-- v6.07: shared board for people outside the system (view / comment). Data from the board-share function (studio project). -->
+<style>
+:root{--bg:#f4f5f7;--dot:rgba(20,30,45,.16);--ink:#1a1a1a;--line:#5b6673;--frame:#fff;--ui:#fff;--uiink:#1f2933;--mute:#69737f;--uil:rgba(15,23,42,.1);--acc:#2d6cdf}
+body.dark{--bg:#14171c;--dot:rgba(255,255,255,.1);--ink:#eef1f4;--line:#a3afbd;--frame:#1d2128;--ui:#22262d;--uiink:#e9edf1;--mute:#9aa4af;--uil:rgba(255,255,255,.1)}
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);font-family:"IBM Plex Sans Arabic",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;color:var(--uiink)}
+#wrap{position:fixed;inset:0;direction:ltr;touch-action:none;cursor:grab;background-image:radial-gradient(var(--dot) 1.1px,transparent 1.2px)}#wrap.drag{cursor:grabbing}
+#world{position:absolute;left:0;top:0;transform-origin:0 0}
+.i{position:absolute;color:var(--ink)}.i .t{width:100%;height:100%;white-space:pre-wrap;word-break:break-word;overflow:hidden;line-height:1.3;unicode-bidi:plaintext}
+.sticky{padding:14px 16px;box-shadow:0 6px 14px -6px rgba(0,0,0,.28);color:#1a1a1a}.sticky .t,.shape .t{display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column}
+.text{font-size:24px;padding:4px 2px}.shape{font-size:16px}.shape svg{position:absolute;inset:0;overflow:visible}.shape .t{position:absolute;inset:8% 10%;width:auto;height:auto}
+.frame{border-radius:4px;box-shadow:0 0 0 1px var(--uil)}.frame .ttl{position:absolute;left:0;bottom:100%;margin-bottom:6px;font-size:14px;color:var(--mute);white-space:nowrap}
+.image{overflow:hidden;border-radius:2px;box-shadow:0 4px 14px -8px rgba(0,0,0,.45)}.image img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.link{background:var(--ui);border:1px solid var(--uil);border-radius:10px;padding:12px;font-size:14px;overflow:hidden}.link a{color:var(--acc);text-decoration:none;font-weight:600}
+.cm{position:absolute;right:-8px;top:-8px;min-width:20px;height:20px;border-radius:999px 999px 999px 2px;background:var(--acc);color:#fff;font-size:11px;display:grid;place-items:center;padding:0 5px}
+.i.sel{outline:2px solid var(--acc);outline-offset:3px}
+svg#lines{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.bar{position:fixed;z-index:5;background:var(--ui);border-radius:12px;box-shadow:0 0 0 1px var(--uil),0 6px 22px -8px rgba(0,0,0,.28);display:flex;align-items:center;gap:6px;padding:6px 10px}
+#top{top:12px;inset-inline-start:12px;inset-inline-end:12px;justify-content:space-between}#top b{font-size:15px}#top small{color:var(--mute)}
+#zoom{bottom:12px;right:12px;direction:ltr}button{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;border-radius:8px;padding:6px 10px}button:hover{background:rgba(127,127,127,.12)}
+#panel{position:fixed;z-index:6;top:70px;bottom:12px;inset-inline-end:12px;width:min(320px,calc(100vw - 24px));background:var(--ui);border-radius:12px;box-shadow:0 0 0 1px var(--uil),0 8px 26px -8px rgba(0,0,0,.32);display:none;flex-direction:column}
+#panel .pb{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}#panel .c{background:rgba(127,127,127,.1);border-radius:10px;padding:8px 10px;font-size:13px}#panel .c small{display:block;color:var(--mute);font-size:11px}
+#panel form{display:flex;flex-direction:column;gap:6px;padding:10px;border-top:1px solid var(--uil)}input,textarea{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--uil);background:transparent;color:inherit}
+.btnp{background:var(--acc);color:#fff;font-weight:600}.btnp:hover{background:var(--acc);filter:brightness(1.08)}
+#msg{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:9;background:var(--bg)}#msg .box{background:var(--ui);padding:24px;border-radius:14px;box-shadow:0 0 0 1px var(--uil);max-width:360px;width:90%;text-align:center;display:flex;flex-direction:column;gap:10px}
+#eng{position:fixed;z-index:7;left:50%;bottom:64px;transform:translateX(-50%);width:min(440px,calc(100vw - 24px));background:var(--ui);border-radius:16px;box-shadow:0 0 0 1px var(--uil),0 18px 44px -14px rgba(0,0,0,.4);padding:12px 14px;display:none;flex-direction:column;gap:10px}
+#eng .q{font-weight:700;font-size:16px;line-height:1.5;unicode-bidi:plaintext}#eng .pill{font-size:11px;padding:2px 8px;border-radius:99px;background:rgba(127,127,127,.15);color:var(--mute)}
+#eng .opts{display:flex;flex-direction:column;gap:6px}#eng .opts.img{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}#eng .opts button{border:1px solid var(--uil);border-radius:12px;padding:9px 12px;text-align:start;display:flex;flex-direction:column;gap:6px}
+#eng .opts img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px}#eng .opts button.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc) inset}
+#eng .rate{display:flex;justify-content:center;gap:6px}#eng .rate button{font-size:30px;color:#cfcfcf;padding:0 4px}#eng .rate button.on{color:#f5b800}#eng .row{display:flex;gap:6px;align-items:center}#eng .row input{flex:1;min-width:0}#eng .ft{font-size:12px;color:var(--mute)}
+.mark{font-weight:800;letter-spacing:.08em}.mark span{font-weight:400;opacity:.6;letter-spacing:.2em;font-size:11px;display:block}
+</style>
+</head>
+<body>
+<div id="wrap"><div id="world"><div id="items"></div><svg id="lines" width="1" height="1"></svg></div></div>
+<div class="bar" id="top"><div><b id="ttl">…</b> <small id="mode"></small></div><div style="display:flex;gap:4px;align-items:center"><button id="lang"></button><span class="mark">NINETY<span>STUDIOZ</span></span></div></div>
+<div class="bar" id="zoom"><button id="zo">−</button><span id="zp">100%</span><button id="zi">+</button><button id="zf">⤢</button></div>
+<div id="panel"><div style="display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid var(--uil)"><b id="ptitle" style="flex:1"></b><button id="pclose">✕</button></div><div class="pb" id="plist"></div>
+<form id="pform"><input id="pname" maxlength="60" required><textarea id="ptext" rows="3" maxlength="1000" required></textarea><button class="btnp" type="submit" id="psend"></button></form></div>
+<div id="eng"></div>
+<div id="msg"><div class="box"><div class="mark">NINETY<span>STUDIOZ</span></div><div id="mtext"></div><form id="mform" style="display:none;flex-direction:column;gap:8px"><input id="mpass" type="password" autocomplete="off"><button class="btnp" type="submit" id="mgo"></button></form></div></div>
+<script>
+(() => {
+  const FN = 'https://rekmppawmxerlqxqpqni.supabase.co/functions/v1/board-share';
+  const T = { ar: { view: 'للفرجة', comment: 'فرجة وتعليق — اضغط على أي عنصر وعلّق', comments: 'التعليقات', none: 'مفيش تعليقات لسه', name: 'اسمك', text: 'تعليقك…', send: 'إرسال', pass: 'اللوحة دي عليها باسورد', passph: 'الباسورد', open: 'افتح', wrong: 'الباسورد غلط', expired: 'اللينك ده انتهى — اطلب لينك جديد', gone: 'اللينك ده مش شغال', err: 'حصلت مشكلة — جرّب تاني', sent: 'اتبعت التعليق', loading: 'جارٍ التحميل…', lang: 'English' , eTitle: 'سؤال سريع من الاستوديو', eName: 'اسمك', eSend: 'إرسال', eDone: 'إجابتك اتسجلت ✓ — تقدر تغيّرها لحد ما الوقت يخلص', eMulti: 'تقدر تختار أكتر من حاجة', eText: 'اكتب إجابتك', eWords: 'كلمة أو كلمتين', eEnd: 'فاضل', eNeed: 'اكتب اسمك الأول' },
+             en: { view: 'View only', comment: 'View & comment — tap any item to comment', comments: 'Comments', none: 'No comments yet', name: 'Your name', text: 'Your comment…', send: 'Send', pass: 'This board is password protected', passph: 'Password', open: 'Open', wrong: 'Wrong password', expired: 'This link has expired — ask for a new one', gone: 'This link is not active', err: 'Something went wrong — try again', sent: 'Comment sent', loading: 'Loading…', lang: 'عربي', eTitle: 'Quick question from the studio', eName: 'Your name', eSend: 'Send', eDone: 'Your answer is in ✓ — you can change it until the time ends', eMulti: 'You can pick more than one', eText: 'Write your answer', eWords: 'A word or two', eEnd: 'ends in', eNeed: 'Write your name first' } };
+  let L = (() => { try { return localStorage.getItem('nbs.lang') || ((navigator.language || '').startsWith('ar') ? 'ar' : 'en'); } catch (e) { return 'ar'; } })();
+  const t = k => T[L][k]; const $ = id => document.getElementById(id);
+  const tok = (location.hash.match(/t=([A-Za-z0-9_-]+)/) || [])[1] || ''; let pass = ''; let B = null; let V = { z: 1, x: 0, y: 0 }; let selId = null;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const r1 = v => Math.round(v * 10) / 10;
+  function applyLang() { document.documentElement.lang = L; document.documentElement.dir = L === 'ar' ? 'rtl' : 'ltr'; $('lang').textContent = t('lang'); $('pname').placeholder = t('name'); $('ptext').placeholder = t('text'); $('psend').textContent = t('send'); $('ptitle').textContent = t('comments'); $('mpass').placeholder = t('passph'); $('mgo').textContent = t('open'); if (B) $('mode').textContent = '· ' + t(B.mode); panel(); }
+  $('lang').onclick = () => { L = L === 'ar' ? 'en' : 'ar'; try { localStorage.setItem('nbs.lang', L); } catch (e) {} applyLang(); };
+  function msg(text, askPass) { $('msg').style.display = 'flex'; $('mtext').textContent = text; $('mform').style.display = askPass ? 'flex' : 'none'; if (askPass) setTimeout(() => $('mpass').focus(), 50); }
+  async function call(body) { const r = await fetch(FN, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ t: tok, p: pass }, body)) }); let j = {}; try { j = await r.json(); } catch (e) {} return { s: r.status, j }; }
+  /* v6.17 Engage: the studio's live question, answered from the share link */
+  let E = null, En = 0, Emine = null;
+  const sget = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }; const sset = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  async function engPoll() { if (!B) return; try { const { s, j } = await call({ action: 'engage' }); if (s !== 200) return; const a = j.act; if (!a) { E = null; engDraw(); return; } if (!E || E.id !== a.id) { Emine = (() => { try { return JSON.parse(sget('nbs.ans.' + a.id) || 'null'); } catch (e) { return null; } })(); } E = a; En = j.n || 0; engDraw(); } catch (e) {} }
+  function engDraw() {
+    const el = $('eng'); if (!E) { el.style.display = 'none'; el.innerHTML = ''; return; } const ae = document.activeElement; if (ae && el.contains(ae) && ae.tagName === 'INPUT') return;
+    const left = E.end ? Math.max(0, Math.round((E.end - Date.now()) / 1000)) : null; const sv = new Set(Array.isArray(Emine) ? Emine : Emine != null ? [Emine] : []);
+    let inner = '';
+    if (E.type === 'poll' || E.type === 'vote') inner = `<div class="opts ${E.type === 'vote' ? 'img' : ''}">${E.opts.map(o => `<button data-eo="${esc(o.id)}" class="${sv.has(o.id) ? 'on' : ''}">${o.thumb ? `<img src="${esc(o.thumb)}" alt="">` : ''}<span>${esc(o.t)}</span></button>`).join('')}</div>${E.multi ? `<div class="ft">${t('eMulti')}</div>` : ''}`;
+    else if (E.type === 'rate') inner = `<div class="rate">${[1, 2, 3, 4, 5].map(k => `<button data-er="${k}" class="${+Emine >= k ? 'on' : ''}">★</button>`).join('')}</div>`;
+    else inner = `<form class="row" id="etxt"><input id="ev" maxlength="${E.type === 'words' ? 60 : 300}" placeholder="${t(E.type === 'words' ? 'eWords' : 'eText')}" value="${esc(typeof Emine === 'string' ? Emine : '')}"><button class="btnp" type="submit">${t('eSend')}</button></form>`;
+    el.innerHTML = `<div class="row"><span class="pill">${t('eTitle')}</span><span style="flex:1"></span>${left != null ? `<span class="ft">${t('eEnd')} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</span>` : ''}</div><div class="q">${esc(E.q)}</div>${inner}<div class="row"><input id="ename" maxlength="60" placeholder="${t('eName')}" value="${esc(sget('nbs.name') || $('pname').value || '')}"></div>${Emine != null ? `<div class="ft">${t('eDone')}</div>` : ''}`;
+    el.style.display = 'flex';
+  }
+  async function engSend(v) { const name = (($('ename') || {}).value || '').trim(); if (!name) { alert(t('eNeed')); return; } sset('nbs.name', name); const { s } = await call({ action: 'answer', act: E.id, name, v }); if (s === 200) { Emine = v; sset('nbs.ans.' + E.id, JSON.stringify(v)); engDraw(); } else alert(t('err')); }
+  $('eng').addEventListener('click', e => { const o = e.target.closest('[data-eo]'); if (o && E) { const id = o.dataset.eo; let v; if (E.multi) { const cur = new Set(Array.isArray(Emine) ? Emine : []); cur.has(id) ? cur.delete(id) : cur.add(id); v = [...cur]; } else v = [id]; return engSend(v); } const r = e.target.closest('[data-er]'); if (r && E) return engSend(+r.dataset.er); });
+  $('eng').addEventListener('submit', e => { if (e.target.id !== 'etxt') return; e.preventDefault(); const v = ($('ev').value || '').trim(); if (v) engSend(v); });
+  setInterval(() => { if (document.hidden) return; engPoll(); }, 6000); setInterval(() => { if (E && E.end) { const el = $('eng'); const ae = document.activeElement; if (!(ae && el.contains(ae))) engDraw(); } }, 1000);
+  async function load() {
+    if (!tok) return msg(t('gone')); msg(t('loading'));
+    const { s, j } = await call({ action: 'get' });
+    if (s === 401) return msg(pass ? t('wrong') : t('pass'), true); if (s === 410) return msg(t('expired')); if (s !== 200) return msg(s === 404 ? t('gone') : t('err'));
+    $('msg').style.display = 'none'; B = j; document.body.classList.toggle('dark', j.bg === 'dark'); $('ttl').textContent = j.title; document.title = j.title + ' — Ninety Studioz'; applyLang(); draw(); fit(); engPoll();
+  }
+  $('mform').onsubmit = e => { e.preventDefault(); pass = $('mpass').value; load(); };
+  /* geometry — same as the in-app board */
+  function shapeD(k, w, h) { switch (k) { case 'round': { const r = Math.min(18, w / 4, h / 4); return `M${r},0H${w - r}Q${w},0 ${w},${r}V${h - r}Q${w},${h} ${w - r},${h}H${r}Q0,${h} 0,${h - r}V${r}Q0,0 ${r},0Z`; } case 'ellipse': return `M${w / 2},0A${w / 2},${h / 2} 0 1,1 ${w / 2},${h}A${w / 2},${h / 2} 0 1,1 ${w / 2},0Z`; case 'tri': return `M${w / 2},0L${w},${h}L0,${h}Z`; case 'diamond': return `M${w / 2},0L${w},${h / 2}L${w / 2},${h}L0,${h / 2}Z`; case 'hex': { const d = w * 0.22; return `M${d},0H${w - d}L${w},${h / 2}L${w - d},${h}H${d}L0,${h / 2}Z`; } case 'para': { const d = w * 0.2; return `M${d},0H${w}L${w - d},${h}H0Z`; } case 'star': { let s = ''; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? 0.45 : 1; s += (i ? 'L' : 'M') + r1(w / 2 + Math.cos(a) * w / 2 * q) + ',' + r1(h * 0.53 + Math.sin(a) * h * 0.53 * q); } return s + 'Z'; } case 'arrow': { const tt = Math.min(w * 0.4, h); return `M0,${h * 0.28}H${w - tt}V0L${w},${h / 2}L${w - tt},${h}V${h * 0.72}H0Z`; } case 'cyl': { const e = Math.min(h * 0.14, 26); return `M0,${e}A${w / 2},${e} 0 0,1 ${w},${e}V${h - e}A${w / 2},${e} 0 0,1 0,${h - e}ZM0,${e}A${w / 2},${e} 0 0,0 ${w},${e}`; } case 'callout': { const tt = Math.min(h * 0.22, 30), r = Math.min(14, w / 5, h / 5), b = h - tt; return `M${r},0H${w - r}Q${w},0 ${w},${r}V${b - r}Q${w},${b} ${w - r},${b}H${w * 0.42}L${w * 0.24},${h}L${w * 0.28},${b}H${r}Q0,${b} 0,${b - r}V${r}Q0,0 ${r},0Z`; } default: return `M0,0H${w}V${h}H0Z`; } }
+  const R = i => ({ x: +i.x || 0, y: +i.y || 0, w: +i.w || 160, h: +i.h || 160 }); const byId = id => B.items.find(i => i.id === id);
+  const SIDES = { n: [0.5, 0, 0, -1], e: [1, 0.5, 1, 0], s: [0.5, 1, 0, 1], w: [0, 0.5, -1, 0] };
+  const anchor = (it, s) => { const r = R(it), d = SIDES[s]; return { x: r.x + r.w * d[0], y: r.y + r.h * d[1], nx: d[2], ny: d[3] }; };
+  const best = (it, tx, ty) => { const r = R(it); const dx = (tx - (r.x + r.w / 2)) / (r.w || 1), dy = (ty - (r.y + r.h / 2)) / (r.h || 1); return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'e' : 'w') : (dy > 0 ? 's' : 'n'); };
+  const ax = (p, q) => { const dx = q.x - p.x, dy = q.y - p.y; return Math.abs(dx) > Math.abs(dy) ? { x: Math.sign(dx) || 1, y: 0 } : { x: 0, y: Math.sign(dy) || 1 }; };
+  function conn(c) {
+    const A = c.from ? byId(c.from) : null, Bb = c.to ? byId(c.to) : null; if ((c.from && !A) || (c.to && !Bb)) return '';
+    const ca = A ? { x: R(A).x + R(A).w / 2, y: R(A).y + R(A).h / 2 } : { x: +c.x1, y: +c.y1 }, cb = Bb ? { x: R(Bb).x + R(Bb).w / 2, y: R(Bb).y + R(Bb).h / 2 } : { x: +c.x2, y: +c.y2 };
+    const a = A ? anchor(A, c.fs && c.fs !== 'auto' ? c.fs : best(A, cb.x, cb.y)) : { x: ca.x, y: ca.y }, b = Bb ? anchor(Bb, c.ts && c.ts !== 'auto' ? c.ts : best(Bb, ca.x, ca.y)) : { x: cb.x, y: cb.y };
+    if (!A) { const d = ax(a, b); a.nx = d.x; a.ny = d.y; } if (!Bb) { const d = ax(b, a); b.nx = d.x; b.ny = d.y; }
+    let d, ev; const st = c.style || 'curve';
+    if (st === 'line') { d = `M${a.x},${a.y}L${b.x},${b.y}`; ev = { x: b.x - a.x, y: b.y - a.y }; }
+    else if (st === 'elbow') { const o = 24, p1 = { x: a.x + a.nx * o, y: a.y + a.ny * o }, p2 = { x: b.x + b.nx * o, y: b.y + b.ny * o }; const pts = a.nx ? (b.nx ? [a, p1, { x: (p1.x + p2.x) / 2, y: p1.y }, { x: (p1.x + p2.x) / 2, y: p2.y }, p2, b] : [a, p1, { x: p2.x, y: p1.y }, p2, b]) : (b.ny ? [a, p1, { x: p1.x, y: (p1.y + p2.y) / 2 }, { x: p2.x, y: (p1.y + p2.y) / 2 }, p2, b] : [a, p1, { x: p1.x, y: p2.y }, p2, b]); d = 'M' + pts.map(p => `${r1(p.x)},${r1(p.y)}`).join('L'); ev = { x: b.x - pts[pts.length - 2].x, y: b.y - pts[pts.length - 2].y }; }
+    else { const Lh = Math.max(40, Math.hypot(b.x - a.x, b.y - a.y) / 3); const c2 = { x: b.x + b.nx * Lh, y: b.y + b.ny * Lh }; d = `M${a.x},${a.y}C${a.x + a.nx * Lh},${a.y + a.ny * Lh} ${c2.x},${c2.y} ${b.x},${b.y}`; ev = { x: b.x - c2.x, y: b.y - c2.y }; }
+    const col = c.color || 'var(--line)', w = c.width || 2; let h = ''; const l = Math.hypot(ev.x, ev.y); if (c.ah !== false && l) { const ux = ev.x / l, uy = ev.y / l, s = 9 + w * 2, bx = b.x - ux * s, by = b.y - uy * s; h = `<path d="M${b.x},${b.y}L${bx - uy * s / 2},${by + ux * s / 2}L${bx + uy * s / 2},${by - ux * s / 2}Z" fill="${col}"/>`; }
+    return `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" ${c.dash ? `stroke-dasharray="${w * 4} ${w * 3}"` : ''}/>${h}`;
+  }
+  const strokeD = p => { if (!p || !p.length) return ''; let d = `M${p[0][0]},${p[0][1]}`; for (let k = 1; k < p.length; k++) d += `L${p[k][0]},${p[k][1]}`; return d; };
+  function draw() {
+    const its = B.items.slice().sort((a, b) => ((a.type === 'frame' ? -1e9 : 0) + (+a.z || 0)) - ((b.type === 'frame' ? -1e9 : 0) + (+b.z || 0)));
+    $('items').innerHTML = its.filter(i => i.type !== 'stroke' && i.type !== 'conn').map(i => {
+      const r = R(i); let st = `left:${r.x}px;top:${r.y}px;width:${r.w}px;${i.type === 'text' ? '' : `height:${r.h}px;`}`; if (i.type === 'sticky') st += `background:${i.color || '#fff9b1'};`; if (i.type === 'frame') st += `background:${i.fill || 'var(--frame)'};`; if (i.tc) st += `color:${i.tc};`; if (i.size) st += `font-size:${i.size}px;`; if (i.bold) st += 'font-weight:700;'; if (i.align) st += `text-align:${i.align};`;
+      const cm = (i.thread || []).length ? `<span class="cm">${i.thread.length}</span>` : ''; const tx = `<div class="t" dir="auto">${esc(i.text)}</div>`;
+      let inner = tx; if (i.type === 'frame') inner = `<span class="ttl">${esc(i.text || 'Frame')}</span>`; if (i.type === 'image') inner = `<img src="${esc(i.thumb || '')}" alt="">`; if (i.type === 'link') { let host = ''; try { host = new URL(i.url).hostname; } catch (e) {} inner = `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.text || host)}</a><div style="color:var(--mute);font-size:12px">${esc(host)}</div>`; }
+      if (i.type === 'shape') { const sw = i.sw == null ? 2 : +i.sw; inner = `<svg width="${r.w}" height="${r.h}"><path d="${shapeD(i.shape || 'rect', r.w, r.h)}" fill="${i.fill || 'none'}" stroke="${sw ? (i.stroke || 'var(--ink)') : 'none'}" stroke-width="${sw}"/></svg>` + tx; }
+      if (i.type === 'sticky' && !i.size) st += `font-size:${Math.max(10, Math.min(40, Math.round(r.h / 7)))}px;`;
+      return `<div class="i ${i.type}${selId === i.id ? ' sel' : ''}" data-id="${esc(i.id)}" style="${st}">${inner}${cm}</div>`;
+    }).join('');
+    $('lines').innerHTML = its.filter(i => i.type === 'stroke').map(s => `<path d="${strokeD(s.points)}" fill="none" stroke="${s.color || 'var(--ink)'}" stroke-width="${s.width || 3}" ${s.hl ? 'stroke-opacity=".4"' : ''} stroke-linecap="round" stroke-linejoin="round"/>`).join('') + its.filter(i => i.type === 'conn').map(conn).join('');
+  }
+  function view() { $('world').style.transform = `translate(${V.x}px,${V.y}px) scale(${V.z})`; $('zp').textContent = Math.round(V.z * 100) + '%'; let s = 24 * V.z; while (s < 12) s *= 4; $('wrap').style.backgroundSize = `${s}px ${s}px`; $('wrap').style.backgroundPosition = `${V.x}px ${V.y}px`; }
+  function fit() { if (!B || !B.items.length) { V = { z: 1, x: innerWidth / 2, y: innerHeight / 2 }; return view(); } let a = 1e9, b = 1e9, c = -1e9, d = -1e9; B.items.forEach(i => { if (i.type === 'conn') return; if (i.type === 'stroke') (i.points || []).forEach(p => { a = Math.min(a, p[0]); b = Math.min(b, p[1]); c = Math.max(c, p[0]); d = Math.max(d, p[1]); }); else { const r = R(i); a = Math.min(a, r.x); b = Math.min(b, r.y); c = Math.max(c, r.x + r.w); d = Math.max(d, r.y + r.h); } }); const pad = 90; const z = Math.min(1.2, Math.max(0.05, Math.min((innerWidth - pad * 2) / Math.max(c - a, 1), (innerHeight - pad * 2 - 60) / Math.max(d - b, 1)))); V = { z, x: innerWidth / 2 - (a + c) / 2 * z, y: (innerHeight + 60) / 2 - (b + d) / 2 * z }; view(); }
+  const zoomAt = (f, sx, sy) => { const z = Math.min(8, Math.max(0.05, V.z * f)); const wx = (sx - V.x) / V.z, wy = (sy - V.y) / V.z; V = { z, x: sx - wx * z, y: sy - wy * z }; view(); };
+  $('zi').onclick = () => zoomAt(1.25, innerWidth / 2, innerHeight / 2); $('zo').onclick = () => zoomAt(0.8, innerWidth / 2, innerHeight / 2); $('zf').onclick = fit;
+  const wrap = $('wrap'); const P = new Map(); let pan = null, pinch = null, moved = false, tap = false;
+  wrap.addEventListener('wheel', e => { e.preventDefault(); if (e.ctrlKey || e.metaKey || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50 && Math.abs(e.deltaY) % 50 === 0)) zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0022)), e.clientX, e.clientY); else { V.x -= e.deltaX; V.y -= e.deltaY; view(); } }, { passive: false });
+  wrap.addEventListener('pointerdown', e => { P.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = false; tap = true; if (P.size === 2) { const [a, b] = [...P.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: V.z, wx: ((a.x + b.x) / 2 - V.x) / V.z, wy: ((a.y + b.y) / 2 - V.y) / V.z }; pan = null; return; } pan = { x: e.clientX, y: e.clientY, vx: V.x, vy: V.y }; wrap.classList.add('drag'); });
+  addEventListener('pointermove', e => { if (!P.has(e.pointerId)) return; P.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pinch && P.size >= 2) { const [a, b] = [...P.values()]; const z = Math.min(8, Math.max(0.05, pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d)); V = { z, x: (a.x + b.x) / 2 - pinch.wx * z, y: (a.y + b.y) / 2 - pinch.wy * z }; view(); moved = true; return; } if (pan) { if (Math.hypot(e.clientX - pan.x, e.clientY - pan.y) > 4) moved = true; V.x = pan.vx + e.clientX - pan.x; V.y = pan.vy + e.clientY - pan.y; view(); } });
+  addEventListener('pointerup', e => { P.delete(e.pointerId); if (P.size < 2) pinch = null; if (!P.size) { pan = null; wrap.classList.remove('drag'); } const wasTap = tap; tap = false; if (wasTap && !moved && e.target && typeof e.target.closest === 'function') { const g = e.target.closest('[data-id]'); if (B && B.mode === 'comment') { selId = g ? g.dataset.id : null; draw(); panel(); } } });
+  function panel() { const p = $('panel'); if (!B || B.mode !== 'comment' || !selId) { p.style.display = 'none'; return; } const it = byId(selId); if (!it) { p.style.display = 'none'; return; } p.style.display = 'flex'; const th = it.thread || []; $('plist').innerHTML = th.length ? th.map(c => `<div class="c"><small>${esc(c.byName)} · ${esc(new Date(c.at).toLocaleString(L === 'ar' ? 'ar-EG' : 'en-GB'))}</small><div dir="auto">${esc(c.text)}</div></div>`).join('') : `<div style="color:var(--mute);font-size:13px">${t('none')}</div>`; try { $('pname').value = $('pname').value || localStorage.getItem('nbs.name') || ''; } catch (e) {} }
+  $('pclose').onclick = () => { selId = null; draw(); panel(); };
+  $('pform').onsubmit = async e => { e.preventDefault(); const name = $('pname').value.trim(), text = $('ptext').value.trim(); if (!name || !text || !selId) return; $('psend').disabled = true; const { s, j } = await call({ action: 'comment', item: selId, name, text }); $('psend').disabled = false; if (s !== 200) { alert(t('err')); return; } try { localStorage.setItem('nbs.name', name); } catch (x) {} const it = byId(selId); it.thread = (it.thread || []).concat([j.comment]); $('ptext').value = ''; draw(); panel(); };
+  addEventListener('resize', view); applyLang(); load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "ninety-calls",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ninety — native incoming-call screen for the app: iPhone CallKit + PushKit (VoIP), Android full-screen call notification from FCM + work-mode foreground service",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

@@ -1,0 +1,2 @@
+// إعدادات الاتصال بقاعدة البيانات (Supabase) — عدّل القيمتين فقط
+window.NF_CONFIG={"supabaseUrl": "https://erhcnkjyaumdoixkksbz.supabase.co", "supabaseAnonKey": "sb_publishable_It4n_NuyRyiBuJJzsio4Sg_l7TVOYH3", "peers": [{"name": "studioz", "ref": "rekmppawmxerlqxqpqni", "url": "https://rekmppawmxerlqxqpqni.supabase.co", "anon": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJla21wcGF3bXhlcmxxeHFwcW5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxMTk4MTUsImV4cCI6MjEwNTY5NTgxNX0.5_Y5RmijLY37s91YrJvk4ZRHTh5qBnIPmByWD4oyslg"}]};

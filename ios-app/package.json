@@ -1,0 +1,29 @@
+{
+  "name": "ninety-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ninety — iOS + Android app shell (Capacitor) for the Ninety Fabrication / Ninety Studioz system",
+  "scripts": {
+    "ios:add": "npx cap add ios",
+    "ios:sync": "npx cap sync ios",
+    "assets": "npx capacitor-assets generate --ios --iconBackgroundColor '#171b1f' --splashBackgroundColor '#171b1f'",
+    "android:add": "npx cap add android",
+    "android:sync": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2",
+    "@capacitor/push-notifications": "8.1.3",
+    "@aparajita/capacitor-biometric-auth": "10.0.0",
+    "@capgo/capacitor-nfc": "8.2.10",
+    "ninety-scanner": "file:plugins/ninety-scanner",
+    "@capacitor/android": "8.5.2",
+    "@capacitor-community/background-geolocation": "1.2.26",
+    "ninety-calls": "file:plugins/ninety-calls",
+    "ninety-share": "file:plugins/ninety-share"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "@capacitor/assets": "3.0.5"
+  }
+}

@@ -1,0 +1,33 @@
+// Ninety — share sheet plugin (Android library module, picked up by `npx cap sync android`)
+// v7.61: getActivity() is an AppCompatActivity — appcompat must be on the compile classpath (build 106 failed without it)
+ext {
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace = "app.ninety.share"
+    compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
+    }
+    lint {
+        abortOnError = false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+}

@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.ninety.fabrication",
+        "sha256_cert_fingerprints": ["E8:3D:8D:B2:2F:FB:5E:B4:FA:C1:19:BB:35:A9:25:2D:E1:1F:A6:5F:FB:2E:F9:5B:44:08:92:EB:7C:68:84:98"]
+      }
+    }]

@@ -1,0 +1,18 @@
+{
+  "name": "ninety-share",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ninety — «Share» → Ninety: iPhone share-extension context (shared keychain) and Android share intents (images / PDF)",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

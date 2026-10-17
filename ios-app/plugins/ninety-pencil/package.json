@@ -1,0 +1,15 @@
+{
+  "name": "ninety-pencil",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ninety — Apple Pencil double-tap / squeeze for the iPad app (UIPencilInteraction, public API only)",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}
