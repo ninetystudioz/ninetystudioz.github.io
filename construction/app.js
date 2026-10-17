@@ -9364,7 +9364,7 @@ wirePasswordEyes();
    ===================================================================== */
 const SMS_TPL_DEFAULT = 'كود تفعيل حسابك في سيستم {app}: {code}\nافتح الرابط وسيُملأ الكود تلقائيًا:\n{link}\n(صالح 48 ساعة)';
 const smsCfg = () => Object.assign({ auto: true, tpl: SMS_TPL_DEFAULT }, (S.settings && S.settings.sms) || {});
-function appPublicUrl() { const s = (S.settings && S.settings.appUrl) || ''; if (/^https?:/.test(location.href)) return location.href.split('#')[0]; return s || 'https://mahmoudfawzy1212mf-crypto.github.io/'; }
+function appPublicUrl() { const s = (S.settings && S.settings.appUrl) || ''; if (/^https?:/.test(location.href)) return location.href.split('#')[0]; return s || 'https://ninetystudioz.github.io/'; }
 function activateLink(login, code, reset) { const u = appPublicUrl(); return `${u}#/activate?p=${encodeURIComponent(login)}&c=${code}${reset ? '&r=1' : ''}`; }
 function smsCodeText(login, code, reset) {
   const link = activateLink(login, code, reset); const app = (S.settings && S.settings.company) || APP.name;
@@ -30716,7 +30716,7 @@ form:not(.lofqf) .qcx{display:none!important}
 (function () {
   if (typeof ACTIONS === 'undefined') return;
   const BRAND = 'lof';
-  const SITE = () => (S.settings && S.settings.shareBase) || 'https://mahmoudfawzy1212mf-crypto.github.io';
+  const SITE = () => (S.settings && S.settings.shareBase) || 'https://ninetystudioz.github.io';
   const host = () => SITE().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   async function call(body) {
     const r = await S.sb.functions.invoke('share', { body });
@@ -32773,7 +32773,7 @@ if (typeof STU_ON !== 'undefined' && STU_ON) (() => {
 if (STU_ON) {
   const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
   const L = (a, b) => (en() ? b : a);
-  const CORS_RULE = [{ AllowedOrigins: ['https://mahmoudfawzy1212mf-crypto.github.io', 'https://app.ninetystudioz.com', 'http://localhost:8080'], AllowedMethods: ['GET', 'PUT', 'HEAD'], AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3600 }];
+  const CORS_RULE = [{ AllowedOrigins: ['https://ninetystudioz.github.io', 'https://mahmoudfawzy1212mf-crypto.github.io', 'https://app.ninetystudioz.com', 'http://localhost:8080'], AllowedMethods: ['GET', 'PUT', 'HEAD'], AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3600 }];
 
   /* ---------- nfFiles ---------- */
   const cache = new Map();   // path → { url, exp }
@@ -35588,7 +35588,7 @@ html body .trf-map{height:420px;border-radius:12px;overflow:hidden;background:va
 
   /* ---------- 3) Settings → «Android app» (owner) ---------- */
   if (typeof EXTRA_SETTINGS === 'undefined') return;
-  const APK = 'https://mahmoudfawzy1212mf-crypto.github.io/Ninety.apk';
+  const APK = 'https://ninetystudioz.github.io/Ninety.apk';
   EXTRA_SETTINGS.android = { label: 'أبلكيشن الأندرويد', render: () => {
     setTimeout(loadAndroid, 40);
     const factory = !studio();
@@ -40141,7 +40141,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   const L = (a, b) => (en() ? b : a);
   const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
-  const APK = 'https://raw.githubusercontent.com/mahmoudfawzy1212mf-crypto/mahmoudfawzy1212mf-crypto.github.io/HEAD/Ninety.apk';
+  const APK = 'https://raw.githubusercontent.com/ninetystudioz/ninetystudioz.github.io/HEAD/Ninety.apk';
   const callsOn = () => !!(window.nfCalls && typeof window.nfCalls.available === 'function' && window.nfCalls.available()) && !!S.session;
   const cap = () => { try { return window.Capacitor || null; } catch (e) { return null; } };
   const oldAndroid = () => { const c = cap(); try { return !!c && typeof c.isNativePlatform === 'function' && c.isNativePlatform() && typeof c.getPlatform === 'function' && c.getPlatform() === 'android' && !(c.Plugins && c.Plugins.NinetyCalls); } catch (e) { return false; } };
@@ -41815,7 +41815,7 @@ ${lightMenu(X + '[data-theme="light"]')}
   }
   const needUpdate = () => android() && !hasUpdater() && A.info && +A.info.versionCode >= 104;
   function updateHTML() {
-    const url = (A.info && A.info.url) || 'https://raw.githubusercontent.com/mahmoudfawzy1212mf-crypto/mahmoudfawzy1212mf-crypto.github.io/HEAD/Ninety.apk';
+    const url = (A.info && A.info.url) || 'https://raw.githubusercontent.com/ninetystudioz/ninetystudioz.github.io/HEAD/Ninety.apk';
     /* v7.47 (Mahmoud, 12 Oct): «later» is gone two days after this version — 21 of 25 Android phones were still on the old app */
     const firm = Date.now() > Date.parse('2026-10-14T05:00:00Z');
     const can = !firm && lsGet('nf.apkup.later') !== today();
@@ -47599,7 +47599,7 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
   const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
   const L = (a, b) => (en() ? b : a);
   const SYS = (typeof STU_ON !== 'undefined' && STU_ON) ? 'stu' : (typeof CX_ON !== 'undefined' && CX_ON) ? 'cx' : 'fab';
-  const COL = 'meetings'; const MEET_URL = (location.protocol === 'https:' && /github\.io$|ninety/i.test(location.hostname) ? location.origin : 'https://mahmoudfawzy1212mf-crypto.github.io') + '/meet.html';
+  const COL = 'meetings'; const MEET_URL = (location.protocol === 'https:' && /github\.io$|ninety/i.test(location.hostname) ? location.origin : 'https://ninetystudioz.github.io') + '/meet.html';
   if (!COLS.includes(COL)) COLS.push(COL); S.data[COL] = S.data[COL] || new Map();
   Store.subscribeAll = (base => function () { base.call(this); const db = S.db; if (!db) return; S.unsub.push(db.collection(COL).onSnapshot(snap => { S.data[COL] = new Map(snap.docs.map(d => [d.id, d.data()])); S.loaded[COL] = true; rerender(); }, e => console.warn('snapshot', COL, e))); })(Store.subscribeAll);
   if (!ICONS.meet) ICONS.meet = '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/>';
@@ -56526,7 +56526,7 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
   }
   const getter = co => co === SELF ? (col => { try { return list(col); } catch (e) { return []; } }) : (col => ((P[co] && P[co].data) || {})[col] || []);
   function calcCo(co) {
-    const here = co === SELF; if (!here) { refreshPeer(co); if (!(P[co] && P[co].data)) return { state: P[co] && P[co].err ? 'off' : 'wait' }; }
+    const here = co === SELF; if (!here) { refreshPeer(co); if (!(P[co] && P[co].data)) return { state: P[co] && P[co].err ? 'off' : 'wait', err: (P[co] && P[co].err) || '' }; }
     const G = getter(co); const out = {};
     W[co].forEach(w => { if (w.here && !here) return; let r = null; try { r = w.calc(G, here); } catch (e) { r = null; } if (r) { r.n = w.att ? r.present : r.items.length; out[w.id] = r; } });
     return { state: 'ok', v: out };
@@ -56589,6 +56589,7 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
 </style>`);
 
   const ic = n => (typeof icon === 'function' ? icon(n) : '');
+  const TAG = { appr: 'اعتماد', transfer: 'تحويل', late: 'متأخر', esc: 'مصعَّدة', suspect: 'بصمة', risk: 'ممكن يتأخر', pstuck: 'واقف', tlate: 'متأخرة', owner: 'اعتماد', client: 'رد العميل', checks: 'استلام', snags: 'قديمة' };
   function widgetHTML(co, w, r) {
     const n = r ? r.n : 0; const z = !n && !(r && r.att && r.h);
     const num = w.att ? `${r.present}<small>/${r.total}</small>` : String(n);
@@ -56596,11 +56597,23 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
   }
   function cardHTML(co) {
     const [k, nm, c] = CAP[co]; const res = calcCo(co); CACHE[co] = res;
-    let body;
+    let body; let att = '';
     if (res.state === 'wait') body = `<div class="nw-off">جاري تحميل الأرقام…</div>`;
-    else if (res.state === 'off') body = `<div class="nw-off">الأرقام مش متاحة دلوقتي — <button type="button" data-action="ninetyGo" data-arg="${co}">ادخل السيستم</button></div>`;
-    else { const ids = chosen(co); const ws = ids.map(id => W[co].find(w => w.id === id)).filter(w => w && res.v[w.id]); body = ws.length ? `<div class="nw-grid">${ws.map(w => widgetHTML(co, w, res.v[w.id])).join('')}</div>` : `<div class="nw-off">مفيش ويدجتس — دوس «تعديل» واختار</div>`; }
-    return `<section class="nw-card" style="--c:${c}" data-co="${co}"><div class="nw-cap"><div class="nw-tt" data-action="ninetyGo" data-arg="${co}" title="${esc(nm)}"><i class="nw-dot"></i><span class="nw-k">${k}</span></div><div class="nw-acts"><button type="button" class="nw-ed" data-action="nwEdit" data-arg="${co}" title="تعديل">${ic('edit')}<span>تعديل</span></button><button type="button" class="nw-go" data-action="ninetyGo" data-arg="${co}">${ic('external')}<span class="nw-l">دخول السيستم</span><span class="nw-s">افتح</span></button></div></div>${body}</section>`;
+    else if (res.state === 'off') body = `<div class="nw-off">${res.err === 'nosession' ? 'ادخل السيستم ده مرة من الموبايل ده عشان أرقامه تظهر هنا' : 'الأرقام مش متاحة دلوقتي'} — <button type="button" data-action="ninetyGo" data-arg="${co}">ادخل السيستم</button></div>`;
+    else {
+      const ids = chosen(co); const ws = ids.map(id => W[co].find(w => w.id === id)).filter(w => w && res.v[w.id]);
+      /* v7.91 (owner 17 Oct): attendance sits in the card header; the rest are the number tiles; then «Needed from you» —
+         the items behind the amber / red tiles, red first (no money widget here: its lines can carry amounts) */
+      const aw = W[co].find(w => w.att); const ar = aw && res.v[aw.id];
+      if (ar && ar.total) att = `<button type="button" class="nw-att" data-action="nwTap" data-arg="${co}|${aw.id}"><span>حضور</span> <b>${ar.present}</b>/${ar.total}</button>`;
+      const tiles = ws.filter(w => !w.att);
+      const seen = new Set(); const need = [];
+      tiles.filter(w => w.tone && w.id !== 'money').sort((a, b) => (a.tone === 'bad' ? 0 : 1) - (b.tone === 'bad' ? 0 : 1)).forEach(w => (res.v[w.id].items || []).forEach(x => { const key = x.h + '|' + x.t; if (seen.has(key)) return; seen.add(key); need.push({ t: x.t, h: x.h, tone: w.tone, tag: TAG[w.id] || w.t }); }));
+      const list = need.length ? `<div class="nw-need"><h4>المطلوب منك</h4>${need.slice(0, 8).map((x, i) => `<button type="button" class="nw-ni ${x.tone}${i >= 3 ? ' nw-more' : ''}" data-action="nwGo" data-arg="${co}|${esc(x.h)}"><i></i><span class="nw-nt notr">${esc(x.t)}</span><span class="nw-ng">${esc(x.tag)}</span></button>`).join('')}${need.length > 8 ? `<div class="nw-nx">+ ${need.length - 8} كمان</div>` : ''}</div>`
+        : `<div class="nw-need"><div class="nw-ok">مفيش حاجة مستنياك هنا ✓</div></div>`;
+      body = tiles.length || need.length ? `<div class="nw-bd">${tiles.length ? `<div class="nw-grid" style="--n:${tiles.length <= 5 ? tiles.length : Math.ceil(tiles.length / 2)};--n3:${tiles.length <= 3 ? tiles.length : 3}">${tiles.map(w => widgetHTML(co, w, res.v[w.id])).join('')}</div>` : ''}${list}</div>` : `<div class="nw-off">مفيش ويدجتس — دوس «تعديل» واختار</div>`;
+    }
+    return `<section class="nw-card" style="--c:${c}" data-co="${co}"><div class="nw-cap"><div class="nw-tt" data-action="ninetyGo" data-arg="${co}" title="${esc(nm)}"><i class="nw-dot"></i><span class="nw-k">${k.replace('NINETY · ', '<span class="nw-kp">NINETY · </span>')}</span></div>${att}<div class="nw-acts"><button type="button" class="nw-ed" data-action="nwEdit" data-arg="${co}" title="تعديل">${ic('edit')}<span>تعديل</span></button><button type="button" class="nw-go" data-action="ninetyGo" data-arg="${co}">${ic('external')}<span class="nw-l">دخول السيستم</span><span class="nw-s">افتح</span></button></div></div>${body}</section>`;
   }
   function waitingTotal() {
     let n = 0; ORDER.forEach(co => { const r = CACHE[co]; if (!r || r.state !== 'ok') return; W[co].forEach(w => { if (w.tone && r.v[w.id] && chosen(co).includes(w.id)) n += r.v[w.id].n; }); }); return n;
@@ -56650,6 +56663,86 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
   ACTIONS.nwMove = arg => { if (!ED) return; const [id, d] = String(arg).split('|'); const i = ED.ids.indexOf(id); const j = i + (+d); if (i < 0 || j < 0 || j >= ED.ids.length) return; [ED.ids[i], ED.ids[j]] = [ED.ids[j], ED.ids[i]]; paint(); };
   document.addEventListener('change', e => { const el = e.target; if (!ED || !el || !el.matches || !el.matches('.nw-sheet input[data-nwk]')) return; const id = el.dataset.nwk; if (el.checked) { if (!ED.ids.includes(id)) ED.ids.push(id); } else ED.ids = ED.ids.filter(x => x !== id); paint(); });
   ACTIONS.nwSave = () => { if (!ED) return; PREF = Object.assign({}, PREF || {}, { [ED.co]: ED.ids.slice(), at: new Date().toISOString() }); const co = ED.co; ED = null; push(); if (typeof closeModal === 'function') closeModal(); if (typeof toast === 'function') toast('اتحفظ ✓'); render(true); void co; };
+})();
+/* =====================================================================
+   v7.91 — the owner's Ninety home, second pass (Mahmoud 17 Oct, phone screenshot + preview ninety-home-preview.html):
+   · The logo, the language switch and his photo sit right under the phone's status bar — no empty band above them
+     (the status-bar strip takes the header colour on this page, and the header keeps only the safe-area + a few px).
+   · The three systems fill the rest of the screen: each card grows, shows its number tiles, attendance in its header and
+     «Needed from you» (the items behind the amber / red numbers — three on a phone, up to eight on a computer).
+   · Font: Readex Pro on this page only (his pick: «this page only»); the rest of the systems keep their font.
+   · Nothing about who sees the page or what is counted changes. iPhone, Android, computer · Arabic and English · day and night.
+   ===================================================================== */
+(function () {
+  if (window.__NF_NHOME2__) return; window.__NF_NHOME2__ = 1;
+  if (!document.getElementById('nf-readex')) document.head.insertAdjacentHTML('beforeend', '<link id="nf-readex" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&display=swap">');
+  document.head.insertAdjacentHTML('beforeend', `<style id="ninety-home-v2">
+#nhome,#nhome button,#nhome input{font-family:"Readex Pro","Noto Sans Arabic",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif!important}
+#nhome .hhead h1{font-weight:600!important}
+#nhome .nmain{display:flex!important;flex-direction:column;min-height:100vh;min-height:100dvh;box-sizing:border-box}
+#nhome .nw-cards{flex:1 0 auto;display:flex!important;flex-direction:column}
+#nhome .nw-card{flex:1 0 auto;display:flex;flex-direction:column}
+#nhome .nw-cap{flex-wrap:nowrap!important}
+#nhome .nw-cap .nw-tt{flex:1 1 auto!important;min-width:0}
+#nhome .nw-att{border:0;background:none;color:var(--muted);font:inherit;font-size:11.5px;white-space:nowrap;cursor:pointer;padding:0 2px;flex:none}
+#nhome .nw-att b{color:var(--ink);font-weight:600}
+#nhome .nw-bd{flex:1;display:flex;flex-direction:column;gap:8px;padding:10px 12px 12px}
+#nhome .nw-bd .nw-grid{padding:0}
+#nhome .nw-w span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3;min-height:2.6em}
+#nhome .nw-need{display:flex;flex-direction:column;gap:5px}
+#nhome .nw-need h4{margin:2px 0 0;font-size:11px;font-weight:500;color:var(--muted)}
+#nhome .nw-ni{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:0;border-radius:10px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:12.5px;text-align:start;cursor:pointer;min-width:0}
+#nhome .nw-ni:hover{outline:1px solid var(--c)}
+#nhome .nw-ni i{width:6px;height:6px;border-radius:50%;background:#b8862f;flex:none}#nhome .nw-ni.bad i{background:#c0504d}
+#nhome .nw-nt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nhome .nw-ng{font-size:11px;color:var(--muted);white-space:nowrap;flex:none}
+#nhome .nw-nx{font-size:11px;color:var(--muted);padding:0 4px}
+#nhome .nw-ok{font-size:12px;color:var(--muted);padding:6px 2px}
+@media (min-width:1100px){
+  #nhome .nw-cards{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
+  #nhome .nw-w b{font-size:24px}#nhome .nw-w span{font-size:12px}
+  #nhome .nw-ni{font-size:13px;padding:8px 11px}
+}
+@media (max-width:1099px){#nhome .nw-ni.nw-more{display:none}}
+@media (min-width:821px){#nhome .nw-acts .nw-l{display:none}#nhome .nw-acts .nw-s{display:inline}#nhome .nw-acts .nw-ed span{display:none}}
+@media (max-width:820px),(min-width:1100px) and (max-width:1500px){#nhome .nw-kp{display:none}}
+@media (max-width:820px){
+  .nhome .mhead{padding:calc(4px + env(safe-area-inset-top,0px)) 14px 6px!important}
+  html.apple body:has(#nhome)::before{background:var(--nf-side)}
+  body:has(#nhome){background:var(--nf-side)}
+  #nhome .nmain{padding-bottom:calc(74px + env(safe-area-inset-bottom,0px))!important;background:var(--bg)}
+  #nhome .nw-grid{grid-template-columns:repeat(var(--n,4),minmax(0,1fr))!important}
+  #nhome .nw-w{padding:7px 7px!important}
+  #nhome .nw-w span{font-size:10px!important}
+  #nhome .nw-bd{padding:8px 10px 10px;gap:7px}
+  #nhome .nw-ni{font-size:12px;padding:6px 9px}
+  #nhome .nw-att{font-size:11px}
+}
+@media (max-width:820px){html[dir="ltr"] #nhome .nw-grid{grid-template-columns:repeat(var(--n3,3),minmax(0,1fr))!important}}
+@media (max-width:360px){#nhome .nw-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+</style>`);
+})();
+/* on a phone the greeting and all three systems stay on the first screen (Mahmoud 16 Oct): when the «Needed from you» lines would
+   push the last card below the screen, the last lines of the longest list are hidden one by one (each card keeps at least one) */
+(function () {
+  if (window.__NF_NHOME2FIT__) return; window.__NF_NHOME2FIT__ = 1;
+  function fit() {
+    const home = document.getElementById('nhome'); if (!home || window.innerWidth > 820) return;
+    const cards = Array.from(home.querySelectorAll('.nw-card')); if (!cards.length) return;
+    home.querySelectorAll('.nw-ni.nw-fit').forEach(x => x.classList.remove('nw-fit'));
+    const room = () => window.innerHeight - cards[cards.length - 1].getBoundingClientRect().bottom - 64;
+    for (let guard = 0; guard < 30 && room() < 0; guard++) {
+      let best = null, n = 1;
+      cards.forEach(c => { const v = Array.from(c.querySelectorAll('.nw-ni:not(.nw-more):not(.nw-fit)')); if (v.length > n) { n = v.length; best = v[v.length - 1]; } });
+      if (!best) break; best.classList.add('nw-fit');
+    }
+  }
+  document.head.insertAdjacentHTML('beforeend', '<style>#nhome .nw-ni.nw-fit{display:none!important}</style>');
+  let q = 0; const later = () => { if (q) return; q = requestAnimationFrame(() => { q = 0; try { fit(); } catch (e) { /* ignore */ } }); };
+  if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(later);
+  new MutationObserver(() => { if (document.getElementById('nhome')) later(); }).observe(document.body || document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('resize', () => { try { fit(); } catch (e) { /* ignore */ } });
+  window.nfNinetyFit = fit;
 })();
 /* =====================================================================
    v7.82 — the shared look of the small tables on the owner's dashboard («Orders that may be late», «Money waiting for you» —
@@ -57439,4 +57532,57 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
     if (error) { toast(L('فشل الحفظ: ', 'Save failed: ') + error.message, 'err'); return; }
     S.ui.ghTokAsked = false; toast(L('اتحفظ ✓', 'Saved ✓')); rerender();
   });
+})();
+/* =====================================================================
+   v7.91 — «We moved» banner on the old address.
+   The three Ninety systems now live at https://ninetystudioz.github.io (brief claude/new-address-brief.md).
+   The old address mahmoudfawzy1212mf-crypto.github.io keeps serving the same build (the phone apps still load it
+   until they are rebuilt), and in a browser it shows this card on every screen — login included — with one button
+   that opens the same page on the new address. Not shown inside the phone apps, nor on the new address.
+   ===================================================================== */
+(() => {
+  if (window.__NF_MOVED__) return; window.__NF_MOVED__ = 1;
+  const OLD = 'mahmoudfawzy1212mf-crypto.github.io';
+  const NEW = 'https://ninetystudioz.github.io';
+  if (String(location.hostname || '').toLowerCase() !== OLD) return;
+  const native = () => { try { const c = window.Capacitor; return !!(c && typeof c.isNativePlatform === 'function' && c.isNativePlatform()); } catch (e) { return false; } };
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const e = s => (typeof esc === 'function' ? esc(s) : String(s));
+  const target = () => NEW + location.pathname + location.search + location.hash;
+
+  function html() {
+    return `<div class="ci">📍</div><div class="cb"><b>${e(L('السيستم اتنقل لعنوان جديد', 'The system has moved to a new address'))}</b>`
+      + `<span>${e(L('العنوان الجديد ninetystudioz.github.io. ادخل بنفس الحساب وكلمة السر. ولو السيستم متضاف على الشاشة الرئيسية، ضيفه تاني من العنوان الجديد.', 'The new address is ninetystudioz.github.io. Sign in with the same account and password. If the system is on your home screen, add it again from the new address.'))}</span>`
+      + `<span class="tiny">${e(L('لو سجّلت حاجة وإنت من غير نت، استنى لحد ما تترفع وبعدين انتقل.', 'If you saved something while offline, wait until it uploads, then move.'))}</span></div>`
+      + `<a class="btn sm p" data-nfmoved="1" href="${e(target())}">${e(L('افتح العنوان الجديد', 'Open the new address'))}</a>`;
+  }
+  function host() {
+    const v = document.getElementById('view'); if (v) return { el: v, where: 'afterbegin' };
+    const f = document.getElementById('loginform'); if (f) return { el: f, where: 'beforebegin' };
+    return null;
+  }
+  function paint() {
+    if (native()) return;
+    const h = host(); const old = document.getElementById('nf-moved'); if (!h) return;
+    const inner = html();
+    const placed = old && (h.where === 'afterbegin' ? h.el.contains(old) : old.nextElementSibling === h.el);
+    if (placed) { if (old.dataset.h !== inner) { old.innerHTML = inner; old.dataset.h = inner; } return; }
+    if (old) old.remove();
+    h.el.insertAdjacentHTML(h.where, `<div class="nf-moved" id="nf-moved" role="status">${inner}</div>`);
+    const n = document.getElementById('nf-moved'); if (n) n.dataset.h = inner;
+  }
+  document.addEventListener('click', ev => {
+    const a = ev.target.closest && ev.target.closest('[data-nfmoved]'); if (!a) return;
+    ev.preventDefault(); location.href = target();
+  });
+  document.head.insertAdjacentHTML('beforeend', `<style>
+    .nf-moved{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:12px 14px;border-radius:16px;background:rgba(29,95,209,.10);border:1px solid rgba(29,95,209,.35)}
+    .nf-moved .ci{font-size:22px;flex:none}.nf-moved .cb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+    .nf-moved b{font-size:14px;color:var(--ink)}.nf-moved span{font-size:12.5px;color:var(--ink-2)}.nf-moved .btn{flex:none}
+    @media (max-width:520px){.nf-moved{flex-wrap:wrap}.nf-moved .btn{width:100%;justify-content:center;min-height:42px}}
+  </style>`);
+  if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => { try { paint(); } catch (x) { /* ignore */ } });
+  setInterval(() => { try { paint(); } catch (x) { /* ignore */ } }, 2000);
+  window.nfMoved = { paint, target };
 })();
