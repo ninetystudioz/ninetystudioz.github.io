@@ -603,6 +603,24 @@ const logoImg = (h = 22, cls = '') => `<img class="wordmark ${cls}" src="${LOGO_
 const brandBlock = (h = 22) => `<div class="brandstack">${logoImg(h)}${lockup(BRAND_TAGLINE, h >= 30 ? 'lg' : '')}</div>`;
 const reportLogo = () => `<div class="rlogowrap"><img class="rlogo" src="${LOGO_SRC}" alt="NINETY">${lockup(BRAND_TAGLINE, 'rep')}</div>`;
 /* =====================================================================
+   v7.94 — four Android apps (brief claude/android-four-apps-brief.md, Mahmoud's go-ahead 17 Oct):
+   Ninety Fabrication · Ninety Studioz · Ninety Construction (each opens its own system only) and Ninety (the three
+   systems, for the owner and anyone with access to more than one). The app tells the page which one it is through its
+   user agent («NinetyApp/<variant>», capacitor appendUserAgent). NF_APP = '' in a browser and in the old single app.
+   In a single-system app: the owner lands on that system (not the three-system home), the login does not jump to
+   another system, the cross-system switcher is hidden, and the app updates itself from its own apk-<variant>.json.
+   Who sees what does not change.
+   ===================================================================== */
+(function () {
+  const m = /NinetyApp\/(fabrication|studioz|construction|ninety)\b/.exec(String((typeof navigator !== 'undefined' && navigator.userAgent) || ''));
+  const v = m ? m[1] : '';
+  const lock = { fabrication: 'factory', studioz: 'studio', construction: 'construction' }[v] || '';
+  window.NF_APP = v;
+  window.NF_APP_LOCK = lock;
+  window.NF_APP_NAME = { fabrication: 'Ninety Fabrication', studioz: 'Ninety Studioz', construction: 'Ninety Construction', ninety: 'Ninety' }[v] || '';
+  if (lock) { try { sessionStorage.setItem('nf.ninety.co', lock); } catch (e) { /* private mode */ } }
+})();
+/* =====================================================================
    v7.0 — company switch (8 Oct 2026): which Ninety company this build is.
    window.NF_CONFIG.company (from config.js) = '' factory · 'studioz' · 'construction'.
    isConstruction() is defined here, early, so any part can guard with it at load time
@@ -13675,7 +13693,7 @@ if (typeof workerFromFormBase === 'function') workerFromFormBase = (base => asyn
 </style>`);
 const nfOwnerHome = () => typeof isNinetyOwner === 'function' && isNinetyOwner();
 if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => {
-  const sys = nfOwnerHome() ? [] : mySystems();
+  const sys = (nfOwnerHome() || window.NF_APP_LOCK) ? [] : mySystems();   /* v7.94: no switcher inside a single-system app */
   if (!sys.length) { document.querySelectorAll('.nfsysbtn,.nfsysside').forEach(b => b.remove()); return; }
   const nameOf = co => (NF_SYS.find(x => x[0] === co) || [])[1] || co;
   const side = document.querySelector('.side');
@@ -15039,7 +15057,9 @@ EXTRA_VIEWS.money = r => vMoney(r);
 vMe = (base => function () { const html = base.apply(this, arguments); if (!moneyOn()) return html; const ids = myWalletIds(); if (!ids.length) return html; const pend = list('requests').filter(r => fundToPay(r) && ids.includes(r.walletId));
   return html + `<div class="card" id="mywallet"><div class="cardhead"><h3>${icon('money')}عهدتي</h3><div class="grow"></div><button class="btn sm" data-action="walletSpend">${icon('plus')}مصروف</button><button class="btn sm p" data-action="fundAsk">طلب مبلغ</button></div>
     <div class="grid g${Math.min(ids.length, 3)}" style="gap:10px;margin-bottom:8px">${ids.map(id => `<div class="kpi acc" data-action="go" data-arg="money/${id}"><span class="stripe"></span><div class="l">${esc(walletOf(id).name)}</div><div class="v num">${fmtMoney(walletBalance(id).balance)}</div></div>`).join('')}</div>
-    ${pend.length ? `<div class="banner warn">${icon('alert')}<span>${pend.length} طلب مبلغ مستني تحويل المالك (${fmtMoney(sum(pend, r => +r.amount || 0))} ${CUR()})</span></div>` : ''}${walletMovesTable(ids[0], 8)}</div>`; })(vMe);
+    ${pend.length ? `<div class="banner warn mwpend"${pend.length === 1 ? ` data-action="reqOpen" data-arg="${pend[0].id}" role="button"` : ''}>${icon('alert')}<span>${pend.length} طلب مبلغ مستني تحويل المالك (${fmtMoney(sum(pend, r => +r.amount || 0))} ${CUR()})</span>${pend.length === 1 ? `<span class="mwgo">التفاصيل ‹</span>` : ''}</div>${pend.length > 1 ? `<div class="mwlist">${sortBy(pend, r => r.createdAt || '', true).map(r => `<button type="button" class="mwrow" data-action="reqOpen" data-arg="${r.id}"><span class="mwt"><b>${fmtMoney(+r.amount || 0)} ${CUR()}</b> · ${esc(catLabel(r.cat))}${r.orderCode ? ` · <bdi>${esc(r.orderCode)}</bdi>` : ''}<span class="tiny muted">${fmtDate(r.createdAt)}${r.reason ? ' — ' + esc(r.reason) : ''}</span></span><span class="mwgo">${r.status === 'approved' ? 'اتعتمد — مستني التحويل' : 'مستني الاعتماد'} ‹</span></button>`).join('')}</div>` : ''}` : ''}${walletMovesTable(ids[0], 8)}</div>`; })(vMe);
+/* v7.94 (owner 17 Oct): the «waiting for the owner's transfer» line opens the request itself (one) or lists them (several) */
+if (!document.getElementById('nf-mwpend')) document.head.insertAdjacentHTML('beforeend', '<style id="nf-mwpend">#mywallet .mwpend[data-action]{cursor:pointer}#mywallet .mwpend .mwgo{margin-inline-start:auto;font-size:12px;font-weight:600;white-space:nowrap}#mywallet .mwlist{display:flex;flex-direction:column;gap:6px;margin:-2px 0 10px}#mywallet .mwrow{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;text-align:start;cursor:pointer}#mywallet .mwrow .mwt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}#mywallet .mwrow .mwt .tiny{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mywallet .mwrow .mwgo{font-size:11.5px;color:var(--muted);white-space:nowrap}</style>');
 /* vehicle file: what was spent on it from custody (cash fuel, oil, maintenance) */
 vVehicle = (base => function (id) { const h = base.apply(this, arguments); if (!moneyOn() || !(isAdmin() || ['manager', 'fleet', 'hr', 'acc'].includes(role()))) return h; const ex = sortBy(list('expenses').filter(e => e.vehicleId === id), e => e.date || '', true); if (!ex.length) return h;
   return h + `<div class="card" style="margin-top:12px"><div class="cardhead"><h3>مصروفات العربية (كاش / زيت / صيانة)</h3><span class="badge">${fmtMoney(sum(ex, e => +e.amount || 0))} ${CUR()}</span></div><div class="tablewrap"><table><thead><tr><th>التاريخ</th><th>البند</th><th>من</th><th class="n">المبلغ</th></tr></thead><tbody>${ex.map(e => `<tr><td>${fmtDate(e.date)}</td><td>${esc(catLabel(e.cat))}${e.note ? `<div class="tiny muted">${esc(e.note)}</div>` : ''}</td><td class="small">${esc(acctLabel(e.account))}</td><td class="n">${fmtMoney(e.amount)}</td></tr>`).join('')}</tbody></table></div></div>`; })(vVehicle);
@@ -34036,6 +34056,8 @@ if (typeof STU_ON !== 'undefined' && STU_ON) {
           const { data, error } = await c.auth.signInWithPassword({ email: `${sbLoginId(identifier)}@${domainOf(p)}`, password });
           if (!error && data && data.session) {
             try { if (typeof window.nfPwSync === 'function') { const h = nfConfig(); window.nfPwSync({ url: p.url, anon: p.anon, token: data.session.access_token }, password, [{ url: h.supabaseUrl, anon: h.supabaseAnonKey }]); } } catch (e) { /* ignore */ }
+            /* v7.94: a single-system app (Ninety Fabrication / Studioz / Construction) does not jump to another system */
+            if (window.NF_APP_LOCK) { const m2 = (typeof I18N !== 'undefined' && I18N.lang === 'en') ? `Your account is on ${nameOf(p)} — open it from the ${nameOf(p)} app or the Ninety app` : `حسابك على ${nameOf(p)} — افتحه من أبلكيشن ${nameOf(p)} أو أبلكيشن Ninety`; try { toast(m2, 'err'); } catch (e) { /* ignore */ } return { ok: false, msg: m2 }; }
             const msg = (typeof I18N !== 'undefined' && I18N.lang === 'en') ? `Your account is on ${nameOf(p)} — opening it…` : `حسابك على ${nameOf(p)} — بيفتحه دلوقتي…`;
             try { toast(msg); } catch (e) { /* ignore */ }
             setTimeout(() => { location.href = urlOf(p) + '#/dashboard'; }, 700);
@@ -41541,13 +41563,14 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   --primary:#56739f; --primary-ink:#fff; --accent:#56739f; --accent-ink:#fff; --accent-soft:rgba(86,115,159,.18);
   --crit:#ec8a86; --crit-soft:rgba(236,138,134,.15); --crit-ink:#f3aaa6;
   --glass:rgba(15,21,28,.8); --glass-solid:rgba(15,21,28,.97); --glass-brd:rgba(86,115,159,.12);
-  --side-bg:rgba(6,9,13,.97); --side-ink:#e8edf2; --side-muted:#8a95a3; --side-line:#1d2732; --side-hover:rgba(86,115,159,.14); --side-on:#e8edf2; --side-on-bg:#0f151c; --nf-side:rgba(6,9,13,.98);
+  --side-bg:#06090d; --side-ink:#e8edf2; --side-muted:#8a95a3; --side-line:#1d2732; --side-hover:rgba(86,115,159,.14); --side-on:#e8edf2; --side-on-bg:#0f151c; --nf-side:#06090d;
   --nf-side-ink:#e8edf2; --nf-side-muted:#8a95a3; --mh-logo:invert(1); --mh-ink:#e8edf2;
   --wall:linear-gradient(170deg,#0b1118 0%,#080c11 60%,#06090d 100%);`;
   /* v7.82 (Mahmoud 16 Oct, computer screenshot: «when the mode is light, make these light»): on the Advanced look by day the menu, the
      Ninety home top bar and its side column are light like the page (the same rules as the Icons look); at night they stay dark. */
+  /* v7.94 (owner 17 Oct, phone photo): the day menu was see-through on phones (--surface-2 is a 9% tint) - the same tint now sits on the page colour, so it looks the same and nothing shows through */
   const lightMenu = S => `
-${S} .side,${S}.apple-blur .side,${S} .nhome .nside{background:var(--surface-2)!important;color:var(--ink)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;border-inline-end:.5px solid var(--line)!important}
+${S} .side,${S}.apple-blur .side,${S} .nhome .nside{background:linear-gradient(var(--surface-2),var(--surface-2)),var(--bg)!important;color:var(--ink)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;border-inline-end:.5px solid var(--line)!important}
 ${S} .side .brand .wordmark,${S} .side .brand img{filter:none}
 ${S} .side .userchip,${S} .side .viewbtn,${S} .side .acct a,${S} .side .mobextra button,${S} .side .nfback,${S} .side .nfst{background:var(--surface)!important;color:var(--ink)!important;box-shadow:0 1px 2px rgba(0,0,0,.04)!important}
 ${S} .side .userchip *{color:inherit}
@@ -41815,7 +41838,7 @@ ${lightMenu(X + '[data-theme="light"]')}
   async function apkInfo() {
     if (A.info !== null && Date.now() - A.at < 3600e3) return A.info;
     A.at = Date.now();
-    try { const r = await fetch('./apk-version.json?t=' + Date.now(), { cache: 'no-store' }); A.info = r.ok ? await r.json() : false; } catch (e) { A.info = false; }
+    try { const src = window.NF_APP ? location.origin + '/apk-' + window.NF_APP + '.json' : './apk-version.json';   /* v7.94: each of the four apps has its own version file */ const r = await fetch(src + '?t=' + Date.now(), { cache: 'no-store' }); A.info = r.ok ? await r.json() : false; } catch (e) { A.info = false; }
     return A.info;
   }
   const needUpdate = () => android() && !hasUpdater() && A.info && +A.info.versionCode >= 104;
