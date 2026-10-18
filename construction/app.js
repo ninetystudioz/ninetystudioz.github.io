@@ -46620,9 +46620,11 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
   /* ---------- the library ---------- */
   const moneyItems = () => { try { return typeof window.nfMoneyFor === 'function' ? window.nfMoneyFor() || [] : []; } catch (e) { return []; } };
   const FW = () => window.nfFleetW || null;
+  const xfItems = () => { try { return typeof window.nfXferChecks === 'function' ? window.nfXferChecks() || [] : []; } catch (e) { return []; } };
   const WD = {
     today: { t: () => L('النهارده', 'Today'), d: () => L('اليوم وبصمتك واللي جاي عليك', 'The day, your punch and what is next'), ic: 'calendar', col: '#ff453a', sizes: ['S', 'M', 'L'], ok: () => true },
     money: { t: () => L('فلوس مستنياك', 'Money waiting for you'), d: () => L('التحويلات اللي مستنياك — وتختار كذا بند وتحوّل مرة واحدة', 'Transfers waiting for you — pick several and pay once'), ic: 'money', col: '#30d158', sizes: ['S', 'M', 'L'], href: '#/money', ok: () => isAdmin() || ['hr', 'acc'].includes(R()) || moneyItems().length > 0 },
+    xfer: { t: () => L('التحويلات', 'Transfers'), d: () => L('كل تحويل عملته: اتسجّل · الصورة · اتربط · الإشعار وصل لموبايل اللي حوّلتله', 'Every transfer you made: recorded · picture · linked · the notification reached the person\'s phone'), ic: 'money', col: '#34c759', sizes: ['S', 'M', 'L'], href: '#/dashboard', ok: () => isAdmin() && typeof window.nfXferChecks === 'function' },   /* v8.03 (Mahmoud 18 Oct) — parts/99zzZzZZzzzR-xfer-check.js */
     fleet: { t: () => L('العربيات لايف', 'Vehicles live'), d: () => L('خريطة العربيات بمكانها وحالتها دلوقتي', 'The vehicles on the map, where they are now'), ic: 'map', col: '#0a84ff', sizes: ['S', 'M', 'L'], href: '#/fleetmap', ok: () => { const f = FW(); try { return !!(f && f.mayView()); } catch (e) { return false; } } },
     photos: { t: () => L('معرض الصور', 'Photo gallery'), d: () => L('آخر صور الأوامر والمشاريع والمواقع اللي بتشوفها', 'The latest photos of the orders, projects and sites you see'), ic: 'image', col: '#ff9f0a', sizes: ['S', 'M', 'L'], ok: () => false },   /* v7.49 (12 Oct — Mahmoud, PIN): no gallery in the system — the pictures live inside their task / project */
     fleetmv: { t: () => L('حركة الأسطول', 'Fleet movement'), d: () => L('كل عربية: مين سايقها ورايحة فين ووصلت ولا راجعة — لايف', 'Every vehicle: who drives it, where it is going, arrived or on the way back — live'), ic: 'route', col: '#32ade6', sizes: ['S', 'M', 'L'], href: '#/fleetmap', ok: () => { const f = FW(); try { return !!(f && f.mayView()); } catch (e) { return false; } } },
@@ -46635,7 +46637,7 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
     /* v7.58: Ninety Studioz — the showreel / the studio's stills (parts/99zzZzZZzy-stu-media.js) */
     stuwork: { t: () => L('شغل الاستوديو', 'Studio work'), d: () => L('الشوريل ولقطات من شغل الاستوديو', 'The showreel and stills from the studio\'s work'), ic: 'image', col: '#1c1c1e', sizes: ['S', 'M', 'L'], ok: () => !!(window.nfStuMedia && window.nfStuMedia.ready()) }
   };
-  const ORDER = ['stuwork', 'today', 'money', 'supply', 'fleet', 'fleetmv', 'att', 'ot', 'trips', 'tasks', 'msgs'];
+  const ORDER = ['stuwork', 'today', 'money', 'xfer', 'supply', 'fleet', 'fleetmv', 'att', 'ot', 'trips', 'tasks', 'msgs'];
   const okW = id => { const w = WD[id]; if (!w) return false; try { return !!w.ok(); } catch (e) { return false; } };
 
   /* ---------- the layout (per person, per phone / computer) ---------- */
@@ -46646,7 +46648,7 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
   const clean = arr => { const seen = new Set(); return (Array.isArray(arr) ? arr : []).filter(x => x && WD[x.id] && !seen.has(x.id) && seen.add(x.id)).map(x => ({ id: x.id, s: WD[x.id].sizes.includes(x.s) ? x.s : (WD[x.id].sizes.includes('M') ? 'M' : WD[x.id].sizes[0]) })); };
   function defaults() {
     const r = R(); const desk = dev() === 'desk'; let d;
-    if (isAdmin()) d = desk ? [['today', 'M'], ['money', 'M'], ['supply', 'M'], ['fleet', 'L'], ['fleetmv', 'L'], ['ot', 'S'], ['trips', 'S'], ['att', 'S'], ['msgs', 'S']] : [['today', 'M'], ['money', 'L'], ['supply', 'M'], ['fleet', 'L'], ['fleetmv', 'M'], ['ot', 'S']];
+    if (isAdmin()) d = desk ? [['today', 'M'], ['money', 'M'], ['xfer', 'M'], ['supply', 'M'], ['fleet', 'L'], ['fleetmv', 'L'], ['ot', 'S'], ['trips', 'S'], ['att', 'S'], ['msgs', 'S']] : [['today', 'M'], ['money', 'L'], ['xfer', 'M'], ['supply', 'M'], ['fleet', 'L'], ['fleetmv', 'M'], ['ot', 'S']];
     else if (['manager', 'vice', 'hr'].includes(r)) d = [['today', 'M'], ['att', 'S'], ['ot', 'S'], ['fleet', 'L'], ['money', 'L'], ['tasks', 'M']];
     else if (r === 'head') d = [['today', 'M'], ['att', 'S'], ['ot', 'S'], ['tasks', 'M'], ['msgs', 'M']];
     else if (r === 'driver' || r === 'fleet') d = [['today', 'M'], ['trips', 'M'], ['fleet', 'L'], ['tasks', 'M']];
@@ -46662,7 +46664,13 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
     ['phone', 'desk'].forEach(k => { if (Array.isArray(l[k]) && !l[k].some(x => x && x.id === 'stuwork')) { l[k] = [{ id: 'stuwork', s: 'M' }].concat(l[k]); ch = true; } });
     l.stuw = 1; if (ch) { l.at = Date.now(); W.dirty = true; clearTimeout(W.saveT); W.saveT = setTimeout(push, 700); } lsSet(l);
   }
-  const current = () => { stuIns(); return clean(saved() || defaults()).filter(x => okW(x.id)); };
+  /* v8.03: the «Transfers» widget goes in once for the owner who already has a layout, right after «Money waiting» (then it is his to move / remove) */
+  function xfIns() {
+    if (!okW('xfer')) return; const l = lay(); if (l.xfw) return; let ch = false;
+    ['phone', 'desk'].forEach(k => { const a = l[k]; if (Array.isArray(a) && !a.some(x => x && x.id === 'xfer')) { const i = a.findIndex(x => x && x.id === 'money'); a.splice(i < 0 ? Math.min(1, a.length) : i + 1, 0, { id: 'xfer', s: 'M' }); ch = true; } });
+    l.xfw = 1; if (ch) { l.at = Date.now(); W.dirty = true; clearTimeout(W.saveT); W.saveT = setTimeout(push, 700); } lsSet(l);
+  }
+  const current = () => { stuIns(); xfIns(); return clean(saved() || defaults()).filter(x => okW(x.id)); };
   window.nfHomeHasW = id => { try { return !!S.session && (window.nfHomeOn ? window.nfHomeOn() : true) && current().some(x => x.id === id); } catch (e) { return false; } };
   const hosted = () => typeof sbOn === 'function' && sbOn() && !!S.sb && !!S.sbUser;
   function setLayout(arr) {
@@ -46671,14 +46679,14 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
   }
   async function push() {
     if (!W.dirty || !hosted()) return; const l = lay();
-    try { const r = await S.sb.rpc('nf_uprefs_set', { p_key: KEY, p_val: { at: l.at, phone: l.phone || null, desk: l.desk || null, stuw: l.stuw || 0 } }); if (!r || !r.error) W.dirty = false; } catch (e) { /* offline: sent again when the network is back */ }
+    try { const r = await S.sb.rpc('nf_uprefs_set', { p_key: KEY, p_val: { at: l.at, phone: l.phone || null, desk: l.desk || null, stuw: l.stuw || 0, xfw: l.xfw || 0 } }); if (!r || !r.error) W.dirty = false; } catch (e) { /* offline: sent again when the network is back */ }
   }
   async function pull() {
     if (!hosted() || W.pulled === sid()) return; W.pulled = sid();
     try {
       const r = await S.sb.rpc('nf_uprefs_get'); if (!r || r.error || !r.data || typeof r.data !== 'object') return;
       const srv = r.data[KEY]; const l = lay();
-      if (srv && (+srv.at || 0) > (+l.at || 0)) { W.lay = { at: +srv.at, phone: srv.phone || null, desk: srv.desk || null, stuw: srv.stuw || l.stuw || 0 }; W.laySid = sid(); lsSet(W.lay); if (S.route && S.route.view === 'home' && !W.drag) rerender(); }
+      if (srv && (+srv.at || 0) > (+l.at || 0)) { W.lay = { at: +srv.at, phone: srv.phone || null, desk: srv.desk || null, stuw: srv.stuw || l.stuw || 0, xfw: srv.xfw || l.xfw || 0 }; W.laySid = sid(); lsSet(W.lay); if (S.route && S.route.view === 'home' && !W.drag) rerender(); }
       else if ((+l.at || 0) > (srv ? (+srv.at || 0) : 0)) { W.dirty = true; push(); }
     } catch (e) { W.pulled = ''; }
   }
@@ -46722,6 +46730,22 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
     if (s === 'L' && typeof window.nfMoneyCard === 'function') return `<div class="nfw-sc">${window.nfMoneyCard().replace('id="omf"', 'id="omfw"')}</div>`;
     if (s === 'S') return hd(w) + big(w.href, items.length, L('بند مستني', 'items waiting'), tot ? `<em>${esc(fmtMoney(tot))} ${esc(CUR())}</em>` : '');
     return hd(w, `<i class="nfw-n">${items.length}</i>`) + `<div class="nfw-rows">${items.slice(0, 3).map(x => row(x.href || w.href, esc(x.label || ''), x.sub ? esc(x.sub) : '', x.amount ? `<em>${esc(fmtMoney(x.amount))}</em>` : '')).join('')}</div>${tot ? `<div class="nfw-foot">${esc(L('المجموع', 'Total'))} <b>${esc(fmtMoney(tot))} ${esc(CUR())}</b></div>` : ''}`;
+  }
+
+  /* ---------- transfers (v8.03): did the system do every step of each transfer ---------- */
+  function wXfer(s) {
+    const w = WD.xfer; const all = xfItems(); const U = window.nfXferUtil || {}; const isBad = it => (U.bad ? U.bad(it) : false);
+    if (!all.length) return hd(w) + empty('money', L('مفيش تحويلات آخر 7 أيام', 'No transfers in the last 7 days'));
+    const bads = all.filter(isBad); const nb = bads.length;
+    const badge = nb ? `<em class="nfw-xb bad">${esc(L(`${nb} محتاج إعادة`, `${nb} need a retry`))}</em>` : `<em class="nfw-xb">${esc(L('كله تمام ✓', 'All good ✓'))}</em>`;
+    if (s === 'S') return hd(w) + big(w.href, nb || all.length, nb ? L('محتاج إعادة', 'need a retry') : L('تحويل · كله تمام ✓', 'transfers · all good ✓'), '', nb ? 'style="color:#ff453a"' : '');
+    const STP = [['saved', L('اتسجّل', 'Recorded')], ['photo', L('الصورة', 'Picture')], ['linked', L('اتربط', 'Linked')], ['notice', L('الإشعار', 'Notified')]];
+    const mk = st => st === 'ok' ? '✓' : st === 'wait' ? '…' : st === 'unk' ? '–' : '!';
+    const marks = it => `<span class="nfw-xm">${STP.map(([k, lab]) => { const st = (it.steps[k] || {}).st || 'unk'; return `<i class="x-${st}" title="${esc(lab)}">${mk(st)}</i>`; }).join('')}</span>`;
+    const sub = it => isBad(it) ? esc(Object.values(it.steps).filter(x => x.st === 'bad').map(x => x.why || '').filter(Boolean).join(' · ')) : esc(it.purpose || '') + (s === 'L' ? ` · ${esc(STP.map(x => x[1]).join(' · '))}` : '');
+    const list = (nb ? bads.concat(all.filter(it => !isBad(it))) : all).slice(0, s === 'L' ? 6 : 3);
+    const fixAll = nb && U.fixable && bads.some(U.fixable) && !W.edit ? `<button type="button" class="btn xs" data-action="xfFixAll">${esc(L('إعادة الناقص', 'Redo the missing steps'))}</button>` : '';
+    return hd(w, badge) + `<div class="nfw-rows">${list.map(it => row(it.href || w.href, esc(it.who || '') + (isBad(it) ? ' <span class="nfw-xw">!</span>' : ''), sub(it), marks(it))).join('')}</div>${fixAll || all.length > list.length ? `<div class="nfw-foot nfw-xf">${fixAll}${all.length > list.length ? `<a href="${esc(w.href)}">${esc(L(`كل التحويلات (${all.length})`, `All transfers (${all.length})`))}</a>` : ''}</div>` : ''}`;
   }
 
   /* ---------- vehicles live ---------- */
@@ -46952,14 +46976,14 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
   document.head.insertAdjacentHTML('beforeend', '<style>.nfw-msgm .nfw-rows{overflow:visible}.nfw-msgm .nfw-r{padding:10px 4px}</style>');
   document.addEventListener('click', e => { const a = e.target.closest && e.target.closest('#mform [data-nfwclose]'); if (a && typeof closeModal === 'function') setTimeout(() => closeModal(), 0); });
 
-  const RENDER = { supply: s => hd(WD.supply) + (window.nfSupply ? window.nfSupply.widget(s) : ''), today: wToday, money: wMoney, fleet: wFleet, fleetmv: wFleetMv, photos: wPhotos, att: wAtt, ot: wOt, trips: wTrips, tasks: wTasks, msgs: wMsgs, stuwork: s => (window.nfStuMedia ? window.nfStuMedia.widget(s) : '') };
+  const RENDER = { supply: s => hd(WD.supply) + (window.nfSupply ? window.nfSupply.widget(s) : ''), today: wToday, money: wMoney, xfer: wXfer, fleet: wFleet, fleetmv: wFleetMv, photos: wPhotos, att: wAtt, ot: wOt, trips: wTrips, tasks: wTasks, msgs: wMsgs, stuwork: s => (window.nfStuMedia ? window.nfStuMedia.widget(s) : '') };
 
   /* ---------- the grid ---------- */
   const SZ = () => ({ S: L('صغير', 'Small'), M: L('متوسط', 'Medium'), L: L('كبير', 'Large') });
   const SZI = { S: '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="2" fill="currentColor"/></svg>', M: '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="2" y="6" width="16" height="8" rx="2" fill="currentColor"/></svg>', L: '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="2" y="2" width="16" height="16" rx="3" fill="currentColor"/></svg>' };
   function one(x0) {
     /* an empty money widget does not hold a large space (it grows back as soon as money is waiting) */
-    const x = x0.id === 'money' && !W.edit && x0.s !== 'S' && !moneyItems().length ? { id: x0.id, s: 'S' } : x0;
+    const x = ((x0.id === 'money' && !moneyItems().length) || (x0.id === 'xfer' && !xfItems().length)) && !W.edit && x0.s !== 'S' ? { id: x0.id, s: 'S' } : x0;
     let inner = ''; try { inner = RENDER[x.id](x.s); } catch (e) { console.warn('widget', x.id, e); inner = hd(WD[x.id]); }
     const ed = W.edit ? `<button type="button" class="nfw-del" data-action="nfwDel" data-arg="${x.id}" aria-label="${esc(L('شيل', 'Remove'))}">−</button><div class="nfw-sz">${WD[x.id].sizes.map(z => `<button type="button" class="${z === x.s ? 'on' : ''}" data-action="nfwSize" data-arg="${x.id}:${z}" aria-label="${esc(SZ()[z])}" title="${esc(SZ()[z])}">${SZI[z]}</button>`).join('')}</div>` : '';
     return `<div class="nfw w-${x.id} s-${x.s}" data-nfw="${x.id}">${inner}${ed}</div>`;
@@ -47074,7 +47098,7 @@ html.nfv-open,html.nfv-open body{overflow:hidden;overscroll-behavior:none}
     .nfw-rt{flex:1;min-width:0;display:flex;flex-direction:column}.nfw-rt b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nfw-rt small{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .nfw-re{flex:none;font-size:12px;color:var(--muted)}.nfw-re em{font-style:normal;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
     .nfw-dot{display:inline-block;width:8px;height:8px;border-radius:4px;margin-inline-end:5px;vertical-align:middle}
-    .nfw-foot{margin-top:auto;padding-top:6px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between}.nfw-foot b{color:var(--ink)}
+    .nfw-foot{margin-top:auto;padding-top:6px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between}.nfw-foot b{color:var(--ink)}.nfw-xb{font-style:normal;font-size:11.5px;font-weight:600;color:#30d158;white-space:nowrap}.nfw-xb.bad{color:#ff453a}.nfw-xm{display:inline-flex;gap:3px}.nfw-xm i{font-style:normal;font-size:11px;font-weight:700;width:17px;height:17px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(48,209,88,.16);color:#1f9d45}.nfw-xm i.x-bad{background:rgba(255,69,58,.16);color:#ff453a}.nfw-xm i.x-wait,.nfw-xm i.x-unk{background:rgba(142,142,147,.18);color:var(--muted)}.nfw-xw{color:#ff453a;font-weight:700}.nfw-xf{align-items:center;gap:8px}.nfw-xf a{color:var(--accent,#0a84ff);text-decoration:none;font-weight:600}
     .nfw-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:12.5px;text-align:center}.nfw-empty svg{opacity:.5}
     .nfw-kv{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;flex:none}.nfw-kv div{display:flex;flex-direction:column;align-items:center;padding:8px 2px;border-radius:12px;background:var(--surface-2)}
     .nfw-kv b{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}.nfw-kv span{font-size:11px;color:var(--muted);white-space:nowrap}
@@ -62178,6 +62202,7 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
   const bad = it => Object.values(it.steps).some(s => s.st === 'bad');
   const fixable = it => Object.entries(it.steps).some(([k, s]) => s.st === 'bad' && (k === 'notice' ? !s.nodev : k === 'linked'));
   window.nfXferChecks = items;
+  window.nfXferUtil = { bad: it => bad(it), fixable: it => fixable(it), key: it => it.k === 'x' ? 'x:' + it.id : `p:${it.id}:${it.pay}` };   /* v8.03: the home «Transfers» widget */
 
   /* ---------- redo a missing step (fixed ids — never doubles) ---------- */
   async function fix(it, auto) {
