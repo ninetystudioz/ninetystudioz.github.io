@@ -10372,7 +10372,7 @@ async function pushSubscribe(silent) {
   } catch (e) { console.warn('push', e); if (!silent) toast('تعذّر تفعيل الإشعارات: ' + (e.message || e), 'err'); return false; }
 }
 ACTIONS.pushEnable = async () => { const p = document.getElementById('bellpop'); if (p) p.remove(); await pushSubscribe(false); };
-async function pushSend(to, title, body, url, tag) { if (!(typeof sbOn === 'function' && sbOn()) || !to || !to.length) return;   /* v6.67: sending needs only the server (the iOS app has no service worker) */ try { await S.sb.functions.invoke('push', { body: { action: 'send', to, title, body, url: url || '/', tag: tag || 'nf' } }); } catch (e) { /* ignore */ } }
+async function pushSend(to, title, body, url, tag) { if (!(typeof sbOn === 'function' && sbOn()) || !to || !to.length) return;   /* v6.67: sending needs only the server (the iOS app has no service worker) */ /* v8.02: the server's answer comes back ({ ok, sent, … }) so a transfer can show «reached the phone» */ try { const { data, error } = await S.sb.functions.invoke('push', { body: { action: 'send', to, title, body, url: url || '/', tag: tag || 'nf' } }); return error ? { ok: false, error: String((error && error.message) || error) } : data; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } }
 /* re-subscribe silently when permission was already granted (endpoint may rotate) */
 document.addEventListener('nf:login', () => setTimeout(() => { if (pushAvailable() && Notification.permission === 'granted') pushSubscribe(true); }, 2500));
 navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.nfOpen) { const u = String(e.data.nfOpen); const i = u.indexOf('#'); if (i >= 0) location.hash = u.slice(i); } });
@@ -28268,7 +28268,9 @@ ${c.clients.join('\n') || '—'}
   async function imageFile(p, x) {
     const name = `tahweel-${p.number}${x.id && x.id !== 'main' ? '-' + x.id.slice(-4) : ''}.jpg`;
     const tryUrl = async u => { const r = await fetch(u); if (!r.ok) throw new Error(r.status); const b = await r.blob(); if (!/^image\//.test(b.type || '')) throw new Error('type'); return new File([b], name, { type: b.type }); };
-    if (x.proofUrl) { try { return await tryUrl(x.proofUrl); } catch (e) { /* expired → thumb */ } }
+    if (x.proofUrl) { try { return await tryUrl(x.proofUrl); } catch (e) { /* expired → the stored file */ } }
+    /* v8.02 (Mahmoud 18 Oct — Ahmed / Bahaa sent RFQ-26-015 and the supplier got the text only): the full picture from the stored file */
+    for (const fid of (x.fileIds || [])) { const f = byId('files', fid); if (!f || typeof Files === 'undefined' || typeof Files.blob !== 'function') continue; try { const b = await Files.blob(f); if (b && /^image\//.test(b.type || f.mime || 'image/jpeg')) return new File([b], name, { type: b.type || f.mime || 'image/jpeg' }); } catch (e) { /* gate / offline → thumb */ } }
     const t = thumbOf(x); if (t) { try { return await tryUrl(t); } catch (e) { /* ignore */ } }
     return null;
   }
@@ -28280,10 +28282,38 @@ ${c.clients.join('\n') || '—'}
     const t = byId('tasks', `powa_${p.id}_${pid}`); if (t && t.status !== 'done') { try { await Store.update('tasks', t.id, { status: 'done', doneAt: nowISO(), doneByName: S.session?.name || '' }, { silent: true }); } catch (e) { /* ignore */ } }
   }
   const mobileShare = f => !!(navigator.share && f && (!navigator.canShare || navigator.canShare({ files: [f] })));
+  /* v8.02: no group → the supplier's own chat WITH the picture. A wa.me link cannot carry a picture, so: the phone's share sheet
+     (picture + message → WhatsApp → the supplier), or on a computer the message is copied, the picture downloads, and the supplier's
+     chat opens with the message — drag the picture in. */
+  const isPhone = () => { try { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') || !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) { return false; } };
+  async function toPhone(p, pid, x, s, text) {
+    const file = await imageFile(p, x); const plain = text.replace('صورة التحويل مرفقة.', file ? 'صورة التحويل مرفقة.' : (x.proofUrl ? `صورة التحويل: ${x.proofUrl}` : '')).replace(/\n\n/g, '\n');
+    if (file && isPhone() && mobileShare(file)) {
+      const ok = await new Promise(res => { let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+        openModal({ title: `إرسال للمورد — ${p.supplier || ''}`, submitLabel: 'افتح المشاركة', body: `<div class="wasend"><div class="banner info" style="margin:0">${icon('wa')}<span>اختار واتساب، وبعدها المورد:<br><span class="gname">${esc(s.name || p.supplier || '')} · <span class="ltr">${esc(s.phone || '')}</span></span></span></div>${thumbOf(x) ? `<img src="${esc(thumbOf(x))}" alt="صورة التحويل">` : ''}<div class="msg">${esc(plain)}</div><div class="tiny muted">الصورة والرسالة بيتبعتوا مع بعض. لو الرسالة ماظهرتش، الصقها (اتنسخت).</div></div>`, onSubmit: () => { fin(true); return true; } });
+        const iv = setInterval(() => { if (!document.getElementById('mform')) { clearInterval(iv); fin(false); } }, 300); });
+      if (!ok) return;
+      try { navigator.clipboard && navigator.clipboard.writeText(plain).catch(() => { }); } catch (e) { /* ignore */ }
+      try { await navigator.share({ files: [file], text: plain }); } catch (e) { if (e && e.name === 'AbortError') { toast('ماتبعتش'); return; } try { window.open(waLink(s.phone, plain), '_blank', 'noopener'); } catch (e2) { return; } }
+      await mark(p, pid, 'phone', null); toast('اتسجّل: اتبعت للمورد بالصورة'); return;
+    }
+    try { await navigator.clipboard.writeText(plain); } catch (e) { /* ignore */ }
+    if (file) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
+    try { window.open(waLink(s.phone, plain), '_blank', 'noopener'); } catch (e) { /* ignore */ }
+    await mark(p, pid, 'phone', null);
+    toast(file ? 'صورة التحويل نزلت على الجهاز — اسحبها في محادثة المورد' : 'اتسجّل: اتبعت للمورد');
+  }
+  /* the older «WhatsApp to the supplier» button (99zzL) goes the same way — with the picture */
+  if (ACTIONS.poWa) ACTIONS.poWa = (base => async function (arg) {
+    const [id, pid] = String(arg).split(':'); const p = byId('purchases', id); const x = p && payX(p, pid); const s0 = p && supplierOf(p);
+    if (!x || !s0 || !s0.phone || !S.session || !(isAdmin() || ['acc', 'purch'].includes(role()))) return base.apply(this, arguments);
+    const g = grpOf(s0); if (g) return canSend() ? ACTIONS.poSendSup(arg) : base.apply(this, arguments);
+    return toPhone(p, pid, x, s0, msgOf(p, x));
+  })(ACTIONS.poWa);
   ACTIONS.poSendSup = async arg => {
     const [id, pid] = String(arg).split(':'); const p = byId('purchases', id); const x = p && payX(p, pid); if (!x || !canSend()) return;
     const s = supplierOf(p); const grp = grpOf(s); const text = msgOf(p, x); const th = thumbOf(x);
-    if (!grp) { if (!s || !s.phone) { toast('المورد مالوش جروب ولا رقم — ضيف جروب الواتساب من ملف المورد', 'err'); return; } try { window.open(waLink(s.phone, text.replace('صورة التحويل مرفقة.', x.proofUrl ? `صورة التحويل: ${x.proofUrl}` : '').replace(/\n\n/g, '\n')), '_blank', 'noopener'); } catch (e) { /* ignore */ } await mark(p, pid, 'phone', null); return; }
+    if (!grp) { if (!s || !s.phone) { toast('المورد مالوش جروب ولا رقم — ضيف جروب الواتساب من ملف المورد', 'err'); return; } await toPhone(p, pid, x, s, text); return; }
     const file = await imageFile(p, x); const share = mobileShare(file);
     const go = await new Promise(res => { let done = false; const fin = v => { if (!done) { done = true; res(v); } };
       openModal({ title: `إرسال للمورد — ${p.supplier || ''}`, submitLabel: share ? 'افتح المشاركة' : 'انسخ الرسالة ونزّل الصورة', body: `<div class="wasend"><div class="banner info" style="margin:0">${icon('wa')}<span>اختار واتساب، وبعدها الجروب:<br><span class="gname">${esc(grp.name)}</span></span></div>${th ? `<img src="${esc(th)}" alt="صورة التحويل">` : '<div class="banner warn" style="margin:0">مفيش صورة تحويل على الأمر — الرسالة بس هتتبعت</div>'}<div class="msg">${esc(text)}</div>${share ? '<div class="tiny muted">الرسالة كمان بتتنسخ — لو واتساب بعت الصورة من غير الكلام، الصقه تحتها.</div>' : ''}${!share ? `<div class="tiny muted">على الكمبيوتر: الرسالة هتتنسخ والصورة هتنزل${grp.link ? ' وجروب المورد هيفتح' : ''} — الصق الرسالة وارفق الصورة في الجروب.</div>` : ''}</div>`, onSubmit: () => { fin(true); return true; } });
@@ -32974,7 +33004,7 @@ if (typeof STU_ON !== 'undefined' && STU_ON) (() => {
 if (STU_ON) {
   const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
   const L = (a, b) => (en() ? b : a);
-  const CORS_RULE = [{ AllowedOrigins: ['https://ninetystudioz.github.io', 'https://mahmoudfawzy1212mf-crypto.github.io', 'https://app.ninetystudioz.com', 'http://localhost:8080'], AllowedMethods: ['GET', 'PUT', 'HEAD'], AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3600 }];
+  const CORS_RULE = [{ AllowedOrigins: ['https://ninetystudioz.github.io', 'https://app.ninetystudioz.com', 'http://localhost:8080'], AllowedMethods: ['GET', 'PUT', 'HEAD'], AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3600 }];
 
   /* ---------- nfFiles ---------- */
   const cache = new Map();   // path → { url, exp }
@@ -58053,59 +58083,6 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
   });
 })();
 /* =====================================================================
-   v7.91 — «We moved» banner on the old address.
-   The three Ninety systems now live at https://ninetystudioz.github.io (brief claude/new-address-brief.md).
-   The old address mahmoudfawzy1212mf-crypto.github.io keeps serving the same build (the phone apps still load it
-   until they are rebuilt), and in a browser it shows this card on every screen — login included — with one button
-   that opens the same page on the new address. Not shown inside the phone apps, nor on the new address.
-   ===================================================================== */
-(() => {
-  if (window.__NF_MOVED__) return; window.__NF_MOVED__ = 1;
-  const OLD = 'mahmoudfawzy1212mf-crypto.github.io';
-  const NEW = 'https://ninetystudioz.github.io';
-  if (String(location.hostname || '').toLowerCase() !== OLD) return;
-  const native = () => { try { const c = window.Capacitor; return !!(c && typeof c.isNativePlatform === 'function' && c.isNativePlatform()); } catch (e) { return false; } };
-  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
-  const L = (a, b) => (en() ? b : a);
-  const e = s => (typeof esc === 'function' ? esc(s) : String(s));
-  const target = () => NEW + location.pathname + location.search + location.hash;
-
-  function html() {
-    return `<div class="ci">📍</div><div class="cb"><b>${e(L('السيستم اتنقل لعنوان جديد', 'The system has moved to a new address'))}</b>`
-      + `<span>${e(L('العنوان الجديد ninetystudioz.github.io. ادخل بنفس الحساب وكلمة السر. ولو السيستم متضاف على الشاشة الرئيسية، ضيفه تاني من العنوان الجديد.', 'The new address is ninetystudioz.github.io. Sign in with the same account and password. If the system is on your home screen, add it again from the new address.'))}</span>`
-      + `<span class="tiny">${e(L('لو سجّلت حاجة وإنت من غير نت، استنى لحد ما تترفع وبعدين انتقل.', 'If you saved something while offline, wait until it uploads, then move.'))}</span></div>`
-      + `<a class="btn sm p" data-nfmoved="1" href="${e(target())}">${e(L('افتح العنوان الجديد', 'Open the new address'))}</a>`;
-  }
-  function host() {
-    const v = document.getElementById('view'); if (v) return { el: v, where: 'afterbegin' };
-    const f = document.getElementById('loginform'); if (f) return { el: f, where: 'beforebegin' };
-    return null;
-  }
-  function paint() {
-    if (native()) return;
-    const h = host(); const old = document.getElementById('nf-moved'); if (!h) return;
-    const inner = html();
-    const placed = old && (h.where === 'afterbegin' ? h.el.contains(old) : old.nextElementSibling === h.el);
-    if (placed) { if (old.dataset.h !== inner) { old.innerHTML = inner; old.dataset.h = inner; } return; }
-    if (old) old.remove();
-    h.el.insertAdjacentHTML(h.where, `<div class="nf-moved" id="nf-moved" role="status">${inner}</div>`);
-    const n = document.getElementById('nf-moved'); if (n) n.dataset.h = inner;
-  }
-  document.addEventListener('click', ev => {
-    const a = ev.target.closest && ev.target.closest('[data-nfmoved]'); if (!a) return;
-    ev.preventDefault(); location.href = target();
-  });
-  document.head.insertAdjacentHTML('beforeend', `<style>
-    .nf-moved{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:12px 14px;border-radius:16px;background:rgba(29,95,209,.10);border:1px solid rgba(29,95,209,.35)}
-    .nf-moved .ci{font-size:22px;flex:none}.nf-moved .cb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-    .nf-moved b{font-size:14px;color:var(--ink)}.nf-moved span{font-size:12.5px;color:var(--ink-2)}.nf-moved .btn{flex:none}
-    @media (max-width:520px){.nf-moved{flex-wrap:wrap}.nf-moved .btn{width:100%;justify-content:center;min-height:42px}}
-  </style>`);
-  if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => { try { paint(); } catch (x) { /* ignore */ } });
-  setInterval(() => { try { paint(); } catch (x) { /* ignore */ } }, 2000);
-  window.nfMoved = { paint, target };
-})();
-/* =====================================================================
    v7.95 — Purchases page: filter by brand + project, and a search box (owner request 17 Oct).
    One bar above all purchases lists (new-item RFQ card, materials-requests card, purchase-orders list).
    Brand of a purchase = its own brandId, else the brand of its linked order (project).
@@ -61935,7 +61912,7 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
    · No answer → «X called you about <the work> and you did not answer» on the callee's phone, one tap opens the same page.
      Ticked «important» → the other people of that work are told too.
    · The purchase page: the accounts people (whoever approved, the accounts manager) and the owner are in its call list, and the
-     «waiting for the owner's transfer» card has «Call the accounts»; every such call tells the owner on his phone.
+     «waiting for the owner's transfer» card has «Call the owner» (v8.02 — it was «Call the accounts» in v8.01).
    · The call is kept on the work itself (a line in the purchase comments; a «calls» list on the order / trip).
    No permission change: only who already sees the page, only who is in the call directory. No money in any text.
    Factory only. Phone and computer, Arabic and English.
@@ -62016,7 +61993,7 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
   if (typeof vProjectDetail === 'function') vProjectDetail = wrapPage('project', o => (o && o.id ? 'ord:' + o.id : ''))(vProjectDetail);
   if (typeof vTripDetail === 'function') vTripDetail = wrapPage('trip', id => (byId('trips', id) ? 'trip:' + id : ''))(vTripDetail);
 
-  /* ---------- «Call the accounts» on the transfer card ---------- */
+  /* ---------- the accounts people (purchase call list) + «Call the owner» on the transfer card ---------- */
   function accPeople(p, dir) {
     const out = new Map(); const me = myUid();
     const add = (d, why) => { if (!d || !d.uid || d.uid === me) return; if (out.has(d.uid)) { out.get(d.uid).why += ' · ' + why; return; } out.set(d.uid, { uid: d.uid, name: d.name || '', why }); };
@@ -62027,14 +62004,16 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
   }
   window.nfPoAccPeople = (id, dir) => { const p = byId('purchases', id); return p ? accPeople(p, dir || []) : []; };
   const trfTitle = p => `${L('تحويل', 'Transfer')} ${p.number || ''}`.trim();
-  ACTIONS.poAccCall = async id => {
+  /* v8.02 (Mahmoud 18 Oct, from Ahmed Abdelzaher): the transfer card calls the OWNER — he is the one who transfers */
+  ACTIONS.poOwnerCall = async id => {
     const p = byId('purchases', id); if (!p || !avail()) return;
     let dir = []; try { dir = (await api().dir()) || []; } catch (e) { dir = []; }
-    const ps = accPeople(p, dir).map(x => Object.assign(x, { arg: p.id }));
-    if (!ps.length) { toast(L('مفيش حد من الحسابات متاح للاتصال دلوقتي', 'Nobody from the accounts can be called now'), 'err'); return; }
+    const me = myUid(); const ps = dir.filter(d => d && d.uid && d.role === 'admin' && d.uid !== me).map(d => ({ uid: d.uid, name: d.name || '', why: L('المالك', 'Owner'), arg: p.id }));
+    if (!ps.length) { toast(L('المالك مش متاح للاتصال دلوقتي', 'The owner cannot be called right now'), 'err'); return; }
     if (ps.length === 1) { api().start(ps[0].uid, false, { taskId: 'potrf:' + p.id, title: trfTitle(p), important: true }); return; }
-    sheet(L('اتصال بالحسابات', 'Call the accounts'), trfTitle(p), ps, 'poAccCallGo', false);
+    sheet(L('اتصال بالمالك', 'Call the owner'), trfTitle(p), ps, 'poAccCallGo', false);
   };
+  ACTIONS.poAccCall = id => ACTIONS.poOwnerCall(id);
   ACTIONS.poAccCallGo = arg => {
     const [pid, uid, v] = String(arg || '').split('|'); const p = byId('purchases', pid); if (!p || !uid || !avail()) return; closeModal();
     api().start(uid, v === '1', { taskId: 'potrf:' + p.id, title: trfTitle(p), important: true });
@@ -62043,9 +62022,9 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
     const h = base.apply(this, arguments);
     try {
       if (!h || !p || p.status !== 'transfer' || p.transfer || !S.session || !avail()) return h;
-      if (typeof window.nfIsAccMgr === 'function' && window.nfIsAccMgr()) return h;
+      if (isAdmin()) return h;
       const m = '<h3>'; const i = h.indexOf('</h3>'); if (h.indexOf(m) < 0 || i < 0) return h;
-      const btn = `<button type="button" class="btn sm trfcall" data-action="poAccCall" data-arg="${esc(p.id)}">${icon('phone')}<span>${esc(L('اتصال بالحسابات', 'Call the accounts'))}</span></button>`;
+      const btn = `<button type="button" class="btn sm trfcall" data-action="poOwnerCall" data-arg="${esc(p.id)}">${icon('phone')}<span>${esc(L('اتصال بالمالك', 'Call the owner'))}</span></button>`;
       return h.slice(0, i + 5) + btn + h.slice(i + 5);
     } catch (e) { return h; }
   })(transferCard);
@@ -62064,10 +62043,8 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
       if (evt === 'start') {
         a.dir().then(dir => {
           dir = dir || [];
-          if (kind === 'potrf') {
-            const own = dir.filter(d => d.role === 'admin' && d.uid !== myUid() && d.uid !== c.callee).map(d => 'uid:' + d.uid);
-            if (own.length) push(own, `📞 ${myName} ${L('بيكلّم الحسابات', 'is calling the accounts')}`, `${L('بخصوص', 'About')}: ${title} — ${calleeName}`, url, 'trfcall-' + (c.id || id));
-          } else if (c.ctx.important && KINDS[kind]) {
+          if (kind === 'potrf') return; /* the owner is the one called — his phone rings */
+          if (c.ctx.important && KINDS[kind]) {
             const others = window.nfCtxCallPeople(kind, id, dir).filter(p => p.uid !== c.callee).map(p => 'uid:' + p.uid);
             if (others.length) push(others, `📞 ${L('مكالمة هامة بخصوص', 'Important call about')}: ${title}`, `${myName} ${L('بيكلّم', 'is calling')} ${calleeName}`, url, 'ccall-' + (c.id || id));
           }
@@ -62082,7 +62059,7 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
       const at = nowISO(); const rec = { at, by: (S.session && (S.session.id || S.session.workerId)) || '', byName: myName, to: c.callee, toName: calleeName, video: !!c.video, answered, secs: c.secs || 0, status: st || null };
       if (kind === 'potrf') {
         const p = byId('purchases', id); if (!p) return;
-        const m = { id: uid(), at, by: rec.by, byName: myName, kind: 'call', text: `📞 ${myName} ${L('اتصل بالحسابات', 'called the accounts')} (${calleeName}) ${L('بخصوص التحويل', 'about the transfer')} — ${res}` };
+        const m = { id: uid(), at, by: rec.by, byName: myName, kind: 'call', text: `📞 ${myName} ${L('اتصل بالمالك', 'called the owner')} (${calleeName}) ${L('بخصوص التحويل', 'about the transfer')} — ${res}` };
         Store.update('purchases', id, { comments: (p.comments || []).concat([m]).slice(-300), calls: (p.calls || []).concat([rec]).slice(-100), lastCommentAt: at }, { silent: true }).catch(() => { });
       } else if (KINDS[kind]) {
         const k = KINDS[kind]; const r = byId(k.col, id); if (!r) return;
@@ -62103,4 +62080,210 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
   document.head.insertAdjacentHTML('beforeend', `<style>.pocallbar{display:flex;justify-content:flex-end;margin:0 0 10px}.pocallbar .btn{display:inline-flex;align-items:center;gap:6px}.pocallbar .btn svg{width:16px;height:16px}
 .trfcall{display:inline-flex;align-items:center;gap:6px;margin-inline-start:8px}.trfcall svg{width:15px;height:15px}
 .ccall-last{margin:-4px 0 10px;text-align:end;line-height:1.7}</style>`);
+})();
+/* =====================================================================
+   v8.02 — brief claude/custody-xfer-seen-brief.md (Mahmoud 18 Oct, go-ahead): «the transfer is done ✓».
+   Mahmoud: «it is for me, to be sure the system did it: put the picture, attached it, and the notification reached the person
+   I am sending the money to — sometimes the system hangs and does not send».
+   · After the owner records a transfer (to a custody — Bahaa, Haitham, Saeed, Ahmed, El-Behiry — or a PO to its supplier) a small
+     card opens with the steps and a mark on each: recorded · picture · linked (the request / the PO moved on) · notification
+     reached the phone. A failed step is red with «Retry».
+   · The owner's dashboard: «Transfers» — the last 7 days, one line each, the same marks, «Retry» on any missing step; on top
+     «all good ✓» or «N need a retry». A step still missing after 10 minutes is redone once by itself (from the owner's app).
+   · The custody holder's notification carries no amount (the rule): «A transfer reached your custody — PO RFQ-26-015».
+   No permission change: the card is the owner's only (it shows amounts).
+   ===================================================================== */
+(function () {
+  if (window.__NF_XFCHK__) return; window.__NF_XFCHK__ = 1;
+  if ((typeof isStuSys === 'function' && isStuSys()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  if (typeof walletOf !== 'function' || typeof RENDER_HOOKS === 'undefined') return;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en'; const L = (a, b) => (en() ? b : a);
+  const DAY = 864e5; const RETRY_AFTER = 10 * 60e3;
+  const ts = s => { const t = Date.parse(s || ''); return isNaN(t) ? 0 : t; };
+  const hm = s => { try { return new Date(s).toLocaleTimeString(en() ? 'en-GB' : 'ar-EG', { hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; } };
+  const money = n => `${typeof fmtMoney === 'function' ? fmtMoney(n) : n} ${typeof CUR === 'function' ? CUR() : ''}`;
+
+  /* ---------- what a transfer was for ---------- */
+  function purposeOf(x) {
+    try {
+      if (x.reqId) {
+        const r = byId('requests', x.reqId);
+        if (r) { const po = r.purchaseId && byId('purchases', r.purchaseId); const proj = r.orderId && typeof fundProjLabel === 'function' ? fundProjLabel(r.orderId) : '';
+          return [po ? `${L('أمر شراء', 'PO')} ${po.number}` : (typeof catLabel === 'function' ? catLabel(r.cat) : r.cat), proj, String(r.reason || '').slice(0, 40)].filter(Boolean).join(' · '); }
+      }
+      if (x.pbId) { const b = byId('money', x.pbId); if (b) { const pos = (b.items || []).map(it => it && (it.poNumber || it.number || (it.purchaseId && (byId('purchases', it.purchaseId) || {}).number))).filter(Boolean); return `${L('دفعة', 'Batch')} ${b.code || ''}${pos.length ? ' · ' + pos.slice(0, 3).join('، ') + (pos.length > 3 ? '…' : '') : ''}`; } }
+      if (x.batchId) { const b = byId('money', x.batchId); return `${L('دفعة سلف', 'Advances batch')} ${(b && (b.code || b.number)) || ''}`.trim(); }
+      return [typeof catLabel === 'function' && x.cat ? catLabel(x.cat) : '', String(x.note || '').slice(0, 40)].filter(Boolean).join(' · ') || L('تحويل لعهدة', 'Custody transfer');
+    } catch (e) { return L('تحويل', 'Transfer'); }
+  }
+
+  /* ---------- the holder's notice (no amount) — one fixed id per transfer ---------- */
+  const recentHolder = new Map();
+  async function holderNotice(x) {
+    const w = walletOf(x.to); if (!w || !w.holder) return null; const id = `xfn_${x.id}`;
+    if (byId('tasks', id)) return id;
+    recentHolder.set(String(w.holder), Date.now());
+    await Store.save('tasks', { id, title: L(`وصلك تحويل لعهدتك — ${purposeOf(x)}`, `A transfer reached your custody — ${purposeOf(x)}`), desc: L(`${w.name || ''} · المبلغ في «بوابتي ← عهدتي». سجّل المصروف بصورة الإيصال من هناك.`, `${w.name || ''} · the amount is in «My page → My custody». Record the spending with the receipt picture there.`), assigneeId: String(w.holder), deptId: null, status: 'open', kind: 'notice', source: 'money', priority: 'normal', xferId: x.id, createdBy: S.session?.id || null, createdByName: S.session?.name || '', createdAt: nowISO(), link: '/#/me' }, { silent: true });
+    return id;
+  }
+  /* the old amount notices («X EGP transferred to your custody») right after a transfer are covered by the notice above; any other
+     money notice loses its amount */
+  const stripMoney = s => String(s || '').replace(/\s*[\d][\d,.]*\s*(ج\.م|EGP|جنيه)/g, '').replace(/\s{2,}/g, ' ').trim();
+  if (typeof notifyHolder === 'function') notifyHolder = (base => function (w, title, body, url) {
+    try { const t = recentHolder.get(String(w && w.holder)); if (t && Date.now() - t < 90e3 && /لعهدتك|your custody/i.test(String(title || ''))) return; } catch (e) { /* ignore */ }
+    return base.call(this, w, stripMoney(title), stripMoney(body), url);
+  })(notifyHolder);
+
+  /* ---------- the push result is kept on the notice task (did it reach a phone?) ---------- */
+  const TRACK = /^task-((xfn_|po_ok_|po_trf_acc_|po_pl_|po_def_).+)$/;
+  if (typeof pushSend === 'function') pushSend = (base => async function (to, title, body, url, tag) {
+    const r = await base.apply(this, arguments);
+    try { const m = TRACK.exec(String(tag || '')); if (m && byId('tasks', m[1])) { const ok = !!(r && r.ok); Store.update('tasks', m[1], { pushRes: { ok, sent: r && r.sent != null ? +r.sent : null, sms: r && r.sms ? +r.sms : 0, at: nowISO(), err: r ? (r.error || null) : 'no-result' } }, { silent: true }).catch(() => { }); } } catch (e) { /* ignore */ }
+    return r;
+  })(pushSend);
+  async function pushAgain(tid) {
+    const t = byId('tasks', tid); if (!t || typeof pushSend !== 'function') return;
+    const to = t.assigneeId ? ['w:' + t.assigneeId] : t.toRole ? ['role:' + t.toRole] : []; if (!to.length) return;
+    await pushSend(to, String(t.title || '').slice(0, 90), String(t.desc || '').split('\n')[0].slice(0, 140), `/#/tasks/${t.id}`, 'task-' + t.id);
+  }
+
+  /* ---------- the transfers of the last 7 days, each with its steps ---------- */
+  const pushStep = t => { if (!t) return { st: 'bad', why: L('الإشعار ماتعملش', 'No notification') }; const p = t.pushRes; if (!p) return Date.now() - ts(t.createdAt) > 5 * 60e3 ? { st: 'unk', why: L('المهمة نزلت — وصول الموبايل مش متسجّل (قبل التحديث)', 'The task is there — phone delivery not recorded (before this update)') } : { st: 'wait', why: L('بيتبعت…', 'Sending…') }; if (p.ok && (+p.sent > 0 || +p.sms > 0)) return { st: 'ok', why: L('وصل الموبايل', 'Reached the phone') }; if (p.ok && +p.sent === 0) return { st: 'bad', why: L('مالوش موبايل متسجّل للإشعارات', 'No phone registered for notifications'), nodev: true }; return { st: 'bad', why: L('الإشعار مااتبعتش', 'The notification did not go') }; };
+  const legacyNotice = (x, holder) => list('tasks').find(t => t && t.source === 'money' && String(t.assigneeId || '') === String(holder) && Math.abs(ts(t.createdAt) - ts(x.at)) < 3 * 60e3) || null;
+  function items() {
+    const since = Date.now() - 7 * DAY; const out = [];
+    list('money').forEach(x => {
+      if (!x || x.type !== 'xfer' || ts(x.at) < since) return; const w = walletOf(x.to); if (!w || walletOf(x.from)) return;
+      const n = byId('tasks', `xfn_${x.id}`) || legacyNotice(x, w.holder);
+      const r = x.reqId ? byId('requests', x.reqId) : null; const b = x.pbId ? byId('money', x.pbId) : null;
+      const photo = !!((x.fileIds || []).length || x.thumb || x.proofUrl || x.proofPath || (b && (b.thumb || (b.fileIds || []).length || b.proofUrl)));
+      const linked = x.reqId ? !!(r && (r.paidAt || (r.status === 'approved' && !r.toPay))) : x.pbId ? !!(b && b.status && b.status !== 'sent') : true;
+      out.push({ k: 'x', id: x.id, at: x.at, who: w.name || '', purpose: purposeOf(x), amount: +x.amount || 0, href: '#/money', retried: x.sysRetry || null,
+        steps: { saved: { st: 'ok' }, photo: { st: photo ? 'ok' : 'bad', why: photo ? '' : L('مفيش صورة', 'No picture') }, linked: { st: linked ? 'ok' : 'bad', why: linked ? '' : L('الطلب لسه مش متقفل', 'The request is still open') }, notice: n ? pushStep(n) : { st: 'bad', why: L('الإشعار ماتعملش', 'No notification') } }, noticeId: n ? n.id : null });
+    });
+    list('purchases').forEach(p => {
+      if (!p) return;
+      const add = (x, pid, tid, label) => {
+        if (!x || ts(x.at) < since) return; const n = byId('tasks', tid);
+        const photo = !!((x.fileIds || []).length || x.thumb || x.proofUrl || x.proofPath);
+        const linked = pid !== 'main' || !['transfer', 'approval', 'approved'].includes(p.status);
+        out.push({ k: 'p', id: p.id, pay: pid, at: x.at, who: p.supplier || '', purpose: `${L('أمر شراء', 'PO')} ${p.number || ''}${label ? ' · ' + label : ''}`, amount: +x.amount || 0, href: '#/purchases/' + p.id, retried: x.sysRetry || null, noticeTid: tid,
+          steps: { saved: { st: 'ok' }, photo: { st: photo ? 'ok' : (x.trfPending ? 'wait' : 'bad'), why: photo ? '' : L('مفيش صورة', 'No picture') }, linked: { st: linked ? 'ok' : 'bad', why: linked ? '' : L('الأمر لسه «بانتظار التحويل»', 'The PO still says «waiting for the transfer»') }, notice: n ? pushStep(n) : { st: 'bad', why: L('المشتريات ماوصلهاش إشعار', 'Purchasing got no notification') } }, noticeId: n ? n.id : null });
+      };
+      if (p.transfer && p.transfer.at) add(p.transfer, 'main', `po_ok_${p.id}`, '');
+      ((p.deferred && p.deferred.payments) || []).forEach(x => add(x, x.id, `po_pl_${x.id}`, L('آجل', 'deferred')));
+    });
+    return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  }
+  const bad = it => Object.values(it.steps).some(s => s.st === 'bad');
+  const fixable = it => Object.entries(it.steps).some(([k, s]) => s.st === 'bad' && (k === 'notice' ? !s.nodev : k === 'linked'));
+  window.nfXferChecks = items;
+
+  /* ---------- redo a missing step (fixed ids — never doubles) ---------- */
+  async function fix(it, auto) {
+    try {
+      if (it.k === 'x') {
+        const x = byId('money', it.id); if (!x) return;
+        if (it.steps.notice.st === 'bad') { if (!it.noticeId) await holderNotice(x); else await pushAgain(it.noticeId); }
+        if (it.steps.linked.st === 'bad' && x.reqId) { const r = byId('requests', x.reqId); if (r && !r.paidAt) await Store.update('requests', r.id, { toPay: false, paidAt: x.at || nowISO(), paidByName: x.byName || S.session?.name || '' }, { silent: true }); }
+        await Store.update('money', x.id, { sysRetry: nowISO() }, { silent: true });
+      } else {
+        const p = byId('purchases', it.id); if (!p) return;
+        if (it.steps.linked.st === 'bad' && it.pay === 'main' && p.status === 'transfer') await Store.update('purchases', p.id, { status: 'ordered' });
+        if (it.steps.notice.st === 'bad') {
+          if (!byId('tasks', it.noticeTid)) { const s = typeof supplierOf === 'function' ? supplierOf(p) : null; await notifyRole('purch', L(`تم تحويل قيمة ${p.number} للمورد — اطلب التوريد`, `${p.number} is paid to the supplier — order the supply`), `${p.supplier || ''}${s && s.phone ? ` · ${s.phone}` : ''}`, { id: it.noticeTid, orderId: p.orderId || null, fields: { purchaseId: p.id } }); }
+          else await pushAgain(it.noticeTid);
+        }
+        const mark = { sysRetry: nowISO() }; const p1 = byId('purchases', p.id) || p;
+        if (it.pay === 'main') await Store.update('purchases', p.id, { transfer: Object.assign({}, p1.transfer, mark) }, { silent: true });
+        else await Store.update('purchases', p.id, { deferred: Object.assign({}, p1.deferred, { payments: (p1.deferred.payments || []).map(y => y.id === it.pay ? Object.assign({}, y, mark) : y) }) }, { silent: true });
+      }
+      if (!auto) toast(L('اتعادت الخطوة الناقصة', 'The missing step was redone'));
+    } catch (e) { console.warn('xfer fix', e); if (!auto) toast(L('مقدرتش أعيدها — جرّب تاني', 'Could not redo it — try again'), 'err'); }
+  }
+  const key = it => it.k === 'x' ? 'x:' + it.id : `p:${it.id}:${it.pay}`;
+  ACTIONS.xfFix = async k => { const it = items().find(i => key(i) === k); if (it) { await fix(it, false); render(false); } };
+  ACTIONS.xfFixAll = async () => { for (const it of items().filter(i => bad(i) && fixable(i))) await fix(it, true); toast(L('اتعادت الخطوات الناقصة', 'The missing steps were redone')); render(false); };
+  ACTIONS.xfMore = () => { S.ui.xfAll = !S.ui.xfAll; render(false); };
+  let autoBusy = false;
+  async function autoFix() {
+    if (autoBusy || !isAdmin() || !(typeof writable !== 'function' || writable())) return; autoBusy = true;
+    try { for (const it of items()) { if (!bad(it) || !fixable(it) || it.retried) continue; if (Date.now() - ts(it.at) < RETRY_AFTER || Date.now() - ts(it.at) > DAY) continue; await fix(it, true); } } finally { autoBusy = false; }
+  }
+
+  /* ---------- the owner's dashboard card ---------- */
+  const STEP = () => [['saved', L('اتسجّل', 'Recorded')], ['photo', L('الصورة', 'Picture')], ['linked', L('اتربط', 'Linked')], ['notice', L('الإشعار', 'Notified')]];
+  const mk = st => st === 'ok' ? '✓' : st === 'wait' ? '…' : st === 'unk' ? '–' : '!';
+  const dot = (s, lab) => `<span class="xfs xf-${s.st}" title="${esc(s.why || lab)}">${mk(s.st)} ${esc(lab)}</span>`;
+  const row = it => `<div class="xfr ${bad(it) ? 'xf-bad' : ''}"><a class="xfm" href="${esc(it.href)}"><div class="xft"><b>${esc(it.who)}</b><span class="tiny muted">${esc(hm(it.at))}${ts(it.at) < Date.now() - DAY ? ' · ' + esc(fmtDate(String(it.at).slice(0, 10))) : ''}</span></div><div class="tiny">${esc(it.purpose)} · <b>${esc(money(it.amount))}</b></div></a>
+    <div class="xfd">${STEP().map(([k, lab]) => dot(it.steps[k], lab)).join('')}${bad(it) ? `${Object.values(it.steps).filter(s => s.st === 'bad').map(s => `<span class="tiny xfw">${esc(s.why || '')}</span>`).join('')}${fixable(it) ? `<button type="button" class="btn xs" data-action="xfFix" data-arg="${esc(key(it))}">${esc(L('إعادة', 'Retry'))}</button>` : ''}` : ''}</div></div>`;
+  function card() {
+    const all = items(); if (!all.length) return '';
+    const nBad = all.filter(bad).length; const shown = S.ui.xfAll ? all : all.slice(0, 6);
+    return `<div class="card xfc" id="xfcard"><div class="cardhead"><h3>${icon('money')}${esc(L('التحويلات', 'Transfers'))}</h3>${nBad ? `<span class="badge crit">${esc(L(`فيه ${nBad} محتاج إعادة`, `${nBad} need a retry`))}</span>` : `<span class="badge good">${esc(L('كله تمام ✓', 'All good ✓'))}</span>`}<div class="grow"></div>${nBad && all.some(i => bad(i) && fixable(i)) ? `<button type="button" class="btn sm" data-action="xfFixAll">${esc(L('إعادة الكل', 'Retry all'))}</button>` : ''}</div>
+      <div class="tiny muted" style="margin:-4px 0 8px">${esc(L('آخر 7 أيام — كل تحويل: اتسجّل · الصورة · اتربط بالطلب أو أمر الشراء · الإشعار وصل لموبايل اللي بتحوّله.', 'Last 7 days — each transfer: recorded · picture · linked to the request or the PO · the notification reached the person\'s phone.'))}</div>
+      <div class="xfl">${shown.map(row).join('')}</div>${all.length > 6 ? `<button type="button" class="btn ghost sm" data-action="xfMore" style="margin-top:6px">${esc(S.ui.xfAll ? L('أقل', 'Less') : L(`كل التحويلات (${all.length})`, `All transfers (${all.length})`))}</button>` : ''}</div>`;
+  }
+  RENDER_HOOKS.push(() => {
+    try {
+      const v = document.getElementById('view'); const old = v && v.querySelector('#xfcard'); if (old) old.remove();
+      if (!v || !S.session || !isAdmin() || !S.route) return;
+      if (!(S.route.view === 'dashboard' || (S.route.view === 'money' && !S.route.id))) return;
+      const h = card(); if (!h) return;
+      const omf = v.querySelector('#omf'); if (omf) omf.insertAdjacentHTML('afterend', h); else v.insertAdjacentHTML('afterbegin', h);
+      setTimeout(autoFix, 1500);
+    } catch (e) { /* ignore */ }
+  });
+
+  /* ---------- right after a transfer: the small «done ✓» card ---------- */
+  const fresh = new Map(); let freshT = null;
+  const watch = k => { fresh.set(k, Date.now()); if (!freshT) freshT = setInterval(paintFresh, 1500); setTimeout(paintFresh, 900); setTimeout(() => { for (const it of items()) if (fresh.has(key(it)) && bad(it) && fixable(it) && !it.retried && Date.now() - ts(it.at) > 9000) fix(it, true); }, 12000); };
+  function paintFresh() {
+    for (const [k, t] of fresh) if (Date.now() - t > 120e3) fresh.delete(k);
+    let el = document.getElementById('xfnow');
+    if (!fresh.size || !isAdmin()) { if (el) el.remove(); if (freshT) { clearInterval(freshT); freshT = null; } return; }
+    const its = items().filter(i => fresh.has(key(i))); if (!its.length) return;
+    const allOk = its.every(i => !bad(i) && !Object.values(i.steps).some(s => s.st === 'wait'));
+    const h = `<div class="xfnh"><b>${esc(allOk ? L('التحويل اتعمل ✓', 'The transfer is done ✓') : L('بنتأكد من التحويل…', 'Checking the transfer…'))}</b><button type="button" class="btn xs ghost" data-action="xfNowClose" aria-label="close">✕</button></div>${its.map(it => `<div class="xfnr"><div class="small"><b>${esc(it.who)}</b> · ${esc(it.purpose)}</div><ul>${[['saved', it.k === 'x' ? L(`اتسجّل في عهدة ${it.who}`, `Recorded in ${it.who}'s custody`) : L(`اتسجّل على ${it.purpose}`, `Recorded on ${it.purpose}`), ''], ['photo', L('صورة التحويل اترفعت واتربطت', 'The transfer picture is uploaded and attached'), L('صورة التحويل', 'The transfer picture')], ['linked', it.k === 'x' ? L('الطلب اتقفل «اتحوّل»', 'The request is closed «transferred»') : L('الأمر اتنقل لـ«التوريد»', 'The PO moved on to «supply»'), it.k === 'x' ? L('قفل الطلب', 'Closing the request') : L('نقل الأمر لـ«التوريد»', 'Moving the PO to «supply»')], ['notice', it.k === 'x' ? L(`الإشعار وصل لموبايل ${it.who}`, `The notification reached ${it.who}'s phone`) : L('الإشعار وصل للمشتريات', 'Purchasing got the notification'), it.k === 'x' ? L(`الإشعار لموبايل ${it.who}`, `The notification to ${it.who}'s phone`) : L('الإشعار للمشتريات', 'The notification to purchasing')]].map(([k, okLab, otherLab]) => { const s = it.steps[k]; const lab = s.st === 'ok' || !otherLab ? okLab : otherLab; return `<li class="xf-${s.st}">${mk(s.st)} ${esc(lab)}${s.st === 'bad' && s.why ? ` — <span class="tiny">${esc(s.why)}</span>` : ''}</li>`; }).join('')}</ul>${bad(it) && fixable(it) ? `<button type="button" class="btn xs" data-action="xfFix" data-arg="${esc(key(it))}">${esc(L('إعادة', 'Retry'))}</button>` : ''}</div>`).join('')}`;
+    if (!el) { document.body.insertAdjacentHTML('beforeend', `<div id="xfnow" class="xfnow" role="status"></div>`); el = document.getElementById('xfnow'); }
+    if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; }
+    el.style.display = document.querySelector('.overlay, #nfviewer, #mform') ? 'none' : '';   /* never over a window */
+  }
+  ACTIONS.xfNowClose = () => { fresh.clear(); paintFresh(); };
+
+  /* ---------- catch the transfers as they are recorded ---------- */
+  Store.save = (base => async function (col, doc, opts) {
+    const r = await base.apply(this, arguments);
+    try {
+      if (col === 'money' && doc && doc.type === 'xfer' && isAdmin() && walletOf(doc.to) && !walletOf(doc.from)) {
+        const x = byId('money', doc.id) || doc; await holderNotice(x); watch('x:' + doc.id);
+      }
+    } catch (e) { console.warn('xfer notice', e); }
+    return r;
+  })(Store.save);
+  Store.update = (base => async function (col, id, patch, opts) {
+    const prev = col === 'purchases' ? byId('purchases', id) : null;
+    const r = await base.apply(this, arguments);
+    try {
+      if (col === 'purchases' && prev && patch && isAdmin()) {
+        if (patch.transfer && patch.transfer.at && !(prev.transfer && prev.transfer.at)) watch(`p:${id}:main`);
+        const a = ((prev.deferred && prev.deferred.payments) || []).length, pays = (patch.deferred && patch.deferred.payments) || null;
+        if (pays && pays.length > a) { const last = pays[pays.length - 1]; if (last && last.id) watch(`p:${id}:${last.id}`); }
+      }
+    } catch (e) { /* ignore */ }
+    return r;
+  })(Store.update);
+
+  document.head.insertAdjacentHTML('beforeend', `<style>
+.xfc .xfl{display:flex;flex-direction:column;gap:6px}.xfr{border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.xfr.xf-bad{border-color:var(--crit-ink,#c0362c);background:rgba(192,54,44,.05)}.xfm{color:inherit;text-decoration:none;display:flex;flex-direction:column;gap:2px}
+.xft{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.xfd{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.xfs{font-size:11.5px;border-radius:999px;padding:2px 8px;font-weight:700}.xfs.xf-ok{background:var(--good-soft,#e3f6e8);color:var(--good-ink,#1f7a3a)}
+.xfs.xf-bad{background:var(--crit-soft,#fde7e5);color:var(--crit-ink,#c0362c)}.xfs.xf-wait,.xfs.xf-unk{background:var(--surface-2);color:var(--ink-2)}.xfw{color:var(--crit-ink,#c0362c)}
+.xfnow{position:fixed;inset-inline-end:16px;bottom:96px;z-index:45;width:min(360px,calc(100vw - 32px));background:var(--surface,#fff);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.18);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.xfnh{display:flex;justify-content:space-between;align-items:center;gap:8px}.xfnr ul{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:13px}
+.xfnr li.xf-ok{color:var(--good-ink,#1f7a3a)}.xfnr li.xf-bad{color:var(--crit-ink,#c0362c)}.xfnr li.xf-wait,.xfnr li.xf-unk{color:var(--ink-2)}
+@media (min-width:900px){.xfnow{bottom:24px}}
+.xfnow li,.xfc .xfs{display:block;padding:0;border:0}.xfc .xfs{display:inline-flex;align-items:center;gap:3px;padding:2px 8px!important;min-height:0;height:auto;line-height:1.4;margin:0;vertical-align:middle}.xfnow li{min-height:0;height:auto;line-height:1.5;margin:0;text-align:start;justify-content:flex-start}.xfnow li::before,.xfnow li::after,.xfc .xfs::before,.xfc .xfs::after,.xfc .xfd::before{content:none!important;display:none!important}
+</style>`);
 })();
