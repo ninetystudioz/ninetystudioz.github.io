@@ -60337,3 +60337,620 @@ html.nf-guest #pushreq,html.nf-guest #nf-pushfix{display:none!important}
   };
   document.head.insertAdjacentHTML('beforeend', `<style>.pocallbar{display:flex;justify-content:flex-end;margin:0 0 10px}.pocallbar .btn{display:inline-flex;align-items:center;gap:6px}.pocallbar .btn svg{width:16px;height:16px}</style>`);
 })();
+/* =====================================================================
+   v7.95b — Mahmoud (17 Oct, approved with his PIN): until the official WhatsApp works, the activation-code senders (Bahaa)
+   also make a «forgot password» code for an employee whose account is already active (never the owner / HR / himself).
+   Server: RPC nf_reset_people (the list; people who asked from the login screen come first) and nf_set_reset_code.
+   Both refuse ('wa_live') once a WhatsApp password code went out — the card then disappears by itself. Factory only.
+   ===================================================================== */
+(function () {
+  if (window.__NF_RESETSEND__) return; window.__NF_RESETSEND__ = 1;
+  if ((typeof isStudioz === 'function' && isStudioz()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  const L = (a, b) => (typeof I18N !== 'undefined' && I18N.lang === 'en' ? b : a);
+  const hosted = () => typeof sbOn === 'function' && sbOn() && !!S.sb && !!S.sbUser;
+  const roleL = r => (typeof ROLES !== 'undefined' && ROLES[r]) || r || '';
+  let rows = null, rowsAt = 0, q = '', open = false, lastSession = '';
+  async function load(force) {
+    if (!hosted() || !S.session || !S.session.workerId) return [];
+    if (lastSession !== S.session.id) { rows = null; lastSession = S.session.id; }
+    if (!force && rows && Date.now() - rowsAt < 60000) return rows;
+    try { const { data, error } = await S.sb.rpc('nf_reset_people'); if (!error && Array.isArray(data)) { rows = data.map(x => ({ id: x.id, name: x.name || '', role: x.role || '', phone: x.phone || '', username: x.username || '', exp: x.code_exp || '', reqAt: x.req_at || '' })); rowsAt = Date.now(); } else rows = []; } catch (e) { /* offline */ }
+    return rows || [];
+  }
+  const norm = s => String(s || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+  function card() {
+    const all = rows || []; if (!all.length) return '';
+    const asked = all.filter(w => w.reqAt);
+    const shown = q ? all.filter(w => norm(w.name).includes(norm(q)) || String(w.phone).includes(q)) : (open ? all : asked);
+    const item = w => { const live = !!(w.exp && w.exp > nowISO()); return `<div class="item"><div class="main"><div class="title"><span>${esc(w.name)}</span>${w.reqAt ? `<span class="badge warn">${L('طلب كلمة سر', 'Asked for a password')}</span>` : ''}</div><div class="meta"><span>${esc(roleL(w.role))}</span>${w.phone ? `<span class="ltr">${esc(w.phone)}</span>` : ''}${live ? `<span class="badge good">${L('اتعمله كود', 'Code made')}</span>` : ''}</div></div><button type="button" class="btn sm" data-action="resetSend" data-arg="${esc(w.id)}">${L('كود تغيير الباسورد', 'Password reset code')}</button></div>`; };
+    return `<div class="card" id="rstsend-card"><div class="cardhead"><h3>${icon('shield')}${L('نسيت كلمة السر', 'Forgot password')}</h3>${asked.length ? `<span class="badge warn">${asked.length}</span>` : ''}</div>
+      <div class="tiny muted" style="margin-bottom:8px">${L('لحد ما الواتساب الرسمي يشتغل: اعمل كود تغيير الباسورد للموظف وابعتهوله. الكود صالح 48 ساعة. بعد ما الواتساب يشتغل الكارت ده بيختفي لوحده.', 'Until the official WhatsApp works: make a password reset code for the employee and send it. The code is valid for 48 hours. Once WhatsApp works this card disappears by itself.')}</div>
+      <input type="search" class="rst-q" placeholder="${L('دوّر باسم الموظف أو الموبايل', 'Search by name or mobile')}" value="${esc(q)}" dir="auto" style="width:100%;margin-bottom:8px">
+      ${shown.length ? `<div class="list">${shown.map(item).join('')}</div>` : `<p class="muted small">${q ? L('مفيش حد بالاسم ده', 'No one by that name') : L('مفيش طلبات دلوقتي — دوّر على أي موظف لو محتاج كود', 'No requests now — search for any employee who needs a code')}</p>`}
+      ${!q && !open ? `<button type="button" class="btn sm ghost" data-action="resetAll">${L('كل الموظفين', 'All employees')} (${all.length})</button>` : ''}</div>`;
+  }
+  async function place() {
+    if (!S.session || !S.route || S.route.view !== 'dashboard' || !S.session.workerId || !hosted()) return;
+    await load(false); const v = document.getElementById('view'); if (!v) return;
+    const html = card(); const old = document.getElementById('rstsend-card');
+    if (!html) { if (old) old.remove(); return; }
+    if (old) { if (old.outerHTML !== html) { const f = document.activeElement && document.activeElement.classList.contains('rst-q'); old.outerHTML = html; if (f) { const i = document.querySelector('#rstsend-card .rst-q'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } } return; }
+    const a = document.getElementById('actsend-card'); if (a) a.insertAdjacentHTML('afterend', html); else v.insertAdjacentHTML('afterbegin', html);
+  }
+  if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => setTimeout(place, 60));
+  document.addEventListener('input', e => { if (!e.target.classList || !e.target.classList.contains('rst-q')) return; q = e.target.value.trim(); place(); });
+  ACTIONS.resetAll = () => { open = true; place(); };
+  ACTIONS.resetSend = async wid => {
+    const w = (rows || []).find(x => x.id === wid); if (!w) return;
+    const code = String(Math.floor(100000 + Math.random() * 900000)); const exp = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    let r = 'net';
+    try { const { data, error } = await S.sb.rpc('nf_set_reset_code', { p_wid: w.id, p_hash: await hashPin(w.id, code), p_exp: exp }); r = error ? 'net' : data; } catch (e) { r = 'net'; }
+    if (r !== 'ok') {
+      const msg = { wa_live: L('الواتساب الرسمي اشتغل — الكود بيوصل للموظف لوحده من شاشة الدخول', 'The official WhatsApp works now — the employee gets the code himself from the login screen'), not_activated: L('الموظف ده لسه ما فعّلش حسابه — استخدم «كود تفعيل»', 'This employee has not activated yet — use «Activation code»'), forbidden: L('مش مسموح لك تعمل كود للحساب ده', 'You may not make a code for this account'), not_allowed: L('مش مسموح لك تعمل كود للحساب ده', 'You may not make a code for this account') }[r] || L('مقدرتش أعمل الكود — جرّب تاني', 'Could not make the code — try again');
+      toast(msg, 'err'); load(true).then(place); return;
+    }
+    w.exp = exp;
+    codeModal({ title: `${L('كود تغيير كلمة السر', 'Password reset code')} — ${w.name}`, name: w.name, login: w.phone || w.username || '', code, reset: true, phone: w.phone || '' });
+    setTimeout(place, 50);
+  };
+  document.addEventListener('nf:login', () => { rows = null; q = ''; open = false; });
+})();
+/* =====================================================================
+   v8.00 — the owner's own «ChatGPT» page (brief claude/chatgpt-module-brief.md, Mahmoud go-ahead 17 Oct). FACTORY system only.
+   · #/gpt (new chat) · #/gpt/<convId> · #/gpt/new?order=<orderId> (a chat about one project) · #/gpt/new?product=<productId> (about one
+     product). Owner only (isAdmin(), not while «viewing as» someone): the menu entry, the page, the settings tile and the project /
+     product buttons are hidden for everyone else, and the Edge «gptchat» refuses anyone who is not profiles.role = 'admin' (403); the
+     conversations (docs col «gptchats») are readable by the owner only and written by the Edge only (server/sql/v795-gptchat.sql).
+   · v8.00 b (owner follow-up «make the interface smart — it is a design module»): a calm two-pane AI workspace in the app's own tokens
+     (Advanced and Icons looks, day and night) — conversation list with search and project / product chips, a greeting with
+     suggestion chips, a rounded composer docked at the bottom with attach / mic / model inside it, a typing indicator, rich result
+     cards (task, project with stage progress, product with its picture, purchase) under the answer, proposal cards with one look per
+     kind. Phone: the list is a side drawer, the composer follows the keyboard (visualViewport) and the safe areas.
+   · Actions are PROPOSALS that run only on «Do it» (Edge 'execute', the app's own doc shapes / numbering / notifications): a task,
+     a reply on a task, an external order (EXT), sharing product files to a project (CAD sources stay confidential), a materials
+     request for a project (stock → store issue, shortage → purchase order, uncoded → new-item request). No money approvals / transfers.
+   · Voice input (server Whisper when the key is set — the same «stt» Edge as the assistant — else the browser's recognition),
+     attach a picture (the system picture sheet, parts/99zzZzZZzzzE-img-pick.js) or a text / CSV file; model picker (fast / stronger).
+   · The OpenAI key is pasted in «Settings ← ChatGPT» (never in the chat), stored on the server only, never shown again; one key shared
+     with the voice input and the meetings. A monthly usage counter (approximate).
+   Calls: window.nfGptCall(action, body) → the Edge (tests replace it); window.nfGptDocs.{list,get} → the saved conversations.
+   ===================================================================== */
+(function () {
+  if (window.__NF_GPTCHAT__) return; window.__NF_GPTCHAT__ = 1;
+  if ((typeof isStuSys === 'function' && isStuSys()) || (typeof isStudioz === 'function' && isStudioz()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  if (typeof NAV === 'undefined' || typeof EXTRA_VIEWS === 'undefined' || typeof canSee !== 'function') return;
+  const L = (a, b) => (typeof I18N !== 'undefined' && I18N.lang === 'en' ? b : a);
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const viewing = () => typeof isViewing === 'function' && isViewing();
+  const owner = () => !!S.session && isAdmin() && !viewing() && role() !== 'kiosk';
+  const hosted = () => typeof sbOn === 'function' && sbOn() && !!S.sb;
+  const MODELS = [{ id: 'gpt-5-mini', tier: 'fast' }, { id: 'gpt-5', tier: 'strong' }];
+  const tierLabel = t => (t === 'strong' ? L('أقوى', 'Stronger') : L('سريع', 'Fast'));
+  const st = { convs: null, convsAt: 0, loadingList: false, cur: null, conv: null, cache: new Map(), draft: '', atts: [], busy: false, err: '', status: null, statusAt: 0, statusBusy: false, listOpen: false, orderId: null, productId: null, q: '', rec: null, keyBusy: false };
+  window.nfGptState = st;
+  const model = () => { try { const m = localStorage.getItem('nf.gptModel'); return MODELS.some(x => x.id === m) ? m : MODELS[0].id; } catch (e) { return MODELS[0].id; } };
+  const setModel = m => { try { localStorage.setItem('nf.gptModel', m); } catch (e) { /* private mode */ } };
+
+  /* ---------------- calls (tests replace window.nfGptCall / window.nfGptDocs) ---------------- */
+  async function edgeCall(action, body) {
+    if (!hosted() || !S.sb.functions) return { error: 'offline' };
+    let r; try { r = await S.sb.functions.invoke('gptchat', { body: Object.assign({ action }, body || {}) }); } catch (e) { return { error: 'network' }; }
+    if (r && r.error) { const status = r.error.context && r.error.context.status; let j = {}; try { j = await r.error.context.json(); } catch (e) { /* not json */ } return { error: (j && j.error) || (status === 403 ? 'forbidden' : status === 401 ? 'unauthorized' : status === 404 ? 'not_deployed' : 'upstream'), status }; }
+    return (r && r.data) || {};
+  }
+  async function docsList() {
+    if (!hosted() || !S.sb.from) return [];
+    const { data, error } = await S.sb.from('docs').select('id, updated_at, title:data->>title, orderId:data->>orderId, orderCode:data->>orderCode, productId:data->>productId, productCode:data->>productCode, updatedAt:data->>updatedAt').eq('col', 'gptchats').order('updated_at', { ascending: false }).limit(200);
+    if (error) throw error; return (data || []).map(r => ({ id: r.id, title: r.title || '', orderId: r.orderId || null, orderCode: r.orderCode || '', productId: r.productId || null, productCode: r.productCode || '', updatedAt: r.updatedAt || r.updated_at || '' }));
+  }
+  async function docsGet(id) { if (!hosted() || !S.sb.from) return null; const { data, error } = await S.sb.from('docs').select('data').eq('col', 'gptchats').eq('id', id).maybeSingle(); if (error) throw error; return data ? data.data : null; }
+  if (!window.nfGptCall) window.nfGptCall = edgeCall;
+  if (!window.nfGptDocs) window.nfGptDocs = { list: docsList, get: docsGet };
+  const call = (a, b) => Promise.resolve((window.nfGptCall || edgeCall)(a, b)).catch(e => ({ error: 'network', detail: String(e && e.message || e) }));
+
+  const ERR = e => ({
+    offline: L('ChatGPT بيشتغل في النسخة المستضافة بس.', 'ChatGPT works in the hosted app only.'),
+    network: L('مشكلة في الاتصال — جرّب تاني.', 'Connection problem — try again.'),
+    forbidden: L('الصفحة دي للمالك بس.', 'This page is for the owner only.'),
+    unauthorized: L('سجّل الدخول من جديد.', 'Please sign in again.'),
+    not_deployed: L('وظيفة ChatGPT مش منشورة على السيرفر لسه.', 'The ChatGPT function is not deployed on the server yet.'),
+    no_key: L('مفيش مفتاح OpenAI — حطه من الإعدادات ← ChatGPT.', 'No OpenAI key — add it in Settings → ChatGPT.'),
+    bad_key: L('مفتاح OpenAI مش شغال — غيّره من الإعدادات ← ChatGPT.', 'The OpenAI key does not work — change it in Settings → ChatGPT.'),
+    no_credit: L('حساب OpenAI مفيهوش رصيد — اشحن من platform.openai.com.', 'The OpenAI account has no credit — top up at platform.openai.com.'),
+    rate_limited: L('طلبات كتير في نفس الوقت — استنى شوية وجرّب.', 'Too many requests — wait a little and try again.'),
+    timeout: L('الرد اتأخر — جرّب سؤال أبسط أو الموديل السريع.', 'The answer took too long — try a simpler question or the fast model.'),
+    model: L('الموديل ده مش متاح على حسابك — جرّب «سريع».', 'This model is not available on your account — try «Fast».'),
+    bad_format: L('المفتاح لازم يبدأ بـ sk-', 'The key must start with sk-'),
+    unreachable: L('مقدرناش نوصل لـ OpenAI علشان نجرّب المفتاح.', 'Could not reach OpenAI to check the key.'),
+    check_failed: L('OpenAI مأكدش المفتاح — جرّب تاني.', 'OpenAI did not confirm the key — try again.'),
+  }[e] || L('حصلت مشكلة — جرّب تاني.', 'Something went wrong — try again.'));
+
+  /* ---------------- data ---------------- */
+  async function loadStatus(force) {
+    if (st.statusBusy || (!force && st.status && Date.now() - st.statusAt < 60000)) return;
+    st.statusBusy = true; const r = await call('status', {}); st.statusBusy = false; st.status = r || {}; st.statusAt = Date.now(); paint();
+  }
+  async function loadList(force) {
+    if (st.loadingList || (!force && st.convs && Date.now() - st.convsAt < 30000)) return;
+    st.loadingList = true; try { st.convs = await window.nfGptDocs.list(); } catch (e) { st.convs = st.convs || []; } st.loadingList = false; st.convsAt = Date.now(); paint();
+  }
+  async function openConv(id) {
+    if (st.cache.has(id)) { st.conv = st.cache.get(id); paint(); return; }
+    st.conv = { id, loading: true, messages: [] }; paint();
+    let d = null; try { d = await window.nfGptDocs.get(id); } catch (e) { d = null; }
+    if (st.cur !== id) return;
+    st.conv = d ? Object.assign({ id }, d, { messages: Array.isArray(d.messages) ? d.messages : [] }) : { id, missing: true, messages: [] }; if (d) st.cache.set(id, st.conv); st.stick = true; paint();
+  }
+  const paint = () => { if (S.route && (S.route.view === 'gpt' || (S.route.view === 'settings' && S.route.id === 'gptchat') || S.route.view === 'orders' || S.route.view === 'products')) rerender(); };
+
+  /* the route → state */
+  function syncRoute() {
+    const r = S.route || {}; const raw = String(r.id || ''); let id = raw, q = '';
+    const i = raw.indexOf('?'); if (i >= 0) { id = raw.slice(0, i); q = raw.slice(i + 1); }
+    if (!id || id === 'new') { const m = /(?:^|&)order=([\w-]+)/.exec(q); const mp = /(?:^|&)product=([\w-]+)/.exec(q); const oid = m ? m[1] : null; const pid = !oid && mp ? mp[1] : null; if (st.cur !== null || st.orderId !== oid || st.productId !== pid) { st.cur = null; st.conv = null; st.orderId = oid; st.productId = pid; st.err = ''; } return; }
+    if (st.cur !== id) { st.cur = id; st.orderId = null; st.productId = null; st.err = ''; openConv(id); }
+  }
+
+  /* ---------------- rendering ---------------- */
+  const fmtD = s => { if (!s) return ''; const d = String(s).slice(0, 10); try { return typeof fmtDate === 'function' ? fmtDate(d) : d; } catch (e) { return d; } };
+  const ordLabel = (id, code) => { const o = id && typeof byId === 'function' ? byId('orders', id) : null; return o ? (o.code || '') + (o.title ? ' — ' + o.title : '') : (code || id || ''); };
+  const prdLabel = (id, code) => { const p = id && typeof byId === 'function' ? byId('products', id) : null; return p ? `${p.code ? p.code + ' — ' : ''}${p.name || ''}` : (code || id || ''); };
+  const tr = s => { try { return en() && typeof i18nTr === 'function' ? (i18nTr(String(s)) || s) : s; } catch (e) { return s; } };
+  /* small line icons of this page (stroke, currentColor) */
+  const GI = {
+    task: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12.2l2.4 2.4 4.8-5"/>',
+    reply: '<path d="M20 12a7.5 7.5 0 0 1-11 6.6L4 20l1.4-4.4A7.5 7.5 0 1 1 20 12z"/><path d="M9 11h6M9 14h4"/>',
+    ext: '<path d="M3 20V10l5 3V10l5 3V10l5 3V5h3v15z"/><path d="M7 17h2M12 17h2"/>',
+    share: '<circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.2 11l7.6-3.9M8.2 13l7.6 3.9"/>',
+    material: '<path d="M12 3l8 4.2v9.6L12 21l-8-4.2V7.2z"/><path d="M4 7.2l8 4.3 8-4.3M12 11.5V21"/>',
+    order: '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    product: '<path d="M4 8l8-4 8 4-8 4z"/><path d="M4 8v8l8 4 8-4V8"/>',
+    purchase: '<path d="M5 7h14l-1.4 9.2a2 2 0 0 1-2 1.8H8.4a2 2 0 0 1-2-1.8z"/><path d="M9 7a3 3 0 0 1 6 0"/>',
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    file: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+    spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
+  };
+  const gi = (n, cls) => `<svg class="gi${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GI[n] || ''}</svg>`;
+  /* markdown-light: paragraphs, lists, bold, inline code, code blocks, internal #/ links */
+  function md(src) {
+    const s = String(src || ''); const out = []; const parts = s.split(/```/);
+    const inline = t => esc(t).replace(/\[([^\]]+)\]\((#\/[a-z]+(?:\/[\w-]+)?|https:\/\/[^\s)]+)\)/g, (m, x, h) => `<a href="${h}"${h[0] === '#' ? '' : ' target="_blank" rel="noopener"'}>${x}</a>`).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+?)`/g, '<code>$1</code>').replace(/(^|[\s(（])(#\/[a-z]+(?:\/[\w-]+)?)/g, (m, p, h) => `${p}<a href="${h}">${h}</a>`);
+    parts.forEach((chunk, k) => {
+      if (k % 2 === 1) { const body = chunk.replace(/^[\w+-]*\n/, ''); out.push(`<pre class="gpt-pre" dir="ltr"><code>${esc(body.replace(/\n$/, ''))}</code></pre>`); return; }
+      let list = null; const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+      chunk.split('\n').forEach(l => {
+        const t = l.trim(); if (!t) { close(); return; }
+        if (/^#{1,4}\s/.test(t)) { close(); out.push(`<h4 dir="auto">${inline(t.replace(/^#+\s*/, ''))}</h4>`); return; }
+        const ul = /^[-*•]\s+/.test(t), ol = /^\d+[.)]\s+/.test(t);
+        if (ul || ol) { const kind = ul ? 'ul' : 'ol'; if (list !== kind) { close(); out.push(`<${kind}>`); list = kind; } out.push(`<li dir="auto">${inline(t.replace(/^([-*•]|\d+[.)])\s+/, ''))}</li>`); return; }
+        close(); out.push(`<p dir="auto">${inline(t)}</p>`);
+      });
+      close();
+    });
+    return out.join('');
+  }
+
+  /* ---- rich result cards (from the tools the answer used) ---- */
+  const TSTAT = () => ({ open: [L('مفتوحة', 'Open'), 'warn'], doing: [L('جارية', 'In progress'), 'acc'], done: [L('منتهية', 'Done'), 'good'], cancelled: [L('ملغاة', 'Cancelled'), ''] });
+  const pill = (txt, cls) => txt ? `<span class="gpt-pill ${cls || ''}">${esc(txt)}</span>` : '';
+  const stOf = (map, k) => { const v = (typeof map === 'object' && map && map[k]) || null; return v ? [tr(v[0]), v[1]] : [k || '', '']; };
+  const thumbOf = c => { try { const f = c.coverFileId && byId('files', c.coverFileId); if (f && f.thumb) return f.thumb; const fs = list('files').filter(x => x.productId === c.id && !x.deleted && x.thumb); return fs.length ? fs[0].thumb : ''; } catch (e) { return ''; } };
+  function cardHTML(c) {
+    if (!c || !c.id) return '';
+    if (c.type === 'task') { const s = TSTAT()[c.status || 'open'] || [c.status, '']; return `<a class="gpt-rc t-task" href="#/tasks/${esc(c.id)}"><span class="gpt-rci">${gi('task')}</span><span class="gpt-rcb"><b dir="auto">${esc(c.title || '')}</b><span class="m">${c.assignee ? `<span>${esc(c.assignee)}</span>` : ''}${c.due ? `<span>${esc(fmtD(c.due))}</span>` : ''}${c.project ? `<span dir="auto">${esc(String(c.project).slice(0, 30))}</span>` : ''}</span><span class="r">${pill(s[0], s[1])}${c.late ? pill(L('متأخرة', 'Late'), 'crit') : ''}${c.priority === 'urgent' ? pill(L('عاجلة', 'Urgent'), 'crit') : ''}</span></span></a>`; }
+    if (c.type === 'order') { const s = stOf(typeof ORDER_STATUS !== 'undefined' ? ORDER_STATUS : null, c.status); const stages = Array.isArray(c.stages) ? c.stages : []; return `<a class="gpt-rc t-order" href="#/orders/${esc(c.id)}"><span class="gpt-rci">${gi('order')}</span><span class="gpt-rcb"><b dir="auto"><span class="code">${esc(c.code || '')}</span> ${esc(c.title || '')}</b><span class="m">${c.client ? `<span dir="auto">${esc(c.client)}</span>` : ''}${c.due ? `<span>${esc(fmtD(c.due))}</span>` : ''}</span>${c.progress != null ? `<span class="gpt-prog" title="${c.progress}%"><i style="width:${Math.max(0, Math.min(100, +c.progress || 0))}%"></i></span><span class="gpt-stg">${stages.slice(0, 8).map(x => `<span class="${['done', 'skipped'].includes(x.status) ? 'ok' : x.status === 'waiting' ? '' : 'now'}" dir="auto">${esc(x.dept || '')}</span>`).join('')}</span>` : ''}<span class="r">${pill(s[0], s[1])}${c.progress != null ? `<span class="muted tiny">${c.progress}%</span>` : ''}</span></span></a>`; }
+    if (c.type === 'product') { const th = thumbOf(c); return `<a class="gpt-rc t-product" href="#/products/${esc(c.id)}"><span class="gpt-rct">${th ? `<img src="${esc(th)}" alt="" loading="lazy">` : gi('product')}</span><span class="gpt-rcb"><b dir="auto">${esc(c.title || '')}</b><span class="m"><span class="code">${esc(c.code || '')}</span>${c.brand ? `<span>${esc(c.brand)}</span>` : ''}</span><span class="r">${pill(`${c.files || 0} ${L('ملف', 'files')}`, '')}${c.cad ? `<span class="gpt-pill warn">${gi('lock')}CAD ${c.cad}</span>` : ''}</span></span></a>`; }
+    if (c.type === 'purchase') { const s = stOf(typeof PO_STATUS !== 'undefined' ? PO_STATUS : null, c.status); return `<a class="gpt-rc t-purchase" href="#/purchases/${esc(c.id)}"><span class="gpt-rci">${gi('purchase')}</span><span class="gpt-rcb"><b><span class="code">${esc(c.number || '')}</span> <span dir="auto">${esc(c.supplier || '')}</span></b><span class="m">${c.project ? `<span dir="auto">${esc(String(c.project).slice(0, 30))}</span>` : ''}${c.total ? `<span class="num">${esc((+c.total).toLocaleString('en'))}</span>` : ''}</span><span class="r">${pill(s[0], s[1] || 'acc')}</span></span></a>`; }
+    return '';
+  }
+
+  /* ---- proposal cards: one look per kind ---- */
+  const PRI = () => ({ high: L('مهمة', 'High'), urgent: L('عاجلة', 'Urgent') });
+  const KIND = () => ({ task: L('مهمة جديدة', 'New task'), reply: L('رد على مهمة', 'Task reply'), ext: L('أمر تشغيل خارجي', 'External order'), share: L('مشاركة ملفات على مشروع', 'Share files to a project'), material: L('طلب خامات للمشروع', 'Materials for the project') });
+  const DONE_T = k => ({ task: L('المهمة اتعملت', 'The task was created'), reply: L('الرد اتبعت', 'The reply was sent'), ext: L('أمر التشغيل الخارجي اتعمل', 'The external order was created'), share: L('الملفات اتشاركت على المشروع', 'The files were shared to the project'), material: L('طلب الخامات اتبعت', 'The materials request was sent') }[k] || L('اتنفّذ', 'Done'));
+  const OPEN_T = k => ({ task: L('افتح المهمة', 'Open the task'), reply: L('افتح المهمة', 'Open the task'), ext: L('افتح الأمر', 'Open the order'), share: L('افتح المشروع', 'Open the project'), material: L('افتح المشروع', 'Open the project') }[k] || L('افتح', 'Open'));
+  const fileLine = f => `<li>${gi(f.confidential ? 'lock' : 'file', f.confidential ? 'lk' : '')}<span dir="auto">${esc(f.name || '')}</span>${f.confidential ? `<span class="gpt-pill warn">${esc(L('سرّي', 'Confidential'))}</span>` : ''}</li>`;
+  const qline = l => `<li><span dir="auto">${l.code ? `<span class="code">${esc(l.code)}</span> ` : ''}${esc(l.name || '')}</span><b class="num">${esc(String(l.qty))} ${esc(l.unit || '')}</b></li>`;
+  function propCard(p, mi) {
+    const sum = en() ? (p.summaryEn || p.summary) : p.summary; const a = p.args || {}; const v = p.view || {}; const k = p.kind || 'task';
+    let det = '';
+    if (k === 'task' && a.desc) det = `<div class="gpt-pdesc" dir="auto">${esc(String(a.desc).slice(0, 400))}</div>`;
+    else if (k === 'reply') det = `<div class="gpt-pdesc" dir="auto">${esc(String(a.text || '').slice(0, 600))}</div>`;
+    else if ((k === 'share' || k === 'ext') && Array.isArray(v.files) && v.files.length) det = `<ul class="gpt-pfiles">${v.files.slice(0, 8).map(fileLine).join('')}</ul>${v.files.some(f => f.confidential) ? `<div class="tiny muted">${esc(L('ملفات المصدر CAD بتفضل سرّية زي ما هي — بيشوفها المالك والمكتب الفني بس.', 'CAD source files stay confidential as they are — only the owner and the technical office see them.'))}</div>` : ''}`;
+    else if (k === 'material') det = `<div class="gpt-split">${[['stock', L('من المخزن', 'From stock'), 'good'], ['buy', L('شراء', 'To buy'), 'warn'], ['fresh', L('صنف جديد', 'New item'), 'acc']].filter(([key]) => (v[key] || []).length).map(([key, lbl, cls]) => `<div class="gpt-sp ${cls}"><div class="h">${esc(lbl)} <span>${(v[key] || []).length}</span></div><ul>${(v[key] || []).slice(0, 10).map(qline).join('')}</ul></div>`).join('')}</div>`;
+    let foot;
+    if (p.done) { const href = p.done.link || (p.done.taskId ? '#/tasks/' + p.done.taskId : ''); foot = `<span class="gpt-pill good">✓ ${esc(L('اتنفّذ', 'Done'))}${p.done.ref && k !== 'share' ? ' · ' + esc(p.done.ref) : ''}</span>${href ? `<a class="btn xs" href="${esc(href)}">${esc(OPEN_T(k))}</a>` : ''}`; }
+    else if (p.dismissed) foot = `<span class="gpt-pill">${esc(L('اتجاهل', 'Dismissed'))}</span>`;
+    else if (p.busy) foot = `<span class="muted small">${esc(L('بينفّذ…', 'Running…'))}</span>`;
+    else foot = `<button type="button" class="btn sm p" data-action="gptExec" data-arg="${mi}:${esc(p.id)}">${esc(L('نفّذ', 'Do it'))}</button><button type="button" class="btn sm ghost" data-action="gptDismiss" data-arg="${mi}:${esc(p.id)}">${esc(L('تجاهل', 'Dismiss'))}</button>`;
+    return `<div class="gpt-prop k-${esc(k)}${p.done ? ' is-done' : ''}" data-pid="${esc(p.id)}" data-kind="${esc(k)}"><div class="gpt-ph"><span class="gpt-pic">${gi(k)}</span><b>${esc(KIND()[k] || '')}</b>${a.priority && PRI()[a.priority] ? pill(PRI()[a.priority], a.priority === 'urgent' ? 'crit' : 'warn') : ''}<span class="grow"></span><span class="tiny muted">${esc(L('مستني موافقتك', 'Waiting for you'))}</span></div><div class="gpt-psum" dir="auto">${esc(sum || '')}</div>${det}${p.err ? `<div class="gpt-perr">${esc(p.err)}</div>` : ''}<div class="gpt-pf">${foot}</div></div>`;
+  }
+  function bubble(m, mi) {
+    const me = m.role === 'user';
+    const att = (m.att || []).map(a => a.thumb ? `<img class="gpt-thumb" src="${esc(a.thumb)}" alt="">` : `<span class="gpt-chip">${gi(a.kind === 'image' ? 'product' : 'file')}${esc(a.name || '')}</span>`).join('');
+    if (me) return `<div class="gpt-msg me"><div class="gpt-b">${att ? `<div class="gpt-atts">${att}</div>` : ''}<div class="gpt-txt" dir="auto">${esc(m.content || '').replace(/\n/g, '<br>')}</div></div></div>`;
+    const cards = Array.isArray(m.cards) && m.cards.length ? `<div class="gpt-cards">${m.cards.map(cardHTML).join('')}</div>` : '';
+    const props = Array.isArray(m.proposals) ? m.proposals.map(p => propCard(p, mi)).join('') : '';
+    return `<div class="gpt-msg bot"><span class="gpt-av">${gi('spark')}</span><div class="gpt-bc"><div class="gpt-b"><div class="gpt-md">${md(m.content || '')}</div></div>${cards}${props}</div></div>`;
+  }
+  const SUGG = () => st.orderId ? [L('لخّصلي حالة المشروع ده', 'Summarize this project for me'), L('إيه المتأخر في المشروع؟', 'What is late in this project?'), L('التكلفة لحد دلوقتي', 'The cost so far'), L('طلبات الشراء والتوريد بتاعته', 'Its purchases and supplies'), L('اعمل طلب خامات للمشروع ده', 'Make a materials request for this project')]
+    : st.productId ? [L('لخّصلي المنتج ده وملفاته', 'Summarize this product and its files'), L('شارك رسومات المنتج على مشروع', 'Share the product drawings to a project'), L('اعمل أمر تشغيل خارجي للمنتج ده', 'Make an external order for this product'), L('المنتج ده على أنهي مشاريع؟', 'Which projects is this product on?')]
+    : [L('إيه المتأخر النهارده؟', 'What is late today?'), L('اللي مستنيني', 'What is waiting for me'), L('حالة مشروع الخرافي', 'Status of the Al-Kharafi project'), L('اعمل طلب خامات لمشروع…', 'Make a materials request for a project…'), L('شارك ملف على مشروع', 'Share a file to a project'), L('مين حاضر النهارده؟', 'Who is in today?')];
+  const greet = () => { const h = new Date().getHours(); const nm = String((S.session && S.session.name) || '').split(' ')[0]; return (h < 12 ? L('صباح الخير', 'Good morning') : h < 18 ? L('نهارك سعيد', 'Good afternoon') : L('مساء الخير', 'Good evening')) + (nm ? (en() ? ', ' : ' يا ') + nm : ''); };
+  const nrm = s => String(s || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
+  function listItems() {
+    const cs = st.convs; const cur = st.cur; const q = nrm(st.q);
+    if (cs === null) return `<div class="muted small gpt-pad">${esc(L('جارٍ التحميل…', 'Loading…'))}</div>`;
+    const arr = q ? cs.filter(c => nrm(`${c.title} ${ordLabel(c.orderId, c.orderCode)} ${c.productId ? prdLabel(c.productId, c.productCode) : ''}`).includes(q)) : cs;
+    if (!arr.length) return `<div class="muted small gpt-pad">${esc(q ? L('مفيش محادثة بالكلام ده', 'No chat matches') : L('لسه مفيش محادثات.', 'No conversations yet.'))}</div>`;
+    return arr.map(c => `<a class="gpt-ci ${c.id === cur ? 'on' : ''}" href="#/gpt/${esc(c.id)}"><span class="t" dir="auto">${esc(c.title || L('محادثة', 'Conversation'))}</span><span class="m">${c.orderId ? `<span class="gpt-pj o">${gi('order')}${esc(ordLabel(c.orderId, c.orderCode).slice(0, 26))}</span>` : ''}${c.productId ? `<span class="gpt-pj p">${gi('product')}${esc(prdLabel(c.productId, c.productCode).slice(0, 26))}</span>` : ''}<span class="d">${esc(fmtD(c.updatedAt))}</span></span></a>`).join('');
+  }
+  function listHTML() {
+    return `<aside class="gpt-side ${st.listOpen ? 'open' : ''}" id="gpt-side"><div class="gpt-sh"><a class="btn p gpt-new" href="#/gpt">${icon('plus')}<span>${esc(L('محادثة جديدة', 'New chat'))}</span></a><button type="button" class="iconbtn gpt-sx" data-action="gptList" aria-label="${esc(L('اقفل', 'Close'))}">${icon('x')}</button></div><label class="gpt-sq">${gi('search')}<input id="gpt-q" type="search" value="${esc(st.q)}" placeholder="${esc(L('دوّر في المحادثات…', 'Search chats…'))}" autocomplete="off"></label><div class="gpt-cl notr" id="gpt-cl">${listItems()}</div></aside><div class="gpt-scrim" data-action="gptList"></div>`;
+  }
+  function usageLine() {
+    const m = st.status && st.status.month; if (!m) return '';
+    return `<span class="gpt-use" title="${esc(L('تقريبي — الفاتورة الحقيقية في حساب OpenAI', 'Approximate — the real bill is in the OpenAI account'))}">${esc(L('الشهر ده', 'This month'))}: $${(+m.costUsd || 0).toFixed(2)} <span class="muted">${esc(L('تقريبي', 'approx.'))}</span></span>`;
+  }
+  function emptyState() {
+    if (st.status && st.status.error === 'offline') return `<div class="gpt-empty"><div class="gpt-logo">${gi('spark')}</div><h3>ChatGPT</h3><p class="muted">${esc(ERR('offline'))}</p></div>`;
+    if (st.status && st.status.error) return `<div class="gpt-empty"><div class="gpt-logo">${gi('spark')}</div><h3>ChatGPT</h3><p class="muted">${esc(ERR(st.status.error))}</p><button type="button" class="btn" data-action="gptReload">${esc(L('جرّب تاني', 'Try again'))}</button></div>`;
+    return `<div class="gpt-empty" id="gpt-setup"><div class="gpt-logo">${gi('spark')}</div><h3>${esc(L('اربط ChatGPT بتاعك', 'Connect your ChatGPT'))}</h3><p class="muted">${esc(L('محتاج مفتاح OpenAI API مرة واحدة. بتعمله من platform.openai.com وتلزقه في الإعدادات ← ChatGPT — مش في الشات.', 'It needs an OpenAI API key once. Create it at platform.openai.com and paste it in Settings → ChatGPT — not in the chat.'))}</p><a class="btn p" href="#/settings/gptchat">${icon('settings')}<span>${esc(L('افتح إعدادات ChatGPT', 'Open ChatGPT settings'))}</span></a></div>`;
+  }
+  function vGpt() {
+    if (!owner()) return `<div class="card qlock"><h3>${esc(L('الصفحة دي للمالك بس', 'This page is for the owner only'))}</h3></div>`;
+    syncRoute(); loadStatus(); loadList();
+    const s = st.status;
+    if (s === null) return `<div class="muted small" style="padding:16px">${esc(L('جارٍ التحميل…', 'Loading…'))}</div>`;
+    if (!s.configured) return `<div class="gpt-wrap gpt-one">${emptyState()}</div>`;
+    const conv = st.conv; const msgs = conv ? conv.messages || [] : [];
+    const oid = conv ? conv.orderId : st.orderId; const pid = conv ? conv.productId : st.productId;
+    const title = conv && conv.title ? conv.title : L('محادثة جديدة', 'New chat');
+    const ctx = oid ? `<a class="gpt-pj o" href="#/orders/${esc(oid)}">${gi('order')}${esc(ordLabel(oid, conv && conv.orderCode))}</a>` : pid ? `<a class="gpt-pj p" href="#/products/${esc(pid)}">${gi('product')}${esc(prdLabel(pid, conv && conv.productCode))}</a>` : '';
+    const head = `<div class="gpt-head"><button type="button" class="iconbtn gpt-lbtn" data-action="gptList" aria-label="${esc(L('المحادثات', 'Chats'))}" title="${esc(L('المحادثات', 'Chats'))}">${icon('menu')}</button><div class="gpt-ht"><b dir="auto">${esc(title)}</b>${ctx ? `<span class="gpt-ctx" id="gpt-ctx">${ctx}</span>` : ''}</div><div class="grow"></div>${usageLine()}${conv && conv.id && !conv.loading && !conv.missing ? `<button type="button" class="iconbtn" data-action="gptDelConv" data-arg="${esc(conv.id)}" title="${esc(L('امسح المحادثة', 'Delete the chat'))}" aria-label="${esc(L('امسح المحادثة', 'Delete the chat'))}">${icon('trash')}</button>` : ''}</div>`;
+    let thread;
+    if (conv && conv.loading) thread = `<div class="muted small gpt-pad">${esc(L('جارٍ التحميل…', 'Loading…'))}</div>`;
+    else if (conv && conv.missing) thread = `<div class="gpt-empty"><p class="muted">${esc(L('المحادثة دي مش موجودة.', 'This conversation does not exist.'))}</p><a class="btn" href="#/gpt">${esc(L('محادثة جديدة', 'New chat'))}</a></div>`;
+    else if (!msgs.length) thread = `<div class="gpt-hello" id="gpt-hello"><div class="gpt-logo">${gi('spark')}</div><h2 dir="auto">${esc(greet())}</h2><p class="muted">${esc(oid ? L('اسألني عن المشروع ده', 'Ask me about this project') : pid ? L('اسألني عن المنتج ده', 'Ask me about this product') : L('أقدر أساعدك في إيه؟', 'How can I help?'))}</p><div class="gpt-sugg">${SUGG().map(t => `<button type="button" class="gpt-sg" data-action="gptSugg" data-arg="${esc(t)}">${gi('spark')}<span>${esc(t)}</span></button>`).join('')}</div><p class="tiny muted gpt-safe">${esc(L('بشوف بيانات السيستم بصلاحياتك. أي تغيير بكتبهولك الأول ومش بيتنفّذ غير لما تدوس «نفّذ». الفلوس والتحويلات من الشاشات العادية بس.', 'I read the system data with your rights. Any change is written for you first and runs only when you press «Do it». Money and transfers stay on the normal screens.'))}</p></div>`;
+    else thread = `<div class="gpt-col">${msgs.map(bubble).join('')}${st.busy ? `<div class="gpt-msg bot" id="gpt-typing"><span class="gpt-av">${gi('spark')}</span><div class="gpt-bc"><div class="gpt-b gpt-typing"><span></span><span></span><span></span></div></div></div>` : ''}</div>`;
+    const attHTML = st.atts.length ? `<div class="gpt-qatts">${st.atts.map((a, i) => `<span class="gpt-qa">${a.kind === 'image' ? `<img src="${esc(a.dataUrl)}" alt="">` : gi('file')}<span class="n">${esc(a.name)}</span><button type="button" data-action="gptAttDel" data-arg="${i}" aria-label="${esc(L('شيل', 'Remove'))}">${icon('x')}</button></span>`).join('')}</div>` : '';
+    const models = `<div class="gpt-models" role="group" aria-label="${esc(L('الموديل', 'Model'))}">${MODELS.map(m => `<button type="button" class="${m.id === model() ? 'on' : ''}" data-action="gptModel" data-arg="${m.id}" title="${esc(m.id)}">${esc(tierLabel(m.tier))}</button>`).join('')}</div>`;
+    const comp = `<div class="gpt-dock"><form class="gpt-comp" id="gpt-form">${attHTML}${st.err ? `<div class="gpt-err">${esc(st.err)}</div>` : ''}<textarea id="gpt-in" rows="1" dir="auto" placeholder="${esc(L('اكتب رسالتك…', 'Message ChatGPT…'))}" enterkeyhint="send">${esc(st.draft)}</textarea><div class="gpt-ctl"><label class="iconbtn gpt-att" title="${esc(L('ارفق صورة أو ملف', 'Attach a picture or file'))}" aria-label="${esc(L('ارفق صورة أو ملف', 'Attach a picture or file'))}">${icon('plus')}<input type="file" id="gpt-file" accept="image/*,.pdf,.txt,.csv" multiple hidden></label><button type="button" class="iconbtn gpt-mic ${st.rec ? 'on' : ''}" data-action="gptMic" title="${esc(L('اتكلم', 'Speak'))}" aria-label="${esc(L('اتكلم', 'Speak'))}">${icon('mic')}</button>${models}<span class="grow"></span><button type="submit" class="gpt-send" ${st.busy ? 'disabled' : ''} aria-label="${esc(L('ابعت', 'Send'))}">${icon('send')}</button></div></form><div class="gpt-note tiny muted">${esc(L('ChatGPT ممكن يغلط — راجع قبل ما تدوس «نفّذ».', 'ChatGPT can make mistakes — check before you press «Do it».'))}</div></div>`;
+    return `<div class="gpt-wrap" id="gpt-wrap">${listHTML()}<section class="gpt-main">${head}<div class="gpt-thread notr" id="gpt-thread">${thread}</div>${comp}</section></div>`;
+  }
+
+  /* ---------------- send ---------------- */
+  async function send(text0) {
+    if (st.busy) return; const text = String(text0 != null ? text0 : st.draft).trim(); const atts = st.atts.slice();
+    if (!text && !atts.length) return;
+    if (!st.conv) st.conv = { id: null, orderId: st.orderId || null, productId: st.productId || null, messages: [] };
+    const conv = st.conv; const prev = (conv.messages || []).filter(m => m.role === 'user' || m.role === 'assistant').slice(-20).map(m => ({ role: m.role, content: m.content || '' }));
+    const um = { role: 'user', content: text, at: new Date().toISOString(), att: atts.map(a => ({ kind: a.kind, name: a.name, thumb: a.kind === 'image' ? a.dataUrl : '' })) };
+    conv.messages = (conv.messages || []).concat([um]); st.draft = ''; st.atts = []; st.err = ''; st.busy = true; st.stick = true; render(false);
+    const body = { convId: conv.id || undefined, orderId: conv.id ? undefined : (conv.orderId || undefined), productId: conv.id ? undefined : (conv.productId || undefined), model: model(), lang: en() ? 'en' : 'ar', text, messages: prev.concat([{ role: 'user', content: text }]), attachments: atts.map(a => (a.kind === 'image' ? { kind: 'image', name: a.name, dataUrl: a.dataUrl } : { kind: 'file', name: a.name, text: a.text })) };
+    const r = await call('chat', body); st.busy = false;
+    if (!r || r.error || typeof r.reply !== 'string') {
+      conv.messages = conv.messages.filter(m => m !== um); st.draft = text; st.atts = atts; st.err = ERR(r && r.error);
+      if (r && (r.error === 'no_key' || r.error === 'bad_key')) loadStatus(true);
+      paint(); return;
+    }
+    conv.messages = conv.messages.concat([{ role: 'assistant', content: r.reply, at: new Date().toISOString(), proposals: Array.isArray(r.proposals) ? r.proposals : [], cards: Array.isArray(r.cards) ? r.cards : [] }]);
+    if (r.month && st.status) st.status.month = r.month;
+    if (r.convId && !conv.id) {
+      conv.id = r.convId; Object.assign(conv, r.conv || {}); st.cur = conv.id; st.orderId = null; st.productId = null; st.cache.set(conv.id, conv);
+      try { history.replaceState(history.state, '', '#/gpt/' + conv.id); if (typeof _navStack !== 'undefined' && _navStack.length) _navStack[_navStack.length - 1] = '#/gpt/' + conv.id; } catch (e) { /* ignore */ }
+      if (typeof parseRoute === 'function') parseRoute();
+    }
+    const c = r.conv || { id: conv.id, title: conv.title, orderId: conv.orderId, productId: conv.productId };
+    st.convs = [Object.assign({ id: conv.id, title: c.title || text.slice(0, 60), orderId: c.orderId || conv.orderId || null, orderCode: c.orderCode || '', productId: c.productId || conv.productId || null, productCode: c.productCode || '', updatedAt: c.updatedAt || new Date().toISOString() })].concat((st.convs || []).filter(x => x.id !== conv.id));
+    st.stick = true; paint();
+  }
+
+  /* ---------------- attachments ---------------- */
+  const readAs = (f, how) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; if (how === 'text') fr.readAsText(f); else fr.readAsDataURL(f); });
+  async function shrink(f) {
+    const url = await readAs(f, 'url');
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+    if (k >= 1 && /^data:image\/(jpeg|png|webp)/.test(url) && url.length < 2.5e6) return url;
+    const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+    const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(img, 0, 0, cv.width, cv.height); return cv.toDataURL('image/jpeg', 0.85);
+  }
+  async function addFiles(files) {
+    for (const f of files) {
+      if (st.atts.length >= 6) { toast(L('6 مرفقات بالكتير في الرسالة', 'At most 6 attachments per message'), 'err'); break; }
+      const name = String(f.name || 'file').slice(0, 80);
+      try {
+        if (/^image\//.test(f.type || '')) st.atts.push({ kind: 'image', name, dataUrl: await shrink(f) });
+        else if (/\.pdf$/i.test(name) || f.type === 'application/pdf') { st.atts.push({ kind: 'file', name, text: L('[ملف PDF — قراية محتواه مش مدعومة لسه]', '[PDF file — reading its content is not supported yet]') }); toast(L('PDF مش مدعوم لسه — هيتبعت اسمه بس', 'PDF is not supported yet — only its name is sent'), 'err'); }
+        else if (/\.(txt|csv)$/i.test(name) || /^text\//.test(f.type || '')) { if (f.size > 2e6) { toast(L('الملف كبير — 2 ميجا بالكتير', 'The file is too big — 2 MB at most'), 'err'); continue; } st.atts.push({ kind: 'file', name, text: String(await readAs(f, 'text')).slice(0, 60000) }); }
+        else toast(L('نوع الملف ده مش مدعوم', 'This file type is not supported'), 'err');
+      } catch (e) { toast(L('تعذّر قراية الملف', 'Could not read the file'), 'err'); }
+    }
+    render(false);
+  }
+
+  /* ---------------- voice ---------------- */
+  let sttOk = null;
+  const sttReady = async () => { if (sttOk !== null) return sttOk; try { if (!hosted() || !S.sb.rpc) return (sttOk = false); const { data, error } = await S.sb.rpc('nf_stt_ready'); sttOk = !error && data === true; } catch (e) { sttOk = false; } return sttOk; };
+  const appendDraft = t => { t = String(t || '').trim(); if (!t) return; st.draft = (st.draft ? st.draft.replace(/\s+$/, '') + ' ' : '') + t; const i = document.getElementById('gpt-in'); if (i) { i.value = st.draft; autosize(i); } };
+  async function micServer() {
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); } catch (e) { toast(L('اسمح للتطبيق يستخدم المايك', 'Allow the app to use the microphone'), 'err'); return; }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/ogg'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+    let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); } catch (e) { stream.getTracks().forEach(t => t.stop()); return micBrowser(); }
+    const chunks = []; mr.ondataavailable = ev => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    const done = new Promise(res => { mr.onstop = res; }); const cap = setTimeout(() => { try { mr.stop(); } catch (e) { /* ignore */ } }, 90000);
+    st.rec = { stop: () => { if (mr.state !== 'inactive') mr.stop(); } }; render(false); mr.start(250);
+    await done; clearTimeout(cap); stream.getTracks().forEach(t => t.stop()); st.rec = null; render(false);
+    const blob = new Blob(chunks, { type: mr.mimeType || mime || 'audio/webm' }); if (blob.size < 1500) return;
+    toast(L('بكتب كلامك…', 'Writing what you said…'));
+    try { const b64 = String(await readAs(blob, 'url')).split(',')[1] || ''; const r = await S.sb.functions.invoke('stt', { body: { audio: b64, mime: blob.type, hint: '' } }); const j = (r && r.data) || {}; if (j.text) appendDraft(j.text); else { if (j.error === 'no_key' || j.error === 'bad_key') sttOk = false; toast(L('ماقدرتش أفهم الصوت — جرّب تاني', 'Could not understand — try again'), 'err'); } } catch (e) { toast(L('مشكلة في الاتصال — جرّب تاني.', 'Connection problem — try again.'), 'err'); }
+  }
+  function micBrowser() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast(L('الجهاز ده مش بيدعم الكلام من هنا — استخدم مايك الكيبورد', 'This device does not support speech here — use the keyboard microphone'), 'err'); return; }
+    const r = new SR(); r.lang = en() ? 'en-US' : 'ar-EG'; r.interimResults = false; r.continuous = true; r.maxAlternatives = 1;
+    r.onresult = ev => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) appendDraft(ev.results[i][0].transcript); };
+    r.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') toast(L('اسمح للتطبيق يستخدم المايك', 'Allow the app to use the microphone'), 'err'); };
+    r.onend = () => { st.rec = null; render(false); };
+    try { r.start(); st.rec = { stop: () => r.stop() }; render(false); } catch (e) { toast(L('المايك مش متاح دلوقتي', 'The microphone is not available now'), 'err'); }
+  }
+  async function mic() { if (st.rec) { try { st.rec.stop(); } catch (e) { /* ignore */ } return; } if (await sttReady() && navigator.mediaDevices && window.MediaRecorder) return micServer(); return micBrowser(); }
+
+  /* ---------------- actions ---------------- */
+  const findProp = arg => { const [mi, pid] = String(arg || '').split(':'); const m = st.conv && st.conv.messages && st.conv.messages[+mi]; const p = m && (m.proposals || []).find(x => x.id === pid); return p || null; };
+  ACTIONS.gptExec = async arg => {
+    if (!owner()) return; const p = findProp(arg); if (!p || p.done || p.busy) return;
+    p.busy = true; p.err = ''; render(false);
+    const r = await call('execute', { convId: st.conv.id, proposalId: p.id, proposal: { id: p.id } }); p.busy = false;
+    if (r && r.ok) { p.done = { at: new Date().toISOString(), taskId: r.taskId || '', link: r.link || (r.taskId ? '#/tasks/' + r.taskId : ''), ref: r.ref || '' }; toast(DONE_T(p.kind)); }
+    else p.err = ERR(r && r.error) + (r && r.field ? ` (${r.field})` : '');
+    paint();
+  };
+  ACTIONS.gptDismiss = async arg => { if (!owner()) return; const p = findProp(arg); if (!p || p.done) return; p.dismissed = new Date().toISOString(); render(false); call('dismiss', { convId: st.conv.id, proposalId: p.id }); };
+  ACTIONS.gptModel = m => { if (MODELS.some(x => x.id === m)) { setModel(m); render(false); } };
+  ACTIONS.gptList = () => { st.listOpen = !st.listOpen; render(false); };
+  ACTIONS.gptSugg = t => send(t);
+  ACTIONS.gptAttDel = i => { st.atts.splice(+i, 1); render(false); };
+  ACTIONS.gptMic = () => mic();
+  ACTIONS.gptReload = () => { st.status = null; loadStatus(true); render(false); };
+  ACTIONS.gptDelConv = async id => {
+    if (!owner() || !id) return; const ok = typeof confirmDlg === 'function' ? await confirmDlg(L('تمسح المحادثة دي؟', 'Delete this conversation?'), L('امسح', 'Delete')) : confirm(L('تمسح المحادثة دي؟', 'Delete this conversation?')); if (!ok) return;
+    const r = await call('delconv', { convId: id }); if (r && r.ok) { st.cache.delete(id); st.convs = (st.convs || []).filter(c => c.id !== id); st.cur = null; st.conv = null; go('gpt'); } else toast(ERR(r && r.error), 'err');
+  };
+  ACTIONS.gptOrder = oid => { if (owner() && oid) go('gpt/new?order=' + oid); };
+  ACTIONS.gptProduct = pid => { if (owner() && pid) go('gpt/new?product=' + pid); };
+
+  const autosize = el => { if (!el) return; el.style.height = 'auto'; el.style.height = Math.min(200, Math.max(44, el.scrollHeight)) + 'px'; };
+  document.addEventListener('input', ev => { const t = ev.target; if (t && t.id === 'gpt-in') { st.draft = t.value; autosize(t); } if (t && t.id === 'gpt-q') { st.q = t.value; const cl = document.getElementById('gpt-cl'); if (cl) cl.innerHTML = listItems(); } });
+  document.addEventListener('change', ev => { const t = ev.target; if (t && t.id === 'gpt-file') { const fs = Array.from(t.files || []); t.value = ''; if (fs.length) addFiles(fs); } });
+  document.addEventListener('submit', ev => { if (!ev.target || ev.target.id !== 'gpt-form') return; ev.preventDefault(); send(); });
+  const coarse = () => { try { return matchMedia('(pointer: coarse)').matches; } catch (e) { return false; } };
+  document.addEventListener('keydown', ev => { const t = ev.target; if (!t || t.id !== 'gpt-in') return; if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && !coarse()) { ev.preventDefault(); send(); } });
+  document.addEventListener('click', ev => { const a = ev.target.closest && ev.target.closest('.gpt-ci, .gpt-new'); if (a && st.listOpen) st.listOpen = false; });
+  window.addEventListener('hashchange', () => { st.listOpen = false; });
+  document.addEventListener('paste', ev => { const t = ev.target; if (!t || t.id !== 'gpt-in') return; const fs = Array.from((ev.clipboardData && ev.clipboardData.files) || []).filter(f => /^image\//.test(f.type)); if (fs.length) { ev.preventDefault(); addFiles(fs); } });
+
+  /* the thread fills the screen; scroll to the newest message */
+  function fit() {
+    const w = document.getElementById('gpt-wrap'); if (!w) return;
+    const top = w.getBoundingClientRect().top + window.scrollY; const tb = document.querySelector('.tabbar'); let bottom = 12;
+    if (tb && getComputedStyle(tb).display !== 'none') bottom += tb.getBoundingClientRect().height;
+    const vv = window.visualViewport; const vh = vv ? vv.height + vv.offsetTop : window.innerHeight; const kb = vv && window.innerHeight - vv.height > 120;   /* phone keyboard open → the tab bar is gone, fit above the keyboard */
+    w.style.height = Math.max(kb ? 260 : 380, vh - top - (kb ? 8 : bottom) + (kb ? window.scrollY : 0)) + 'px';
+  }
+  window.addEventListener('resize', () => { if (S.route && S.route.view === 'gpt') fit(); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (S.route && S.route.view === 'gpt') { fit(); const th = document.getElementById('gpt-thread'); if (th && document.activeElement && document.activeElement.id === 'gpt-in') th.scrollTop = th.scrollHeight; } });
+  RENDER_HOOKS.push(() => {
+    const on = S.route && S.route.view === 'gpt' && owner(); document.body.classList.toggle('nf-gptpage', !!on); if (!on) return;
+    fit(); const th = document.getElementById('gpt-thread'); autosize(document.getElementById('gpt-in'));
+    if (th) { if (st.stick) { th.scrollTop = th.scrollHeight; st.stick = false; } else if (st.scroll != null) th.scrollTop = st.scroll; th.onscroll = () => { st.scroll = th.scrollTop; }; }
+  });
+
+  /* ---------------- menu + route ---------------- */
+  VIEW_TITLES.gpt = 'ChatGPT';
+  EXTRA_VIEWS.gpt = () => vGpt();
+  EXTRA_TITLES.gpt = () => ({ title: 'ChatGPT', sub: owner() ? L('خاص بيك — مربوط بالسيستم بصلاحياتك', 'Yours only — connected to the system with your rights') : '' });
+  canSee = (base => function (v) { if (v === 'gpt') return owner(); return base.apply(this, arguments); })(canSee);
+  (() => {
+    if (NAV.some(n => n && n.id === 'gpt')) return; const e = { id: 'gpt', label: 'ChatGPT', icon: 'chat' };
+    let i = NAV.findIndex(n => n && n.id === 'ai'); if (i < 0) { i = NAV.findIndex(n => n && n.id === 'settings'); if (i > 0) i--; }
+    if (i >= 0) NAV.splice(i + 1, 0, e); else NAV.push(e);
+  })();
+
+  /* ---------------- settings ← ChatGPT (owner) ---------------- */
+  EXTRA_SETTINGS.gptchat = { label: 'ChatGPT', group: 'ai', render: () => {
+    if (!owner()) return `<div class="empty">${esc(L('للمالك بس', 'Owner only'))}</div>`;
+    loadStatus(); const s = st.status;
+    const stat = s === null ? `<span class="muted small">${esc(L('جارٍ الفحص…', 'Checking…'))}</span>` : s.error ? `<span class="badge warn">${esc(ERR(s.error))}</span>`
+      : s.configured ? `<span class="badge good">${esc(L('متوصّل', 'Connected'))}</span> <span class="muted small ltr" dir="ltr">sk-…${esc(s.last4 || '')}</span>` : `<span class="badge warn">${esc(L('مفيش مفتاح', 'No key'))}</span>`;
+    const m = (s && s.month) || null;
+    const use = m ? `<div class="gpt-usage"><div><b class="num">$${(+m.costUsd || 0).toFixed(2)}</b><span>${esc(L('تكلفة الشهر ده (تقريبي)', 'This month\'s cost (approx.)'))}</span></div><div><b class="num">${(+m.tokensIn || 0).toLocaleString('en')}</b><span>${esc(L('توكنز داخلة', 'Tokens in'))}</span></div><div><b class="num">${(+m.tokensOut || 0).toLocaleString('en')}</b><span>${esc(L('توكنز خارجة', 'Tokens out'))}</span></div></div>` : '';
+    return `<div class="card" id="gpt-set"><h3>ChatGPT</h3><p class="small ink2" style="margin:6px 0 12px">${esc(L('صفحة ChatGPT الخاصة بيك جوه السيستم بتشتغل بمفتاح OpenAI API. المفتاح بيتحفظ على السيرفر بس ومش بيظهر تاني لأي حد — تقدر تغيّره أو تمسحه من هنا.', 'Your private ChatGPT page inside the system works with an OpenAI API key. The key is stored on the server only and never shown again to anyone — you can change or remove it here.'))}</p>
+      <div style="margin-bottom:10px" id="gpt-kstate">${stat}</div>${use}
+      <div class="form">${field(L('مفتاح OpenAI (بيبدأ بـ sk-)', 'OpenAI key (starts with sk-)'), `<input id="gpt-key" type="password" class="ltr" dir="ltr" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-…" data-lpignore="true">`, 'full')}</div>
+      <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button type="button" class="btn p" data-action="gptKeySave" ${st.keyBusy ? 'disabled' : ''}>${esc(st.keyBusy ? L('بيتأكد…', 'Checking…') : L('حفظ', 'Save'))}</button>${s && s.configured ? `<button type="button" class="btn" data-action="gptKeyDel">${esc(L('امسح المفتاح', 'Remove the key'))}</button>` : ''}<a class="btn ghost" href="#/gpt">${esc(L('افتح ChatGPT', 'Open ChatGPT'))}</a></div>
+      <div class="gpt-how small ink2"><b>${esc(L('إزاي تعمل المفتاح', 'How to get the key'))}</b><ol><li>${esc(L('ادخل platform.openai.com بحسابك ← API keys ← Create new secret key.', 'Sign in at platform.openai.com → API keys → Create new secret key.'))}</li><li>${esc(L('انسخه والزقه هنا ودوس «حفظ» — مش في الشات.', 'Copy it, paste it here and press «Save» — not in the chat.'))}</li><li>${esc(L('من Billing اشحن رصيد وحط حد شهري (Usage limits) علشان التكلفة متعدّيش اللي إنت عايزه.', 'In Billing add credit and set a monthly limit (Usage limits) so the cost never passes what you want.'))}</li></ol><p class="tiny muted">${esc(L('الاستخدام بيتدفع لـ OpenAI على قد الاستهلاك ومنفصل عن اشتراك ChatGPT. العداد هنا تقريبي — الفاتورة الحقيقية في حساب OpenAI. نفس المفتاح بيستخدمه صوت المساعد وتفريغ الاجتماعات.', 'Usage is paid to OpenAI per use, separate from a ChatGPT subscription. The counter here is approximate — the real bill is in the OpenAI account. The same key is used by the assistant voice and the meeting transcripts.'))}</p></div></div>`;
+  } };
+  ACTIONS.gptKeySave = async () => {
+    if (!owner() || st.keyBusy) return; const i = document.getElementById('gpt-key'); const k = String((i && i.value) || '').trim(); if (i) i.value = '';
+    if (!/^sk-[A-Za-z0-9_\-]{20,}$/.test(k)) { toast(ERR('bad_format'), 'err'); return; }
+    st.keyBusy = true; render(false); const r = await call('setkey', { key: k }); st.keyBusy = false;
+    if (r && r.ok) { toast(L('تم — المفتاح اتحفظ على السيرفر', 'Done — the key is saved on the server')); if (window.nfSttReset) window.nfSttReset(); sttOk = null; } else toast(ERR(r && r.error), 'err');
+    await loadStatus(true); render(false);
+  };
+  ACTIONS.gptKeyDel = async () => {
+    if (!owner()) return; const msg = L('تمسح مفتاح OpenAI؟ ChatGPT وصوت المساعد (Whisper) وتفريغ الاجتماعات هيقفوا لحد ما تحط مفتاح تاني.', 'Remove the OpenAI key? ChatGPT, the assistant voice (Whisper) and meeting transcripts stop until you add another key.');
+    const ok = typeof confirmDlg === 'function' ? await confirmDlg(msg, L('امسح', 'Delete')) : confirm(msg); if (!ok) return;
+    const r = await call('delkey', {}); if (r && r.ok) { toast(L('المفتاح اتمسح', 'The key was removed')); if (window.nfSttReset) window.nfSttReset(); sttOk = null; } else toast(ERR(r && r.error), 'err');
+    await loadStatus(true); render(false);
+  };
+
+  /* ---------------- the project (order) and product pages: «ChatGPT» button + their conversations ---------------- */
+  if (typeof viewTitle === 'function') viewTitle = (base => function () {
+    const t = base.apply(this, arguments);
+    try { const r = S.route || {}; if (owner() && (r.view === 'orders' || r.view === 'projects') && r.id && typeof byId === 'function' && byId('orders', r.id)) t.actions = (t.actions || '') + `<button type="button" class="btn gpt-obtn" data-action="gptOrder" data-arg="${esc(r.id)}" title="${esc(L('اسأل ChatGPT عن المشروع ده', 'Ask ChatGPT about this project'))}">${icon('chat')}<span>ChatGPT</span></button>`;
+      else if (owner() && r.view === 'products' && r.id && typeof byId === 'function' && byId('products', r.id)) t.actions = (t.actions || '') + `<button type="button" class="btn gpt-obtn" data-action="gptProduct" data-arg="${esc(r.id)}" title="${esc(L('اسأل ChatGPT عن المنتج ده', 'Ask ChatGPT about this product'))}">${icon('chat')}<span>ChatGPT</span></button>`; } catch (e) { /* ignore */ }
+    return t;
+  })(viewTitle);
+  function projCard(o) {
+    if (!o || !owner()) return ''; if (st.convs === null) { loadList(); return ''; }
+    const cs = st.convs.filter(c => c.orderId === o.id); if (!cs.length) return '';
+    return `<div class="card gpt-ocard" id="gpt-ocard"><div class="cardhead"><h3>${icon('chat')} ${esc(L('محادثات ChatGPT على المشروع', 'ChatGPT chats on this project'))}</h3><span class="muted small">${cs.length}</span><div class="grow"></div><button type="button" class="btn sm" data-action="gptOrder" data-arg="${esc(o.id)}">${icon('plus')}${esc(L('محادثة جديدة', 'New chat'))}</button></div><div class="list notr">${cs.slice(0, 6).map(c => `<a class="item" href="#/gpt/${esc(c.id)}"><div class="main"><div class="title">${esc(c.title || '')}</div><div class="meta"><span>${esc(fmtD(c.updatedAt))}</span></div></div></a>`).join('')}</div></div>`;
+  }
+  function prodCard(p) {
+    if (!p || !owner()) return ''; if (st.convs === null) { loadList(); return ''; }
+    const cs = st.convs.filter(c => c.productId === p.id); if (!cs.length) return '';
+    return `<div class="card gpt-ocard" id="gpt-pcard"><div class="cardhead"><h3>${icon('chat')} ${esc(L('محادثات ChatGPT على المنتج', 'ChatGPT chats on this product'))}</h3><span class="muted small">${cs.length}</span><div class="grow"></div><button type="button" class="btn sm" data-action="gptProduct" data-arg="${esc(p.id)}">${icon('plus')}${esc(L('محادثة جديدة', 'New chat'))}</button></div><div class="list notr">${cs.slice(0, 6).map(c => `<a class="item" href="#/gpt/${esc(c.id)}"><div class="main"><div class="title">${esc(c.title || '')}</div><div class="meta"><span>${esc(fmtD(c.updatedAt))}</span></div></div></a>`).join('')}</div></div>`;
+  }
+  if (typeof vProductDetail === 'function') vProductDetail = (base => function (id) {
+    const h = base.apply(this, arguments); let c = ''; try { c = prodCard(byId('products', id)); } catch (e) { c = ''; } return c ? h + c : h;
+  })(vProductDetail);
+  if (typeof vOrderDetail === 'function') vOrderDetail = (base => function (id) {
+    const h = base.apply(this, arguments); let c = ''; try { c = projCard(byId('orders', id)); } catch (e) { c = ''; } return c ? h + c : h;
+  })(vOrderDetail);
+  window.nfGptProjCard = projCard;
+
+  /* ---------------- styles (the app's own tokens — Advanced and Icons looks, day and night) ---------------- */
+  document.head.insertAdjacentHTML('beforeend', `<style>
+#view .gpt-wrap{--g-bg:var(--surface,#fff);--g-soft:var(--surface-2,color-mix(in srgb,var(--ink) 4%,var(--surface)));--g-line:var(--line,rgba(0,0,0,.08));--g-acc:var(--accent,#4f7a64);--g-accs:var(--accent-soft,color-mix(in srgb,var(--g-acc) 14%,transparent));--g-r:18px}
+.gpt-wrap{display:grid;grid-template-columns:288px minmax(0,1fr);gap:14px;height:72vh;min-height:380px;min-width:0;position:relative}
+.gpt-wrap.gpt-one{display:block;height:auto}
+.gpt-wrap .gi{width:18px;height:18px;flex:none}
+.gpt-side{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0;background:var(--g-bg);border:1px solid var(--g-line);border-radius:var(--g-r);padding:12px;box-shadow:var(--shadow,none)}
+.gpt-sh{display:flex;gap:8px;align-items:center}
+.gpt-new{flex:1;justify-content:center;border-radius:14px;min-height:42px}
+.gpt-side .gpt-sx{display:none}
+.gpt-sq{display:flex;align-items:center;gap:8px;background:var(--g-soft);border-radius:12px;padding:0 10px;color:var(--muted,var(--ink-2))}
+.gpt-sq input{border:0;background:transparent;outline:0;min-height:38px;flex:1;min-width:0;font:inherit;font-size:14px;color:var(--ink);padding:0}
+.gpt-cl{overflow:auto;min-height:0;display:flex;flex-direction:column;gap:2px;margin:0 -6px;padding:0 6px;-webkit-overflow-scrolling:touch}
+.gpt-ci{display:flex;flex-direction:column;gap:4px;padding:9px 11px;border-radius:12px;text-decoration:none;color:var(--ink);min-width:0;transition:background .15s}
+.gpt-ci:hover{background:var(--g-soft)}.gpt-ci.on{background:var(--g-accs)}
+.gpt-ci .t{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpt-ci .m{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--muted,var(--ink-2));min-width:0;flex-wrap:wrap}
+.gpt-pj{display:inline-flex;align-items:center;gap:4px;max-width:100%;padding:2px 8px;border-radius:999px;background:var(--g-accs);color:var(--ink);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;vertical-align:middle;min-width:0}
+.gpt-pj .gi{width:12px;height:12px}.gpt-pj.p{background:color-mix(in srgb,var(--warn,#c0914c) 16%,transparent)}
+.gpt-main{display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--g-bg);border:1px solid var(--g-line);border-radius:var(--g-r);overflow:hidden;box-shadow:var(--shadow,none)}
+.gpt-head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--g-line);min-width:0}
+.gpt-ht{display:flex;flex-direction:column;gap:3px;min-width:0}
+.gpt-ht b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpt-ctx{display:flex;min-width:0}
+.gpt-head .gpt-lbtn{display:none}
+.gpt-use{font-size:12px;white-space:nowrap;color:var(--ink-2)}
+.gpt-thread{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scroll-behavior:smooth}
+.gpt-col{max-width:820px;margin:0 auto;padding:18px 16px 8px;display:flex;flex-direction:column;gap:16px}
+.gpt-msg{display:flex;gap:10px;min-width:0}
+.gpt-msg.me{justify-content:flex-end}
+.gpt-msg.me .gpt-b{max-width:min(620px,86%);background:var(--g-accs);border-radius:20px;border-end-end-radius:6px;padding:10px 14px}
+.gpt-av{flex:none;width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:var(--g-accs);color:var(--g-acc);margin-top:2px}
+.gpt-av .gi{width:17px;height:17px}
+.gpt-bc{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.gpt-b{line-height:1.7;font-size:15px;overflow-wrap:anywhere;min-width:0;max-width:100%}
+.gpt-msg.bot .gpt-b{padding:4px 0}
+.gpt-md p{margin:4px 0}.gpt-md ul,.gpt-md ol{margin:6px 0;padding-inline-start:22px}.gpt-md li{margin:2px 0}.gpt-md h4{margin:10px 0 4px;font-size:15px}
+.gpt-md a{color:var(--g-acc)}
+.gpt-md code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--g-soft);padding:1px 6px;border-radius:6px}
+.gpt-pre{margin:8px 0;padding:12px;border-radius:12px;background:var(--g-soft);overflow-x:auto;max-width:100%;font-size:12.5px;text-align:left}
+.gpt-pre code{background:none;padding:0}
+.gpt-atts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.gpt-thumb{width:110px;height:110px;object-fit:cover;border-radius:14px}
+.gpt-chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--g-bg);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gpt-chip .gi{width:13px;height:13px}
+.gpt-pill{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--g-soft);color:var(--ink-2);white-space:nowrap}
+.gpt-pill .gi{width:12px;height:12px}
+.gpt-pill.good{background:var(--good-soft,rgba(92,138,107,.14));color:var(--good-ink,#3f6a4e)}.gpt-pill.warn{background:var(--warn-soft,rgba(192,145,76,.15));color:var(--warn-ink,#83602a)}
+.gpt-pill.crit{background:var(--crit-soft,rgba(181,101,91,.13));color:var(--crit-ink,#8f4239)}.gpt-pill.acc{background:var(--g-accs);color:var(--g-acc)}
+.gpt-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.gpt-rc{display:flex;gap:10px;padding:12px;border-radius:16px;border:1px solid var(--g-line);background:var(--g-bg);text-decoration:none;color:var(--ink);min-width:0;transition:border-color .15s,transform .1s;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.gpt-rc:hover{border-color:color-mix(in srgb,var(--g-acc) 45%,var(--g-line))}.gpt-rc:active{transform:scale(.99)}
+.gpt-rci{flex:none;width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--g-soft);color:var(--g-acc)}
+.gpt-rct{flex:none;width:64px;height:64px;border-radius:12px;overflow:hidden;background:var(--g-soft);display:grid;place-items:center;color:var(--muted,var(--ink-2))}
+.gpt-rct img{width:100%;height:100%;object-fit:cover;display:block}
+.gpt-rcb{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
+.gpt-rcb b{font-size:13.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.gpt-rcb .m{display:flex;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--muted,var(--ink-2));min-width:0}
+.gpt-rcb .m span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.gpt-rcb .r{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.gpt-prog{display:block;height:5px;border-radius:999px;background:var(--g-soft);overflow:hidden}.gpt-prog i{display:block;height:100%;background:var(--g-acc);border-radius:999px}
+.gpt-stg{display:flex;gap:4px;flex-wrap:wrap}.gpt-stg span{font-size:10.5px;padding:1px 6px;border-radius:6px;background:var(--g-soft);color:var(--muted,var(--ink-2));max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gpt-stg span.ok{background:var(--good-soft,rgba(92,138,107,.14));color:var(--good-ink,#3f6a4e)}.gpt-stg span.now{background:var(--g-accs);color:var(--g-acc)}
+.gpt-prop{--k:var(--g-acc);border:1px solid color-mix(in srgb,var(--k) 35%,var(--g-line));border-inline-start:4px solid var(--k);background:color-mix(in srgb,var(--k) 5%,var(--g-bg));border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;width:min(580px,100%);min-width:0}
+.gpt-prop.k-reply{--k:#5b7fa6}.gpt-prop.k-ext{--k:#9a6b3f}.gpt-prop.k-share{--k:#6c5aa8}.gpt-prop.k-material{--k:#b07a2c}
+.gpt-prop.is-done{opacity:.85}
+.gpt-ph{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}
+.gpt-pic{flex:none;width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:color-mix(in srgb,var(--k) 14%,transparent);color:var(--k)}.gpt-pic .gi{width:16px;height:16px}
+.gpt-psum{font-weight:600;font-size:14px;overflow-wrap:anywhere}.gpt-pdesc{font-size:13px;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
+.gpt-pfiles{list-style:none;margin:0;padding:0;display:grid;gap:4px}.gpt-pfiles li{display:flex;gap:6px;align-items:center;font-size:12.5px;min-width:0}.gpt-pfiles li span[dir]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.gpt-pfiles .gi{width:14px;height:14px;color:var(--muted,var(--ink-2))}.gpt-pfiles .gi.lk{color:var(--warn-ink,#83602a)}
+.gpt-split{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.gpt-sp{border-radius:12px;padding:8px 10px;background:var(--g-soft);min-width:0}
+.gpt-sp .h{font-size:12px;font-weight:700;margin-bottom:4px;display:flex;gap:6px;align-items:center}.gpt-sp .h span{font-weight:600;opacity:.7}
+.gpt-sp.good .h{color:var(--good-ink,#3f6a4e)}.gpt-sp.warn .h{color:var(--warn-ink,#83602a)}.gpt-sp.acc .h{color:var(--g-acc)}
+.gpt-sp ul{list-style:none;margin:0;padding:0;display:grid;gap:3px}.gpt-sp li{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;min-width:0}.gpt-sp li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.gpt-sp li b{flex:none;font-weight:600}
+.gpt-perr{font-size:12.5px;color:var(--crit-ink,#b42318)}
+.gpt-pf{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.gpt-typing{display:inline-flex;gap:5px;padding:10px 2px}.gpt-typing span{width:7px;height:7px;border-radius:50%;background:var(--g-acc);opacity:.35;animation:gptdot 1.2s infinite}
+.gpt-typing span:nth-child(2){animation-delay:.2s}.gpt-typing span:nth-child(3){animation-delay:.4s}
+@keyframes gptdot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:.95;transform:translateY(-3px)}}
+.gpt-hello,.gpt-empty{margin:auto;text-align:center;max-width:640px;padding:36px 16px 16px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.gpt-hello{min-height:100%;justify-content:center}
+.gpt-empty{background:var(--surface);border:1px solid var(--line);border-radius:18px;margin:12px auto}
+.gpt-hello h2{margin:6px 0 0;font-size:24px;font-weight:700;letter-spacing:-.01em}.gpt-hello>p{margin:0}.gpt-empty h3{margin:4px 0}
+.gpt-logo{width:56px;height:56px;border-radius:18px;display:grid;place-items:center;background:var(--accent-soft,color-mix(in srgb,var(--accent) 14%,transparent));color:var(--accent)}.gpt-logo .gi{width:30px;height:30px}
+.gpt-sugg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;width:100%;margin-top:10px}
+.gpt-sg{display:flex;align-items:center;gap:8px;text-align:start;border:1px solid var(--g-line);background:var(--g-bg);color:var(--ink);font:inherit;font-size:13.5px;padding:11px 12px;border-radius:14px;cursor:pointer;min-width:0;transition:border-color .15s,background .15s}
+.gpt-sg:hover{border-color:color-mix(in srgb,var(--g-acc) 45%,var(--g-line));background:var(--g-soft)}.gpt-sg .gi{width:15px;height:15px;color:var(--g-acc)}
+.gpt-sg span{min-width:0}
+.gpt-safe{max-width:460px;margin-top:6px}
+.gpt-dock{padding:8px 14px calc(8px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,var(--g-bg) 70%,transparent)}
+.gpt-comp{max-width:820px;margin:0 auto;border:1px solid var(--g-line);background:var(--g-bg);border-radius:22px;padding:8px 8px 6px;display:flex;flex-direction:column;gap:4px;box-shadow:0 6px 24px -12px rgba(0,0,0,.25);transition:border-color .15s,box-shadow .15s}
+.gpt-comp:focus-within{border-color:color-mix(in srgb,var(--g-acc) 50%,var(--g-line));box-shadow:0 8px 28px -12px color-mix(in srgb,var(--g-acc) 45%,transparent)}
+.gpt-comp textarea{width:100%;resize:none;min-height:44px;max-height:200px;border:0;outline:0;background:transparent;padding:8px 8px 4px;font:inherit;font-size:16px;line-height:1.5;color:var(--ink);box-shadow:none}
+.gpt-ctl{display:flex;align-items:center;gap:4px;min-width:0}
+.gpt-ctl .iconbtn{flex:none;width:38px;height:38px;border-radius:12px;cursor:pointer}
+.gpt-att svg,.gpt-mic svg{width:20px;height:20px}
+.gpt-mic.on{color:#fff;background:#d92d20;border-radius:50%;animation:gptpulse 1.2s infinite}
+@keyframes gptpulse{0%{box-shadow:0 0 0 0 rgba(217,45,32,.45)}70%{box-shadow:0 0 0 10px rgba(217,45,32,0)}100%{box-shadow:0 0 0 0 rgba(217,45,32,0)}}
+.gpt-models{display:inline-flex;background:var(--g-soft);border-radius:999px;padding:2px;gap:2px;flex:none}
+.gpt-models button{border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:12.5px;padding:5px 12px;border-radius:999px;cursor:pointer}
+.gpt-models button.on{background:var(--g-bg);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.gpt-send{flex:none;width:38px;height:38px;border:0;border-radius:50%;display:grid;place-items:center;background:var(--g-acc);color:var(--accent-ink,#fff);cursor:pointer;transition:opacity .15s}
+.gpt-send:disabled{opacity:.45;cursor:default}.gpt-send svg{width:17px;height:17px}
+html[dir=rtl] .gpt-send svg{transform:scaleX(-1)}
+.gpt-qatts{display:flex;gap:6px;flex-wrap:wrap;padding:4px 4px 0}
+.gpt-qa{display:inline-flex;align-items:center;gap:6px;padding:4px 6px;background:var(--g-soft);border-radius:12px;font-size:12px;max-width:220px;min-width:0}
+.gpt-qa img{width:36px;height:36px;object-fit:cover;border-radius:8px}.gpt-qa .gi{width:15px;height:15px}
+.gpt-qa .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.gpt-qa button{border:0;background:none;color:var(--ink-2);cursor:pointer;padding:0;display:inline-flex}
+.gpt-err{font-size:12.5px;color:var(--crit-ink,#b42318);padding:0 8px}
+.gpt-note{text-align:center;margin-top:5px}
+.gpt-pad{padding:12px}
+.gpt-scrim{display:none}
+.gpt-usage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.gpt-usage div{border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.gpt-usage b{font-size:17px}.gpt-usage span{font-size:11.5px;color:var(--ink-2)}
+.gpt-how{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}.gpt-how ol{margin:6px 0;padding-inline-start:20px}
+.gpt-obtn svg{width:16px;height:16px}
+body.nf-gptpage .aifab,body.nf-gptpage .fab,body.nf-gptpage .nfdial{display:none!important}
+@media (max-width:900px){
+  .gpt-wrap{grid-template-columns:minmax(0,1fr);gap:0}
+  .gpt-main{border-radius:16px}
+  .gpt-head .gpt-lbtn,.gpt-side .gpt-sx{display:inline-flex}
+  .gpt-side{position:fixed;top:0;bottom:0;inset-inline-start:0;width:min(86vw,330px);z-index:80;border-radius:0;padding:calc(12px + env(safe-area-inset-top,0px)) 12px calc(12px + env(safe-area-inset-bottom,0px));transform:translateX(var(--g-off,-105%));transition:transform .22s ease;box-shadow:0 0 40px rgba(0,0,0,.25)}
+  html[dir=rtl] .gpt-side{--g-off:105%}
+  .gpt-side.open{transform:none}
+  .gpt-side.open+.gpt-scrim{display:block;position:fixed;inset:0;z-index:79;background:rgba(0,0,0,.32)}
+  .gpt-col{padding:14px 10px 6px}
+  .gpt-msg.me .gpt-b{max-width:90%}
+  .gpt-av{width:26px;height:26px;border-radius:9px}
+  .gpt-use{display:none}
+  .gpt-obtn span{display:none}
+  .gpt-hello{padding-top:20px}.gpt-hello h2{font-size:21px}
+  .gpt-sugg{grid-template-columns:1fr 1fr}
+  .gpt-dock{padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px))}
+  .gpt-cards{grid-template-columns:1fr}
+}
+@media (max-width:380px){.gpt-sugg{grid-template-columns:1fr}.gpt-models button{padding:5px 9px}}
+</style>`);
+})();
