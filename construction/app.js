@@ -3676,9 +3676,45 @@ async function sampleDirect(input, opts = {}) {
 }
 function parseJsonLoose(text) { const t = String(text || '').trim(); try { return JSON.parse(t); } catch (e) { /* continue */ } const m = /```(?:json)?\s*([\s\S]*?)```/.exec(t); if (m) { try { return JSON.parse(m[1]); } catch (e) { /* continue */ } } const a = Math.min(...[t.indexOf('{'), t.indexOf('[')].filter(i => i >= 0)); const b = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']')); if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* continue */ } } throw { code: 'invalid_json', message: 'no json', text: t }; }
 /* hosted app: the company's API key lives on the server (Supabase Edge Function `ai`), never in the browser */
+/* v7.98 (Mahmoud 18 Oct: «I want the strongest model in the assistant — I use it too»; then: «the strongest always, as the default
+   for me and the managers — not options»): no picker. The owner and the managers (admin, manager, vice, acc, hr) always get
+   «strong» = Claude Opus 5.5; everyone else «smart» = Claude Sonnet 5.5 (Edge ai v3 keeps «strong» to these roles). The answer streams. */
+const AI_STRONG_ROLES = ['admin', 'manager', 'vice', 'acc', 'hr'];
+const aiStrongOk = () => (typeof isAdmin === 'function' && isAdmin()) || AI_STRONG_ROLES.includes(typeof role === 'function' ? role() : '');
+const aiTier = () => (aiStrongOk() ? 'strong' : 'smart');
+window.nfAiTier = aiTier;
+/* the text of one JSON string field while it is still being written (for the live view of a streamed JSON answer) */
+function aiPartial(t, key) { const m = new RegExp('"' + key + '"\\s*:\\s*"').exec(String(t || '')); if (!m) return ''; let out = '', i = m.index + m[0].length; const s = String(t); for (; i < s.length; i++) { const c = s[i]; if (c === '\\') { const n = s[i + 1]; if (n === undefined) break; out += n === 'n' ? '\n' : n === 't' ? ' ' : n; i++; continue; } if (c === '"') break; out += c; } return out; }
+window.nfAiPartial = aiPartial;
+async function aiStream(body, opts) {
+  const url = S.sb && (S.sb.supabaseUrl || S.sb.restUrl && String(S.sb.restUrl).replace(/\/rest\/v1\/?$/, '')); const anon = S.sb && S.sb.supabaseKey; if (!url || !anon || !S.sb.auth || !S.sb.auth.getSession) return null;
+  const sess = await S.sb.auth.getSession(); const tok = sess && sess.data && sess.data.session && sess.data.session.access_token; if (!tok) return null;
+  const res = await fetch(String(url).replace(/\/$/, '') + '/functions/v1/ai', { method: 'POST', headers: { 'content-type': 'application/json', apikey: anon, Authorization: 'Bearer ' + tok }, body: JSON.stringify(Object.assign({}, body, { stream: true })), signal: opts.signal });
+  if (!res.ok || !String(res.headers.get('content-type') || '').includes('event-stream')) {
+    let j = {}; try { j = await res.json(); } catch (e) { /* ignore */ } const status = res.status;
+    if (j && j.error === 'no_key') throw { code: 'no_key', message: 'no key' };
+    throw { code: status === 401 || status === 403 ? 'not_granted' : status === 429 ? 'rate_limited' : status === 404 ? 'not_deployed' : 'upstream_error', message: JSON.stringify(j).slice(0, 300) };
+  }
+  const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '', text = '', truncated = false, model = '';
+  for (;;) {
+    const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const ev = buf.slice(0, i); buf = buf.slice(i + 2); const line = ev.split('\n').find(l => l.startsWith('data:')); if (!line) continue;
+      let d; try { d = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
+      if (d.d) { text += d.d; if (opts.onText) opts.onText({ text, delta: d.d }); } else if (d.end) { truncated = !!d.truncated; model = d.model || ''; } else if (d.error && !text) throw { code: 'upstream_error', message: String(d.error) };
+    }
+  }
+  if (!text.trim()) throw { code: 'empty_completion', message: 'empty' };
+  return { text, truncated, modelTierApplied: body.tier, model };
+}
 async function sampleEdge(input, opts = {}) {
   const messages = typeof input === 'string' ? [{ role: 'user', content: input }] : input.map(t => ({ role: t.role, content: t.content }));
-  let res; try { res = await S.sb.functions.invoke('ai', { body: { messages, model: aiCfg().model || AI_MODEL_DEFAULT, max_tokens: 6000 } }); } catch (e) { throw { code: 'upstream_error', message: String(e && e.message || e) }; }
+  const tier = ['fast', 'smart', 'strong'].includes(opts.tier) ? opts.tier : aiTier();
+  const body = { messages, tier, max_tokens: opts.maxTokens || 6000 };
+  if (opts.onText && typeof fetch === 'function' && typeof ReadableStream !== 'undefined') {
+    try { const r = await aiStream(body, opts); if (r) return r; } catch (e) { if (e && (e.name === 'AbortError' || ['no_key', 'not_granted', 'rate_limited'].includes(e.code))) throw e; /* else: try the plain call below */ }
+  }
+  let res; try { res = await S.sb.functions.invoke('ai', { body }); } catch (e) { throw { code: 'upstream_error', message: String(e && e.message || e) }; }
   if (res.error) { const status = res.error.context && res.error.context.status; let detail = ''; try { detail = JSON.stringify(await res.error.context.json()); } catch (e) { /* ignore */ } throw { code: status === 401 || status === 403 ? 'not_granted' : status === 429 ? 'rate_limited' : status === 404 ? 'not_deployed' : 'upstream_error', message: `${status || ''} ${detail}`.slice(0, 300) }; }
   const j = res.data || {}; if (j.error) throw { code: j.error === 'no_key' ? 'no_key' : 'upstream_error', message: JSON.stringify(j).slice(0, 300) };
   const text = String(j.text || ''); if (!text.trim()) throw { code: 'empty_completion', message: 'empty' }; if (opts.onText) opts.onText({ text, delta: text }); return { text, truncated: !!j.truncated, modelTierApplied: 'default' };
@@ -3820,7 +3856,7 @@ ACTIONS.aiRun = async arg => {
   const turns = [{ role: 'user', content: lead }].concat(st.turns.slice(-6), [{ role: 'user', content: quick ? `${q}\n\n(رد سريع: أجب بنفس صيغة JSON لكن باختصار، والإجراءات فقط إن كانت واضحة)` : q }]);
   _aiCtl = new AbortController(); let text = '';
   try {
-    const data = await aiJson(turns, { modelTier: quick ? 'quick' : 'default', cache: false, signal: _aiCtl.signal, onText: ({ text: t }) => { text = t; const el = $('#ai-stream'); if (el) { el.textContent = t.slice(-1500); } const s2 = $('.tiny.muted'); st.status = `يكتب… (${t.length} حرف)`; } });
+    const data = await aiJson(turns, { modelTier: quick ? 'quick' : 'default', tier: aiTier(), cache: false, signal: _aiCtl.signal, onText: ({ text: t }) => { text = t; const el = $('#ai-stream'); if (el) { const rep = aiPartial(t, 'report'); el.textContent = rep ? rep.slice(-3000) : '…'; el.scrollTop = el.scrollHeight; } const s2 = $('.tiny.muted'); st.status = `يكتب… (${t.length} حرف)`; } });
     const out = (data && typeof data === 'object' && !Array.isArray(data)) ? data : { report: String(text || ''), actions: [] }; out.actions = Array.isArray(out.actions) ? out.actions : []; st.out = out; st.turns = st.turns.slice(-6).concat([{ role: 'user', content: q }, { role: 'assistant', content: JSON.stringify(out).slice(0, 6000) }]);
     const run = { id: uid(), at: nowISO(), byName: S.session?.name || '', prompt: q, report: out.report || '', impact: out.impact || [], actions: out.actions.filter(aiActionValid), applied: 0, mode: aiMode() }; st.runId = run.id; await Store.save('airuns', run, { silent: true });
     for (const old of sortBy(list('airuns'), r => r.at || '', true).slice(30)) await Store.remove('airuns', old.id);
@@ -25763,7 +25799,7 @@ body.printing .aifab,body.fab-hide .aifab,body.nf-typing .aifab,body.nf-chatpage
     return out.length ? `آخر ${n} يوم:\n` + out.join('\n') : `مفيش بصمات خارج النطاق ولا محاولات مشبوهة في آخر ${n} يوم.` + (isAdmin() ? '' : ' (المحاولات المرفوضة اللي ماتسجلتش بتظهر في سجل النشاط للمالك بس)');
   }
   const TOOLS = { find: tFind, get: tGet, history: tHistory, attendance: tAttendance, outzone: tOutzone };
-  async function aiResolve(text, onStep) {
+  async function aiResolve(text, onStep, onLive) {
     if (typeof aiAvailable !== 'function' || !aiAvailable()) return { reply: 'مش لاقي حاجة بالاسم ده. جرّب تكتب اسم المشروع أو المورد أو الصفحة بشكل أوضح.' };
     const orders = seeView('orders') ? list('orders').slice(0, 200).map(o => `${o.id}|${o.code || ''}|${o.title || ''}|${clientOf(o)}`).join('\n') : '';
     const sups = seeView('suppliers') ? list('suppliers').slice(0, 200).map(s => `${s.id}|${s.name}`).join('\n') : '';
@@ -25787,7 +25823,7 @@ ${isAdmin() ? '- history {"col": اختياري, "id": اختياري, "who": ا
     try {
       for (let i = 0; i < 5; i++) {
         const prompt = base + (steps.length ? `\n\nنتايج الأدوات لحد دلوقتي:\n${steps.map((s, k) => `(${k + 1}) ${s.tool} ${JSON.stringify(s.args)}:\n${s.out}`).join('\n\n')}` : '') + (i === 4 ? '\n\nدي آخر خطوة — رجّع reply دلوقتي.' : '');
-        const j = await aiJson(prompt, { maxTokens: 900 });
+        const j = await aiJson(prompt, { maxTokens: 900, tier: typeof aiTier === 'function' ? aiTier() : undefined, onText: onLive ? ({ text: t }) => { const rp = typeof aiPartial === 'function' ? aiPartial(t, 'reply') : ''; if (rp) onLive(rp); } : undefined });   /* v7.98: the strongest model for the owner + managers, and the reply appears while it is written */
         if (j && j.tool && TOOLS[j.tool] && i < 4) { if (onStep) onStep(j.tool, j.args || {}); let out; try { out = await TOOLS[j.tool](j.args || {}); } catch (e) { out = 'حصل خطأ: ' + (e && e.message || e); } steps.push({ tool: j.tool, args: j.args || {}, out: String(out).slice(0, 6000) }); continue; }
         const route = String((j && j.route) || ''); let route2 = route; const om = /^#\/purchases\?order=([\w-]+)$/.exec(route); if (om && byId('orders', om[1]) && seeView('purchases')) { (S.ui.filter.purchases ||= {}).orderId = om[1]; S.ui.filter.purchases.status = 'all'; route2 = '#/purchases'; } const m = /^#\/([a-z]+)(?:\/([\w-]+))?$/.exec(route2); let ok = null;
         if (m && seeView(m[1])) { const colMap = { orders: 'orders', suppliers: 'suppliers', workers: 'workers', equip: 'equip', purchases: 'purchases', clients: 'clients', quotes: 'quotations' }; if (!m[2] || (colMap[m[1]] && byId(colMap[m[1]], m[2]))) ok = route2; }
@@ -25823,7 +25859,7 @@ ${isAdmin() ? '- history {"col": اختياري, "id": اختياري, "who": ا
     if (r && r.choose && r.choose.length && !question) { addMsg('bot', 'لقيت أكتر من واحد — تقصد أنهي؟', r.choose.map(c => ({ label: c.label, run: () => { lastOpened = c.label; hist.push({ r: 'b', t: `فتحت ${c.label}` }); c.run(); } }))); hist.push({ r: 'b', t: 'سألته يختار: ' + r.choose.map(c => c.label).join(' / ') }); return; }
     addMsg('bot', '<span class="muted">بفكّر…</span>'); const box = panel().querySelector('.aim'); const thinking = box.lastElementChild;
     const TL = { find: 'بدوّر في', get: 'بفتح تفاصيل', history: 'بدوّر في سجل النشاط', attendance: 'بشوف الحضور', outzone: 'بشوف البصمات خارج النطاق' }; const CL = c => (TCOLS[c] && TCOLS[c][1]) || c || 'السيستم';
-    const a = await aiResolve(text, (tool, args) => { if (thinking) thinking.innerHTML = `<span class="muted">${esc(TL[tool] || 'بدوّر')} ${['history', 'attendance', 'outzone'].includes(tool) ? '' : esc(CL(args.col))}${args.q ? ` «${esc(String(args.q).slice(0, 40))}»` : ''}…</span>`; }); if (thinking) thinking.remove();
+    const a = await aiResolve(text, (tool, args) => { if (thinking) thinking.innerHTML = `<span class="muted">${esc(TL[tool] || 'بدوّر')} ${['history', 'attendance', 'outzone'].includes(tool) ? '' : esc(CL(args.col))}${args.q ? ` «${esc(String(args.q).slice(0, 40))}»` : ''}…</span>`; }, rp => { if (thinking) { thinking.textContent = rp; const bx = panel() && panel().querySelector('.aim'); if (bx) bx.scrollTop = bx.scrollHeight; } }); if (thinking) thinking.remove();
     hist.push({ r: 'b', t: String(a.reply || '').slice(0, 400) + (a.route ? ` [رابط: ${a.route}]` : '') }); const openIt = () => { lastOpened = a.route; go(a.route); }; const acts = []; if (a.route) acts.push({ label: 'افتح', run: openIt }); if (r && (r.maybe || r.route)) acts.push(r.maybe || r.route);
     addMsg('bot', mdLiteSafe(a.reply) + (a.source ? `<div class="tiny muted" style="margin-top:6px">المصدر: ${esc(a.source)}</div>` : ''), acts);
     if (voice && a.route && !question) setTimeout(openIt, 900);
@@ -53733,6 +53769,8 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
   const toName = t => sh((t && (t.to || (t.toLoc && t.toLoc.name))) || '');
   const isRunning = t => !!t && t.status === 'started' && !t.gpsAuto;
   const mineOrFleet = t => !!t && W() && (fleetOk() || (drv() && t.driverId && t.driverId === me()));
+  /* v7.98: the driver plans the next trip himself on his own running trip (brief claude/driver-next-trip-brief.md) */
+  const myRun = t => !!t && W() && drv() && t.driverId && t.driverId === me() && t.status === 'started' && !t.gpsAuto;
   const PICK = () => (typeof PICK_KINDS !== 'undefined' ? PICK_KINDS : ['materials', 'pickup_ext', 'return']);
 
   /* ---------- where the chain can start: he is done at the place, the next step is «head back» / «back at the factory» ---------- */
@@ -53801,6 +53839,15 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
     rerender(); return true;
   }
   window.nfTripChainTo = chainTo;
+  /* v7.98: plan an existing waiting trip as «next» after a running one (used by the system suggestion approved by the factory manager) */
+  window.nfTripSetNext = async (t, nx, why) => {
+    t = byId('trips', t.id) || t; nx = byId('trips', nx.id) || nx; if (!t || !nx || nx.status !== 'approved' || nx.startedAt || t.chainedTo) return false;
+    const from = fromFor(t); from.name = toName(t) || from.name;
+    await Store.update('trips', nx.id, { after: t.id, driverId: nx.driverId || t.driverId || null, vehicleId: t.vehicleId || nx.vehicleId || null, fromLoc: from, from: from.name });
+    await Store.update('trips', t.id, { nextUp: nx.id, nextUpByName: (S.session && S.session.name) || '', nextUpBy: (S.session && S.session.id) || null, nextUpAt: nowISO(), nextUpWhy: why || null });
+    return { from, nx };
+  };
+  window.nfTripPlace = t => { const f = fromFor(t); return Object.assign({}, f, { name: toName(t) || f.name }); };
 
   /* ---------- the window: «another trip from here» (driver) / «add a trip after it» (fleet manager, factory manager) ---------- */
   const kindTiles = () => { const d = DT(); return `<div class="dtk" id="f-dtKind">${d.KINDS.map(k => `<label class="dtk-i"><input type="radio" name="dtKind" value="${k}" ${k === 'other' ? 'checked' : ''}><span>${esc(d.KSHORT()[k] || TRIP_KINDS[k] || k)}</span></label>`).join('')}</div>`; };
@@ -53861,30 +53908,30 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
   };
   /* fleet manager / factory manager: «add a trip after it» */
   ACTIONS.tripAddNext = id => {
-    const t = byId('trips', id); if (!t || !fleetOk() || !DT() || !['approved', 'started'].includes(t.status) || t.chainedTo) return;
+    const t = byId('trips', id); if (!t || !(fleetOk() || myRun(t)) || !DT() || !['approved', 'started'].includes(t.status) || t.chainedTo) return;
     const from = fromFor(t); from.name = toName(t) || from.name;
     openModal({ title: L(`مشوار بعد ${t.number}`, `A trip after ${t.number}`), wide: true, cls: 'dtrip', submitLabel: L('ضيفه', 'Add it'),
-      body: chainForm(t, { from, fixedFrom: true, note: L(`${t.driverId ? assigneeName(t.driverId) : 'السواق'} هيشوفه مكان «ارجع المصنع» أول ما يخلّص في ${from.name || 'المكان'}، ويبدأه من هناك بنفس العربية. لو اتلغى يرجع له «ارجع المصنع».`, `${t.driverId ? assigneeName(t.driverId) : 'The driver'} sees it in place of «back to the factory» as soon as he is done at ${from.name || 'the place'}, and starts it from there with the same vehicle. If it is cancelled he gets «back to the factory» again.`) }),
+      body: chainForm(t, { from, fixedFrom: true, note: drv() ? L(`هتشوفه مكان «ارجع المصنع» أول ما تخلّص في ${from.name || 'المكان'}، وتبدأه من هناك بنفس العربية. مدير الحركة ومدير المصنع هيوصلهم إشعار ويقدروا يلغوه.`, `You see it in place of «back to the factory» as soon as you are done at ${from.name || 'the place'}, and start it from there with the same vehicle. The fleet manager and the factory manager get a notice and can cancel it.`) : L(`${t.driverId ? assigneeName(t.driverId) : 'السواق'} هيشوفه مكان «ارجع المصنع» أول ما يخلّص في ${from.name || 'المكان'}، ويبدأه من هناك بنفس العربية. لو اتلغى يرجع له «ارجع المصنع».`, `${t.driverId ? assigneeName(t.driverId) : 'The driver'} sees it in place of «back to the factory» as soon as he is done at ${from.name || 'the place'}, and starts it from there with the same vehicle. If it is cancelled he gets «back to the factory» again.`) }),
       onOpen: f => wireChain(f, null),
       onSubmit: async f => {
         const d = formData(f); const D = DT(); let nx = null; const old = nextUpOf(t);
         if (d.dtWait) { nx = byId('trips', d.dtWait); if (!nx || nx.status !== 'approved') { toast(L('المشوار ده مابقاش مستني', 'That trip is no longer waiting'), 'err'); return false; } await Store.update('trips', nx.id, { after: t.id, driverId: nx.driverId || t.driverId || null, vehicleId: t.vehicleId || nx.vehicleId || null, fromLoc: from, from: from.name }); }
         else { const to = D.locOf(d, 'To'); if (!to) { toast(L('اختار المكان اللي رايح له', 'Pick where he is going'), 'err'); return false; } nx = newTripDoc(t, d, from, to, { after: t.id, addedAfter: true }); await Store.save('trips', nx, { silent: true }); }
         if (old && old.id !== nx.id && old.addedAfter && old.after === t.id) await Store.update('trips', old.id, { status: 'cancelled', cancelledAt: nowISO(), cancelledByName: (S.session && S.session.name) || '' }, { silent: true });
-        await Store.update('trips', t.id, { nextUp: nx.id, nextUpByName: (S.session && S.session.name) || '', nextUpAt: nowISO() });
+        await Store.update('trips', t.id, { nextUp: nx.id, nextUpByName: (S.session && S.session.name) || '', nextUpBy: (S.session && S.session.id) || null, nextUpAt: nowISO() });
         try {
-          if (t.driverId && typeof pushSend === 'function') pushSend(['w:' + t.driverId], L(`المشوار الجاي: ${toName(nx)}`, `Next trip: ${toName(nx)}`), L(`بعد ما تخلّص في ${from.name} ماترجعش المصنع — ابدأ ${nx.number} من صفحة المشوار.`, `When you are done at ${from.name} don't go back to the factory — start ${nx.number} from the trip page.`), '/#/fleet/' + t.id, 'nf-trip-' + t.id);
+          if (t.driverId && !drv() && typeof pushSend === 'function') pushSend(['w:' + t.driverId], L(`المشوار الجاي: ${toName(nx)}`, `Next trip: ${toName(nx)}`), L(`بعد ما تخلّص في ${from.name} ماترجعش المصنع — ابدأ ${nx.number} من صفحة المشوار.`, `When you are done at ${from.name} don't go back to the factory — start ${nx.number} from the trip page.`), '/#/fleet/' + t.id, 'nf-trip-' + t.id);
           if (DT()) DT().pushStaff(t, L(`${(S.session && S.session.name) || ''} ضاف مشوار بعد ${t.number}`, `${(S.session && S.session.name) || ''} added a trip after ${t.number}`), `${t.driverId ? assigneeName(t.driverId) + ': ' : ''}${from.name} ← ${toName(nx)}`);
         } catch (e) { /* ignore */ }
         toast(L('اتضاف المشوار الجاي', 'Next trip added')); rerender(); return true;
       } });
   };
   ACTIONS.tripNextOff = async id => {
-    const t = byId('trips', id); const nx = nextUpOf(t); if (!t || !fleetOk()) return;
+    const t = byId('trips', id); const nx = nextUpOf(t); if (!t || !(fleetOk() || (myRun(t) && t.nextUpBy && t.nextUpBy === (S.session && S.session.id)))) return;
     if (!(await confirmDlg(L(`تشيل المشوار الجاي${nx ? ` (${nx.number})` : ''}؟ السواق هيرجع له «ارجع المصنع».`, `Remove the next trip${nx ? ` (${nx.number})` : ''}? The driver gets «back to the factory» again.`), L('شيله', 'Remove it')))) return;
     if (nx && nx.after === t.id) await Store.update('trips', nx.id, nx.addedAfter ? { status: 'cancelled', cancelledAt: nowISO(), cancelledByName: (S.session && S.session.name) || '', after: null } : { after: null }, { silent: true });
     await Store.update('trips', t.id, { nextUp: null });
-    try { if (t.driverId && nx && typeof pushSend === 'function') pushSend(['w:' + t.driverId], L(`اتشال المشوار الجاي ${nx.number}`, `Next trip ${nx.number} removed`), L(`بعد ${t.number} ارجع المصنع.`, `After ${t.number} go back to the factory.`), '/#/fleet/' + t.id, 'nf-trip-' + t.id); } catch (e) { /* ignore */ }
+    try { if (t.driverId && nx && !drv() && typeof pushSend === 'function') pushSend(['w:' + t.driverId], L(`اتشال المشوار الجاي ${nx.number}`, `Next trip ${nx.number} removed`), L(`بعد ${t.number} ارجع المصنع.`, `After ${t.number} go back to the factory.`), '/#/fleet/' + t.id, 'nf-trip-' + t.id); } catch (e) { /* ignore */ }
     toast(L('اتشال', 'Removed')); rerender();
   };
 
@@ -53932,11 +53979,12 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
       <div class="tiny muted" style="margin-top:6px">${esc(L('مشوار تاني من هنا: المشوار ده يتقفل في مكانه والجديد يبدأ من نفس المكان.', 'Another trip from here: this trip closes where it is and the new one starts from the same place.'))}</div></div>`;
   }
   function nextCard(t) {
-    if (!fleetOk() || drv() || !['approved', 'started'].includes(t.status) || t.chainedTo || t.gpsAuto) return '';
-    const nu = nextUpOf(t);
-    return `<div class="card tnext"><div class="cardhead"><h3>${esc(L('المشوار الجاي', 'Next trip'))}</h3><div class="grow"></div>${nu ? `<button type="button" class="btn sm ghost" data-action="tripNextOff" data-arg="${esc(t.id)}">${esc(L('شيله', 'Remove'))}</button>` : `<button type="button" class="btn sm p" data-action="tripAddNext" data-arg="${esc(t.id)}">${icon('plus')}${esc(L('ضيف مشوار بعده', 'Add a trip after it'))}</button>`}</div>
+    if (!(fleetOk() && !drv()) && !myRun(t)) return '';
+    if (!['approved', 'started'].includes(t.status) || t.chainedTo || t.gpsAuto) return '';
+    const nu = nextUpOf(t); const canOff = !drv() || (t.nextUpBy && t.nextUpBy === (S.session && S.session.id));
+    return `<div class="card tnext"><div class="cardhead"><h3>${esc(L('المشوار الجاي', 'Next trip'))}</h3><div class="grow"></div>${nu ? (canOff ? `<button type="button" class="btn sm ghost" data-action="tripNextOff" data-arg="${esc(t.id)}">${esc(L('شيله', 'Remove'))}</button>` : '') : `<button type="button" class="btn sm p" data-action="tripAddNext" data-arg="${esc(t.id)}">${icon('plus')}${esc(drv() ? L('ضيف المشوار الجاي', 'Add the next trip') : L('ضيف مشوار بعده', 'Add a trip after it'))}</button>`}</div>
       ${nu ? `<a class="tch-nu" href="#/fleet/${esc(nu.id)}"><b>${esc(nu.number || '')}</b><span>${esc(toName(t) || '')} ← ${esc(toName(nu) || '')}</span></a><div class="tiny muted">${esc(L('السواق هيشوفه مكان «ارجع المصنع» ويبدأه من مكانه.', 'The driver sees it in place of «back to the factory» and starts it from where he is.'))}${t.nextUpByName ? ` ${esc(L('حطّه', 'Set by'))} ${esc(t.nextUpByName)}.` : ''}</div>`
-        : `<div class="tiny muted">${esc(L('لو السواق مش هيرجع المصنع بعد المشوار ده — ضيف اللي بعده، وهو يبدأه من مكانه.', "If the driver won't go back to the factory after this trip — add the next one and he starts it from where he is."))}</div>`}</div>`;
+        : `<div class="tiny muted">${esc(drv() ? L('لو مش راجع المصنع بعد المشوار ده — ضيف اللي بعده (مشروع، مورد، أو أي مكان)، وتبدأه من مكانك على طول.', "Not going back to the factory after this trip? Add the next one (a project, a supplier or any place) and start it from where you are.") : L('لو السواق مش هيرجع المصنع بعد المشوار ده — ضيف اللي بعده، وهو يبدأه من مكانه.', "If the driver won't go back to the factory after this trip — add the next one and he starts it from where he is."))}</div>`}</div>`;
   }
   function chainBanner(t) {
     const a = t.chainedFrom ? byId('trips', t.chainedFrom) : null, b = t.chainedTo ? byId('trips', t.chainedTo) : null; if (!a && !b) return '';
@@ -61031,5 +61079,146 @@ body.nf-gptpage .aifab,body.nf-gptpage .fab,body.nf-gptpage .nfdial{display:none
   .gpt-cards{grid-template-columns:1fr}
 }
 @media (max-width:380px){.gpt-sugg{grid-template-columns:1fr}.gpt-models button{padding:5px 9px}}
+</style>`);
+})();
+/* =====================================================================
+   v7.98 — the next trip of the driver from where he is (Mahmoud 18 Oct, brief claude/driver-next-trip-brief.md, «ابدأ» + PIN verified):
+   «the system has a list of trips, and while he is on one it tells him: careful, the next one is from X… he is at a supplier and
+   there is another thing near him — the factory manager approves, the driver gets a message: you leave supplier X to pick up,
+   then supplier Y. No need to go back to the factory first». Factory only (like the trips).
+   · The driver plans the next trip himself on his running trip («Add the next trip» — 99zzZzZZzzp-trip-chain.js, v7.74 rules:
+     the fleet manager and the factory manager are notified and may remove it).
+   · The system suggests: while a driver is at a place (arrived, the trip still running, nothing planned after it), a trip that
+     waits (approved, not started, his own or unassigned) whose destination is near where he is (≤ settings.policy.nextKm, default
+     8 km) is proposed to the factory manager: «X is at Y — there is a pickup at Z ~4 km away. Go there straight?» Approve / No.
+     Approve → that trip becomes his «next trip» (in place of «back to the factory») and the driver gets: «careful: when you are
+     done at Y you go to Z to pick up (…), then back to the factory». No → that trip is not proposed again for this trip.
+     No answer → nothing changes. Who decides: the factory manager (role manager), the vice, the owner — a new approval step
+     (before → after shown to the owner, PIN verified 18 Oct).
+   · The driver page: «My road today» — now, next, then the trips waiting for him, in order.
+   ===================================================================== */
+(function () {
+  if ((typeof isStudioz === 'function' && isStudioz()) || (typeof isConstruction === 'function' && isConstruction())) return;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const R = () => (typeof role === 'function' ? role() : '');
+  const W = () => typeof writable === 'function' && writable();
+  const me = () => (typeof myDriverId === 'function' ? myDriverId() : null);
+  const drv = () => R() === 'driver';
+  const fleetOk = () => typeof canFleet === 'function' && canFleet();
+  const deciders = () => (typeof isAdmin === 'function' && isAdmin()) || ['manager', 'vice'].includes(R());
+  const legsOf = t => (t && Array.isArray(t.legs) ? t.legs : []);
+  const hasLeg = (t, k) => legsOf(t).some(l => l && l.key === k);
+  const sh = s => String(s || '').split('—')[0].trim();
+  const toName = t => sh((t && (t.to || (t.toLoc && t.toLoc.name))) || '');
+  const running = t => !!t && t.status === 'started' && !t.gpsAuto && !t.chainedTo;
+  const nextUpOf = t => { const n = t && t.nextUp ? byId('trips', t.nextUp) : null; return n && n.status === 'approved' && !n.startedAt ? n : null; };
+  const limitKm = () => { const v = +(((S.settings || {}).policy || {}).nextKm); return v > 0 ? v : 8; };
+  /* coordinates of a place (the saved place first, then what is on the trip) */
+  function coords(loc) {
+    if (!loc) return null; const p = loc.key && loc.key !== 'new' && typeof placeByKey === 'function' ? placeByKey(loc.key) : null;
+    const lat = p && p.lat != null ? +p.lat : loc.lat != null ? +loc.lat : NaN, lng = p && p.lng != null ? +p.lng : loc.lng != null ? +loc.lng : NaN;
+    return isFinite(lat) && isFinite(lng) && (lat || lng) ? { lat, lng } : null;
+  }
+  function hereOf(t) {
+    const c = coords(t.toLoc); if (c) return c;
+    const tr = Array.isArray(t.track) ? t.track : []; const last = tr[tr.length - 1]; return last && isFinite(+last.lat) && isFinite(+last.lng) ? { lat: +last.lat, lng: +last.lng } : null;
+  }
+  const km = (a, b) => { const r = x => x * Math.PI / 180; const dLa = r(b.lat - a.lat), dLo = r(b.lng - a.lng); const h = Math.sin(dLa / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLo / 2) ** 2; return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h))); };
+  const atPlace = t => running(t) && (hasLeg(t, 'arrive') || !!t.arrivedAt) && !hasLeg(t, 'depart') && !t.returning;
+  /* trips that wait and may go next for this driver / vehicle */
+  const waiting = t => list('trips').filter(x => x && x.id !== t.id && x.status === 'approved' && !x.startedAt && !x.gpsAuto && !x.chainedFrom && !x.after
+    && (!x.driverId || x.driverId === t.driverId) && (!x.vehicleId || !t.vehicleId || x.vehicleId === t.vehicleId) && (!x.date || x.date <= todayISO()));
+  function bestFor(t) {
+    const here = hereOf(t); if (!here) return null; const no = new Set(Array.isArray(t.nextSuggestNo) ? t.nextSuggestNo : []);
+    let best = null;
+    waiting(t).forEach(x => { if (no.has(x.id)) return; const c = coords(x.toLoc); if (!c) return; const d = km(here, c); if (d <= limitKm() && (!best || d < best.d)) best = { x, d }; });
+    return best;
+  }
+  const sugOf = t => (t && t.nextSuggest && t.nextSuggest.status === 'pending' ? t.nextSuggest : null);
+  const sugTrip = t => { const s = sugOf(t); const x = s ? byId('trips', s.id) : null; return x && x.status === 'approved' && !x.startedAt && !x.after ? x : null; };
+
+  /* ---------- the system looks (any app that may write the trip: the driver himself, the fleet, the managers) ---------- */
+  let lookAt = 0;
+  async function look() {
+    if (!S.session || !W() || Date.now() - lookAt < 45000) return; lookAt = Date.now();
+    const mine = t => (drv() && t.driverId === me()) || fleetOk() || deciders();
+    for (const t of list('trips').filter(x => atPlace(x) && mine(x) && !nextUpOf(x) && !sugOf(x))) {
+      const b = bestFor(t); if (!b) continue;
+      const s = { id: b.x.id, km: Math.round(b.d * 10) / 10, at: nowISO(), status: 'pending' };
+      try { await Store.update('trips', t.id, { nextSuggest: s }, { silent: true }); } catch (e) { continue; }
+      const who = t.driverId ? assigneeName(t.driverId) : L('السواق', 'The driver');
+      try { if (typeof pushSend === 'function') pushSend(['role:manager', 'role:vice'], L(`اقتراح مشوار: ${who} عند ${toName(t)}`, `Trip suggestion: ${who} is at ${toName(t)}`), L(`فيه ${b.x.number} (${toName(b.x)}) على بعد ~${s.km} كم. يروح على طول من غير ما يرجع المصنع؟ وافق أو لا من صفحة المشوار.`, `${b.x.number} (${toName(b.x)}) is ~${s.km} km away. Go there straight without going back to the factory? Approve or not on the trip page.`), '/#/fleet/' + t.id, 'nf-tsug-' + t.id); } catch (e) { /* the card still shows */ }
+    }
+    /* a suggestion whose trip is gone / taken → cleared */
+    for (const t of list('trips').filter(x => sugOf(x) && !sugTrip(x) && mine(x))) { try { await Store.update('trips', t.id, { nextSuggest: Object.assign({}, t.nextSuggest, { status: 'gone' }) }, { silent: true }); } catch (e) { /* ignore */ } }
+  }
+  if (typeof RENDER_HOOKS !== 'undefined') RENDER_HOOKS.push(() => { setTimeout(() => { look().catch(() => { }); }, 400); });
+  window.nfTripLook = () => { lookAt = 0; return look(); };
+
+  /* ---------- the factory manager decides ---------- */
+  ACTIONS.tsugOk = async id => {
+    const t = byId('trips', id); const x = sugTrip(t); if (!t || !x || !deciders() || !W()) return;
+    const r = typeof window.nfTripSetNext === 'function' ? await window.nfTripSetNext(t, x, 'suggest') : false; if (!r) { toast(L('المشوار ده مابقاش متاح', 'That trip is no longer available'), 'err'); return; }
+    await Store.update('trips', t.id, { nextSuggest: Object.assign({}, t.nextSuggest, { status: 'ok', by: (S.session && S.session.name) || '', decidedAt: nowISO() }) }, { silent: true });
+    const what = x.purpose || TRIP_KINDS[x.kind] || '';
+    try { if (t.driverId && typeof pushSend === 'function') pushSend(['w:' + t.driverId], L('خلي بالك: المشوار الجاي', 'Careful: your next trip'), L(`بعد ما تخلّص عند ${toName(t)} ماترجعش المصنع — روح ${toName(x)}${what ? ` (${what})` : ''}، وبعدين ارجع المصنع. ابدأه من صفحة المشوار.`, `When you are done at ${toName(t)} don't go back to the factory — go to ${toName(x)}${what ? ` (${what})` : ''}, then back to the factory. Start it from the trip page.`), '/#/fleet/' + t.id, 'nf-trip-' + t.id); } catch (e) { /* ignore */ }
+    try { if (window.nfDT) window.nfDT.pushStaff(t, L(`${(S.session && S.session.name) || ''} وافق: ${t.number} ← ${x.number}`, `${(S.session && S.session.name) || ''} approved: ${t.number} → ${x.number}`), `${toName(t)} ← ${toName(x)}`); } catch (e) { /* ignore */ }
+    toast(L('اتبعت للسواق ✓', 'Sent to the driver ✓')); rerender();
+  };
+  ACTIONS.tsugNo = async id => {
+    const t = byId('trips', id); const s = sugOf(t); if (!t || !s || !deciders() || !W()) return;
+    await Store.update('trips', t.id, { nextSuggest: Object.assign({}, s, { status: 'no', by: (S.session && S.session.name) || '', decidedAt: nowISO() }), nextSuggestNo: (Array.isArray(t.nextSuggestNo) ? t.nextSuggestNo : []).concat([s.id]).slice(-20) }, { silent: true });
+    toast(L('تمام — مش هيتقترح تاني على المشوار ده', 'OK — it will not be suggested again for this trip')); rerender();
+  };
+
+  /* ---------- cards ---------- */
+  function sugCard(t) {
+    const x = sugTrip(t); if (!x || !running(t) || nextUpOf(t)) return '';
+    const s = sugOf(t); const who = t.driverId ? assigneeName(t.driverId) : L('السواق', 'The driver'); const what = x.purpose || TRIP_KINDS[x.kind] || '';
+    if (deciders()) return `<div class="card tsug"><div class="cardhead"><h3>${icon('map')}${esc(L('اقتراح من السيستم', 'Suggested by the system'))}</h3></div>
+      <div class="tsug-t">${esc(L(`${who} عند ${toName(t)}. فيه ${x.number} (${toName(x)}) على بعد ~${s.km} كم.`, `${who} is at ${toName(t)}. ${x.number} (${toName(x)}) is ~${s.km} km away.`))}</div>
+      ${what ? `<div class="tiny muted">${esc(what)}</div>` : ''}
+      <div class="tsug-q">${esc(L('يروح على طول من مكانه من غير ما يرجع المصنع؟', 'Go there straight from where he is, without going back to the factory?'))}</div>
+      <div class="tch-row"><button type="button" class="btn p tch-b" data-action="tsugOk" data-arg="${esc(t.id)}">${icon('check')}${esc(L('وافق', 'Approve'))}</button><button type="button" class="btn tch-b" data-action="tsugNo" data-arg="${esc(t.id)}">${esc(L('لا', 'No'))}</button></div></div>`;
+    if (drv() && t.driverId === me()) return `<div class="banner info tsug-w">${icon('clock')}<span>${esc(L(`فيه مشوار قريب منك (${toName(x)}) مستني موافقة مدير المصنع — لو وافق هيوصلك.`, `A trip near you (${toName(x)}) is waiting for the factory manager — you will be told if he approves.`))}</span></div>`;
+    return '';
+  }
+  function careCard(t) {
+    const nu = nextUpOf(t); if (!nu || !running(t) || t.nextUpWhy !== 'suggest' || !(drv() && t.driverId === me())) return '';
+    const what = nu.purpose || TRIP_KINDS[nu.kind] || '';
+    return `<div class="banner tsug-care">${icon('alert')}<span><b>${esc(L('خلي بالك', 'Careful'))}:</b> ${esc(L(`بعد ما تخلّص عند ${toName(t)} روح ${toName(nu)}${what ? ` (${what})` : ''} على طول، وبعدين ارجع المصنع.`, `when you are done at ${toName(t)} go straight to ${toName(nu)}${what ? ` (${what})` : ''}, then back to the factory.`))}${t.nextUpByName ? ` <span class="tiny muted">${esc(L('وافق', 'Approved by'))} ${esc(t.nextUpByName)}</span>` : ''}</span></div>`;
+  }
+  if (typeof vTripDetail === 'function') vTripDetail = (base => function (id) {
+    const html = base.apply(this, arguments); const t = byId('trips', id); if (!t) return html;
+    const ins = careCard(t) + sugCard(t); if (!ins) return html;
+    const i = html.indexOf('<div class="card'); return i < 0 ? ins + html : html.slice(0, i) + ins + html.slice(i);
+  })(vTripDetail);
+
+  /* the driver page: «My road today» — now → next → waiting */
+  function roadCard(w) {
+    if (!w || w.role !== 'driver') return '';
+    const cur = list('trips').find(t => t.driverId === w.id && running(t)); const nu = cur ? nextUpOf(cur) : null;
+    const wait = sortBy(list('trips').filter(t => t.driverId === w.id && t.status === 'approved' && !t.startedAt && (!nu || t.id !== nu.id) && (!t.date || t.date <= todayISO())), t => `${t.date || ''} ${t.time || ''}`);
+    if (!cur && !wait.length) return '';
+    const row = (t, lab, cls) => `<a class="troad-r ${cls}" href="#/fleet/${esc(t.id)}"><span class="troad-l">${esc(lab)}</span><b>${esc(toName(t) || t.purpose || '')}</b><small>${esc(t.number || '')}${t.purpose && toName(t) ? ' · ' + esc(sh(t.purpose)) : ''}</small></a>`;
+    return `<div class="card troad"><div class="cardhead"><h3>${icon('map')}${esc(L('طريقي النهارده', 'My road today'))}</h3></div><div class="troad-l2">
+      ${cur ? row(cur, L('دلوقتي', 'Now'), 'now') : ''}
+      ${nu ? row(nu, L('بعده', 'Next'), 'next') : cur ? `<div class="troad-r back"><span class="troad-l">${esc(L('بعده', 'Next'))}</span><b>${esc(L('ارجع المصنع', 'Back to the factory'))}</b>${cur && running(cur) ? `<button type="button" class="btn xs" data-action="tripAddNext" data-arg="${esc(cur.id)}">${icon('plus')}${esc(L('ضيف المشوار الجاي', 'Add the next trip'))}</button>` : ''}</div>` : ''}
+      ${wait.slice(0, 5).map(t => row(t, L('مستنيك', 'Waiting'), 'wait')).join('')}
+    </div></div>`;
+  }
+  if (typeof meExtraCardsBase === 'function') meExtraCardsBase = (base => function (w) { return roadCard(w) + base.apply(this, arguments); })(meExtraCardsBase);
+
+  document.head.insertAdjacentHTML('beforeend', `<style>
+.tsug{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.tsug .tsug-t{font-weight:600;line-height:1.6}.tsug .tsug-q{margin:8px 0 10px;font-size:14px}
+.tsug-care,.tsug-w{margin-bottom:12px}
+.troad-l2{display:grid;gap:6px}
+.troad-r{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"l b" "l s";column-gap:10px;align-items:center;padding:9px 11px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);color:inherit;text-decoration:none}
+.troad-r .troad-l{grid-area:l;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--surface);border:1px solid var(--line);white-space:nowrap}
+.troad-r b{grid-area:b;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.troad-r small{grid-area:s;color:var(--ink-2);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.troad-r.now{border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}.troad-r.now .troad-l{background:var(--accent);color:#fff;border-color:transparent}
+.troad-r.back{grid-template-columns:auto 1fr auto;grid-template-areas:"l b x"}.troad-r.back .btn{grid-area:x}
 </style>`);
 })();
