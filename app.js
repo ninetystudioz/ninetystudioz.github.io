@@ -40594,6 +40594,9 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
   const mealSite = () => +pol().mealCostSite || 115;
   const mealUntil = () => String(pol().mealUntil || '21:00');
   const editUntil = () => String(pol().otEditUntil || '19:00');
+  /* v8.01 (brief po-call-ot3): the heads' deadline (otDueAt, Mahmoud 18 Oct: 15:00) — same rule as the server (remind otnight.ts) */
+  window.nfOtDueMin = () => { const a = tmToMin(pol().otAskAt || '12:00'); const d = tmToMin(pol().otDueAt || ''); return d != null && a != null && d > a + 30 ? d : (a != null ? a + 120 : 840); };
+  const dueTxt = () => { const m = window.nfOtDueMin(); const h = Math.floor(m / 60), mm = m % 60; const h12 = h > 12 ? h - 12 : h; return en() ? `${h12}${mm ? ':' + String(mm).padStart(2, '0') : ''} pm` : `${h12}${mm ? ':' + String(mm).padStart(2, '0') : ''}`; };
   const OT_PFX = 'إضافي: ';
   const PLACE = () => ({ factory: L('في المصنع', 'At the factory'), site: L('في موقع المشروع', 'On the project site') });
   const placeShort = p => p === 'site' ? L('الموقع', 'site') : L('المصنع', 'factory');
@@ -40933,7 +40936,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
     const sumLine = (seesMoney() || isMgr()) ? (sum.length ? `<div class="tiny" style="margin-top:8px">${sum.map(r => `<span class="badge ${r.paidAt || r.status === 'approved' ? 'good' : 'warn'}">${esc((r.otSummary ? L('طلب الوجبات', 'Meals request') : L('إضافة', 'Addition')) + ' — ' + L(`${r.otCount || 0} شخص`, `${r.otCount || 0} people`) + ' — ' + (r.paidAt || r.status === 'approved' ? L(`اتحوّل لـ ${payerName()}`, `transferred to ${payerName()}`) : L('مستني المالك', 'waiting for the owner')))}</span>`).join(' ')}</div>` : `<div class="tiny muted" style="margin-top:8px">${esc(L('طلب الوجبات بيروح للمالك مرة واحدة أول ما كل الأقسام ترد، أو الساعة 3 بالكتير.', 'The meals request goes to the owner once, as soon as every department answered, or at 3 pm at the latest.'))}</div>`) : '';
     const head = `<div class="card otn-top"><div class="cardhead"><h3>${icon('moon')}${esc(L('سهر النهارده', "Tonight's overtime"))}</h3>${open ? `<span class="badge warn">${esc(L(`${open} لسه`, `${open} not yet`))}</span>` : ''}<div class="grow"></div>${canOpenProj() ? `<button type="button" class="btn sm ghost" data-action="otnOpen">${icon('plus')}${esc(L('افتح مشروع للسهر', 'Open a project for overtime'))}</button>` : ''}</div>
       ${st.length ? `<div class="otn-chips">${st.map(chip).join('')}</div>` : ''}
-      ${canReg() ? `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap"><button type="button" class="btn p" data-action="otnNew">${icon('plus')}${esc(L('سجّل سهر النهارده', "Register tonight's overtime"))}</button>${open ? `<button type="button" class="btn" data-action="otnNone">${esc(L('مفيش سهر النهارده', 'No overtime tonight'))}</button>` : ''} <span class="tiny muted">${esc(isHead() ? L(`قبل الساعة 2 — لحد ${editUntil()} بالكتير`, `before 2 pm — ${editUntil()} at the latest`) : '')}</span></div>` : ''}
+      ${canReg() ? `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap"><button type="button" class="btn p" data-action="otnNew">${icon('plus')}${esc(L('سجّل سهر النهارده', "Register tonight's overtime"))}</button>${open ? `<button type="button" class="btn" data-action="otnNone">${esc(L('مفيش سهر النهارده', 'No overtime tonight'))}</button>` : ''} <span class="tiny muted">${esc(isHead() ? L(`قبل الساعة ${dueTxt()} — لحد ${editUntil()} بالكتير`, `before ${dueTxt()} — ${editUntil()} at the latest`) : '')}</span></div>` : ''}
       ${sumLine}</div>`;
     return head + (es.length ? `<div class="small muted" style="margin:6px 2px">${esc(L(`النهارده: ${total} شخص في ${es.length} تسجيل`, `Today: ${total} people in ${es.length} entries`))}</div>` + es.map(entryCard).join('') : `<div class="empty"><b>${esc(L('لسه محدش اتسجّل في سهر النهارده', 'Nobody registered for tonight yet'))}</b></div>`);
   }
@@ -40968,7 +40971,7 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
     const bar = canReport() ? `<div class="tabs" style="margin-bottom:12px"><button type="button" class="${tab === 'today' ? 'on' : ''}" data-otntab="today">${esc(L('النهارده', 'Today'))}</button><button type="button" class="${tab === 'report' ? 'on' : ''}" data-otntab="report">${esc(L('التقرير', 'Report'))}</button></div>` : '';
     return `<div class="otn">${bar}${tab === 'report' ? reportHTML() : todayHTML(todayISO())}</div>`;
   };
-  EXTRA_TITLES.otnight = () => ({ title: L('سهر النهارده', "Tonight's overtime"), sub: L(`رئيس كل قسم يحدد قبل الساعة 2 · الوجبة: اللي يمشي قبل ${mealUntil()} تتخصم منه`, `Every head decides before 2 pm · meal: whoever leaves before ${mealUntil()} pays for it`) });
+  EXTRA_TITLES.otnight = () => ({ title: L('سهر النهارده', "Tonight's overtime"), sub: L(`رئيس كل قسم يحدد قبل الساعة ${dueTxt()} · الوجبة: اللي يمشي قبل ${mealUntil()} تتخصم منه`, `Every head decides before ${dueTxt()} · meal: whoever leaves before ${mealUntil()} pays for it`) });
   document.addEventListener('click', e => {
     const tb = e.target.closest && e.target.closest('[data-otntab]'); if (tb) { S._otnTab = tb.dataset.otntab; render(true); return; }
     const ym = e.target.closest && e.target.closest('[data-otnym]'); if (ym) { S._otnYm = ym.dataset.otnym; render(true); }
@@ -58610,7 +58613,7 @@ html[dir="rtl"] #nhome .nw-k{text-align:right}
   })(window.nfOtTaskFor);
 
   /* the day's meals request deadline (same as the server: ask time + 3 h) */
-  window.nfOtSumPassed = () => { try { const a = tmToMin(pol().otAskAt || '12:00'); const n = tmToMin(nowTm()); return a != null && n != null && n >= a + 180; } catch (e) { return false; } };
+  window.nfOtSumPassed = () => { try { const a = tmToMin(pol().otAskAt || '12:00'); const n = tmToMin(nowTm()); const d = window.nfOtDueMin ? window.nfOtDueMin() : (a != null ? a + 120 : null); return d != null && n != null && n >= d + 60; } catch (e) { return false; } };
 
   /* ---------- the form: the kind ---------- */
   window.nfOtKindField = t => {
@@ -60637,6 +60640,10 @@ html.nf-guest #pushreq,html.nf-guest #nf-pushfix{display:none!important}
       else if (st.role === 'hr' && window.nfAccMgr()) add(byPid(window.nfAccMgr().id), why);
       else dir.filter(d => d.role === st.role).forEach(d => add(d, why));
     }
+    /* v8.01 (brief po-call-ot3): the accounts people and the owner are on every purchase too */
+    try { (typeof window.nfPoAccPeople === 'function' ? window.nfPoAccPeople(p.id, dir) : []).forEach(x => add(dir.find(d => d.uid === x.uid), x.why)); } catch (e) { /* ignore */ }
+    dir.filter(d => d.role === 'purch').forEach(d => add(d, L('المشتريات', 'Purchasing')));
+    dir.filter(d => d.role === 'admin').forEach(d => add(d, L('المالك', 'Owner')));
     return [...out.values()];
   }
   ACTIONS.poCall = async id => {
@@ -61920,4 +61927,180 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
   /* 7) the upload dialog tells the technical office what happens */
   const upBase = ACTIONS.fileUpload;
   ACTIONS.fileUpload = arg => { upBase(arg); setTimeout(() => { const inp = document.getElementById('f-files'); const hint = inp && inp.nextElementSibling; if (hint && priv() && !hint.querySelector('.nfsec')) hint.insertAdjacentHTML('beforeend', ` · <b class="nfsec">${esc(L('رسومات PDF والموديل 3D والنسخة الكاملة بتتحفظ «سري» لوحدها: المالك والمكتب الفني بس. الأقسام بتشوف صفحة المعاينة والصور.', 'PDF drawings, 3D models and the full version are saved as secret by themselves: owner and technical office only. The departments see the preview page and the pictures.'))}</b>`); }, 40); };
+})();
+/* =====================================================================
+   v8.01 — brief claude/po-call-ot3-brief.md (Mahmoud 18 Oct, publish go-ahead):
+   · «Call» on every work page of the factory, like the task page: the work order, the project (same order), the trip.
+     The people of that work + the owner and the factory manager; the ring says «about: <the work>».
+   · No answer → «X called you about <the work> and you did not answer» on the callee's phone, one tap opens the same page.
+     Ticked «important» → the other people of that work are told too.
+   · The purchase page: the accounts people (whoever approved, the accounts manager) and the owner are in its call list, and the
+     «waiting for the owner's transfer» card has «Call the accounts»; every such call tells the owner on his phone.
+   · The call is kept on the work itself (a line in the purchase comments; a «calls» list on the order / trip).
+   No permission change: only who already sees the page, only who is in the call directory. No money in any text.
+   Factory only. Phone and computer, Arabic and English.
+   ===================================================================== */
+(function () {
+  if (window.__NF_CTXCALL__) return; window.__NF_CTXCALL__ = 1;
+  if ((typeof isStuSys === 'function' && isStuSys()) || (typeof isConstruction === 'function' && isConstruction()) || (typeof isStudioz === 'function' && isStudioz())) return;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en';
+  const L = (a, b) => (en() ? b : a);
+  const api = () => window.nfCalls || null;
+  const avail = () => { const a = api(); return !!(a && typeof a.available === 'function' && a.available()); };
+  const myUid = () => (S.sbUser && S.sbUser.id) || '';
+  const fmtT = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  const push = (to, title, body, url, tag) => { try { return S.sb.functions.invoke('push', { body: { action: 'send', to, title, body, url, tag, sms: false } }).catch(() => { }); } catch (e) { return null; } };
+  const heads = d => (typeof deptHeads === 'function' && d ? deptHeads(d) || [] : []);
+  const byPid = (dir, pid) => { if (!pid) return null; const s = String(pid); if (s.startsWith('sb:')) return dir.find(d => d.uid === s.slice(3)) || null; const b = s.replace(/^w:/, ''); return dir.find(d => d.person_id === 'w:' + b || d.person_id === s || d.person_id === b) || null; };
+  const accMgr = () => (typeof window.nfAccMgr === 'function' ? window.nfAccMgr() : null);
+
+  /* ---------- the kinds of work ---------- */
+  const KINDS = {
+    ord: {
+      col: 'orders', url: id => '/#/orders/' + id,
+      title: o => `${L('أمر تشغيل', 'Work order')} ${o.code || ''}`.trim(),
+      people(o, dir, add) {
+        (o.route || []).forEach(d => heads(d).forEach(h => add(byPid(dir, h.id), L(`رئيس ${typeof deptName === 'function' ? deptName(d) : d}`, `Head of ${typeof deptName === 'function' ? deptName(d) : d}`))));
+        heads('tech').forEach(h => add(byPid(dir, h.id), L('المكتب الفني', 'Technical office')));
+        add(byPid(dir, o.createdBy), L('عمل الأمر', 'Created the order'));
+        if (o.surveyorId) add(byPid(dir, o.surveyorId), L('المعاين', 'Surveyor'));
+      }
+    },
+    trip: {
+      col: 'trips', url: id => '/#/fleet/' + id,
+      title: t => `${L('مشوار', 'Trip')} ${t.number || t.purpose || ''}`.trim(),
+      people(t, dir, add) {
+        add(byPid(dir, t.driverId), L('السواق', 'Driver'));
+        add(byPid(dir, t.createdBy), L('طلب المشوار', 'Asked for the trip'));
+        heads('fleet').forEach(h => add(byPid(dir, h.id), L('رئيس الحركة', 'Head of transport')));
+        dir.filter(d => d.role === 'fleet').forEach(d => add(d, L('الحركة', 'Transport')));
+        if (t.purchaseId) dir.filter(d => d.role === 'purch').forEach(d => add(d, L('المشتريات', 'Purchasing')));
+      }
+    }
+  };
+  function people(kind, rec, dir) {
+    const out = new Map(); const me = myUid();
+    const add = (d, why) => { if (!d || !d.uid || d.uid === me || out.has(d.uid)) return; out.set(d.uid, { uid: d.uid, name: d.name || '', why }); };
+    try { KINDS[kind].people(rec, dir, add); } catch (e) { /* ignore */ }
+    dir.filter(d => d.role === 'manager').forEach(d => add(d, L('مدير المصنع', 'Factory manager')));
+    dir.filter(d => d.role === 'admin').forEach(d => add(d, L('المالك', 'Owner')));
+    return [...out.values()];
+  }
+  window.nfCtxCallPeople = (kind, id, dir) => { const k = KINDS[kind]; const r = k && byId(k.col, id); return r ? people(kind, r, dir || []) : []; };
+
+  const sheet = (title, sub, ps, go, imp) => openModal({
+    title, body: `<div class="small muted" style="margin-bottom:8px">${esc(sub)}</div>${imp ? `<label class="tcall-imp"><input type="checkbox" id="ccall-imp"> ${esc(L('مكالمة هامة — يوصل إشعار لباقي الناس على الشغلانة دي', 'Important call — the other people on this work are notified'))}</label>` : ''}
+      <div class="list tcall-list">${ps.map(x => `<div class="item" style="cursor:default"><div class="main"><div class="title">${esc(x.name)}</div><div class="why tiny muted">${esc(x.why || '')}</div></div><button type="button" class="btn sm p" data-action="${go}" data-arg="${esc(x.arg)}|${esc(x.uid)}|0">${icon('phone')}${esc(L('صوت', 'Voice'))}</button><button type="button" class="btn sm" data-action="${go}" data-arg="${esc(x.arg)}|${esc(x.uid)}|1">${icon('camera')}${esc(L('فيديو', 'Video'))}</button></div>`).join('')}</div>`,
+    footer: `<button type="button" class="btn" data-action="closemodal">${esc(L('إلغاء', 'Cancel'))}</button>`
+  });
+
+  /* ---------- «Call» on a work order / project / trip ---------- */
+  ACTIONS.ctxCall = async arg => {
+    const [kind, id] = String(arg || '').split(':'); const k = KINDS[kind]; const r = k && byId(k.col, id); if (!r || !avail()) return;
+    let dir = []; try { dir = (await api().dir()) || []; } catch (e) { dir = []; }
+    const ps = people(kind, r, dir).map(p => Object.assign(p, { arg: kind + ':' + id }));
+    if (!ps.length) { toast(L('مفيش حد على الشغلانة دي متاح للاتصال', 'Nobody on this work can be called'), 'err'); return; }
+    sheet(L('اتصال بخصوص الشغلانة دي', 'Call about this work'), k.title(r), ps, 'ctxCallGo', true);
+  };
+  ACTIONS.ctxCallGo = arg => {
+    const [kid, uid, v] = String(arg || '').split('|'); const [kind, id] = String(kid || '').split(':'); const k = KINDS[kind]; const r = k && byId(k.col, id);
+    if (!r || !uid || !avail()) return; const imp = !!(document.getElementById('ccall-imp') || {}).checked; closeModal();
+    api().start(uid, v === '1', { taskId: kind + ':' + id, title: k.title(r), important: imp });
+  };
+  const bar = arg => `<div class="pocallbar"><button type="button" class="btn sm" data-action="ctxCall" data-arg="${esc(arg)}">${icon('phone')}<span>${esc(L('اتصال', 'Call'))}</span></button></div>`;
+  const wrapPage = (fn, kindOf) => base => function () {
+    const h = base.apply(this, arguments);
+    try { if (!S.session || !avail()) return h; const a = kindOf.apply(this, arguments); return a ? bar(a) + h : h; } catch (e) { return h; }
+  };
+  if (typeof vOrderDetail === 'function') vOrderDetail = wrapPage('order', id => (byId('orders', id) ? 'ord:' + id : ''))(vOrderDetail);
+  if (typeof vProjectDetail === 'function') vProjectDetail = wrapPage('project', o => (o && o.id ? 'ord:' + o.id : ''))(vProjectDetail);
+  if (typeof vTripDetail === 'function') vTripDetail = wrapPage('trip', id => (byId('trips', id) ? 'trip:' + id : ''))(vTripDetail);
+
+  /* ---------- «Call the accounts» on the transfer card ---------- */
+  function accPeople(p, dir) {
+    const out = new Map(); const me = myUid();
+    const add = (d, why) => { if (!d || !d.uid || d.uid === me) return; if (out.has(d.uid)) { out.get(d.uid).why += ' · ' + why; return; } out.set(d.uid, { uid: d.uid, name: d.name || '', why }); };
+    const ap = p.approval && p.approval.approvedByName; if (ap) add(dir.find(d => d.name && d.name.trim() === String(ap).trim()), L('اعتمد الطلب', 'Approved it'));
+    const m = accMgr(); if (m) add(byPid(dir, m.id), L('مدير الحسابات', 'Accounts manager'));
+    dir.filter(d => d.role === 'acc').forEach(d => add(d, L('الحسابات', 'Accounts')));
+    return [...out.values()];
+  }
+  window.nfPoAccPeople = (id, dir) => { const p = byId('purchases', id); return p ? accPeople(p, dir || []) : []; };
+  const trfTitle = p => `${L('تحويل', 'Transfer')} ${p.number || ''}`.trim();
+  ACTIONS.poAccCall = async id => {
+    const p = byId('purchases', id); if (!p || !avail()) return;
+    let dir = []; try { dir = (await api().dir()) || []; } catch (e) { dir = []; }
+    const ps = accPeople(p, dir).map(x => Object.assign(x, { arg: p.id }));
+    if (!ps.length) { toast(L('مفيش حد من الحسابات متاح للاتصال دلوقتي', 'Nobody from the accounts can be called now'), 'err'); return; }
+    if (ps.length === 1) { api().start(ps[0].uid, false, { taskId: 'potrf:' + p.id, title: trfTitle(p), important: true }); return; }
+    sheet(L('اتصال بالحسابات', 'Call the accounts'), trfTitle(p), ps, 'poAccCallGo', false);
+  };
+  ACTIONS.poAccCallGo = arg => {
+    const [pid, uid, v] = String(arg || '').split('|'); const p = byId('purchases', pid); if (!p || !uid || !avail()) return; closeModal();
+    api().start(uid, v === '1', { taskId: 'potrf:' + p.id, title: trfTitle(p), important: true });
+  };
+  if (typeof transferCard === 'function') transferCard = (base => function (p) {
+    const h = base.apply(this, arguments);
+    try {
+      if (!h || !p || p.status !== 'transfer' || p.transfer || !S.session || !avail()) return h;
+      if (typeof window.nfIsAccMgr === 'function' && window.nfIsAccMgr()) return h;
+      const m = '<h3>'; const i = h.indexOf('</h3>'); if (h.indexOf(m) < 0 || i < 0) return h;
+      const btn = `<button type="button" class="btn sm trfcall" data-action="poAccCall" data-arg="${esc(p.id)}">${icon('phone')}<span>${esc(L('اتصال بالحسابات', 'Call the accounts'))}</span></button>`;
+      return h.slice(0, i + 5) + btn + h.slice(i + 5);
+    } catch (e) { return h; }
+  })(transferCard);
+
+  /* ---------- around the call ---------- */
+  const prev = window.nfCallHook;
+  window.nfCallHook = function (evt, c, x) {
+    if (typeof prev === 'function') { try { prev(evt, c, x); } catch (e) { /* ignore */ } }
+    try {
+      if (!c || !c.ctx || c.dir !== 'out') return;
+      const key = String(c.ctx.taskId || ''); const m0 = key.match(/^(ord|trip|po|potrf):(.+)$/); if (!m0) return;
+      const kind = m0[1], id = m0[2]; const a = api(); if (!a) return;
+      const url = kind === 'ord' ? '/#/orders/' + id : kind === 'trip' ? '/#/fleet/' + id : '/#/purchases/' + id;
+      const calleeName = ((a.dirOf && a.dirOf(c.callee)) || {}).name || ''; const myName = c.myName || (S.session && S.session.name) || '';
+      const title = c.ctx.title || '';
+      if (evt === 'start') {
+        a.dir().then(dir => {
+          dir = dir || [];
+          if (kind === 'potrf') {
+            const own = dir.filter(d => d.role === 'admin' && d.uid !== myUid() && d.uid !== c.callee).map(d => 'uid:' + d.uid);
+            if (own.length) push(own, `📞 ${myName} ${L('بيكلّم الحسابات', 'is calling the accounts')}`, `${L('بخصوص', 'About')}: ${title} — ${calleeName}`, url, 'trfcall-' + (c.id || id));
+          } else if (c.ctx.important && KINDS[kind]) {
+            const others = window.nfCtxCallPeople(kind, id, dir).filter(p => p.uid !== c.callee).map(p => 'uid:' + p.uid);
+            if (others.length) push(others, `📞 ${L('مكالمة هامة بخصوص', 'Important call about')}: ${title}`, `${myName} ${L('بيكلّم', 'is calling')} ${calleeName}`, url, 'ccall-' + (c.id || id));
+          }
+        }).catch(() => { });
+        return;
+      }
+      if (evt !== 'end') return;
+      const answered = c.state === 'active' || (c.secs || 0) > 0; const st = String((x && x.status) || c.remoteStatus || '');
+      const declined = st === 'declined'; const busy = st === 'busy';
+      const res = answered ? `${L('اترد', 'answered')} ${fmtT(c.secs || 0)}` : declined ? L('رفض المكالمة', 'declined') : busy ? L('كان في مكالمة تانية', 'was on another call') : L('مردّش', 'no answer');
+      if (!answered && !declined) push(['uid:' + c.callee], `📞 ${L('مكالمة فايتة', 'Missed call')} — ${myName}`, `${L(`${myName} اتصل بيك بخصوص`, `${myName} called you about`)}: ${title} — ${L('افتح', 'open it')}`, url, 'ccallmiss-' + key);
+      const at = nowISO(); const rec = { at, by: (S.session && (S.session.id || S.session.workerId)) || '', byName: myName, to: c.callee, toName: calleeName, video: !!c.video, answered, secs: c.secs || 0, status: st || null };
+      if (kind === 'potrf') {
+        const p = byId('purchases', id); if (!p) return;
+        const m = { id: uid(), at, by: rec.by, byName: myName, kind: 'call', text: `📞 ${myName} ${L('اتصل بالحسابات', 'called the accounts')} (${calleeName}) ${L('بخصوص التحويل', 'about the transfer')} — ${res}` };
+        Store.update('purchases', id, { comments: (p.comments || []).concat([m]).slice(-300), calls: (p.calls || []).concat([rec]).slice(-100), lastCommentAt: at }, { silent: true }).catch(() => { });
+      } else if (KINDS[kind]) {
+        const k = KINDS[kind]; const r = byId(k.col, id); if (!r) return;
+        Store.update(k.col, id, { calls: (Array.isArray(r.calls) ? r.calls : []).concat([rec]).slice(-60) }, { silent: true }).catch(() => { });
+      }
+    } catch (e) { /* the call itself is fine */ }
+  };
+
+  /* the last calls under the bar of an order / trip */
+  const lastCalls = r => {
+    const cs = (Array.isArray(r && r.calls) ? r.calls : []).slice(-3).reverse(); if (!cs.length) return '';
+    return `<div class="tiny muted ccall-last">${cs.map(c => `📞 ${esc(c.byName || '')} → ${esc(c.toName || '')} · ${c.answered ? esc(L('اترد', 'answered')) + ' ' + fmtT(c.secs || 0) : esc(L('مردّش', 'no answer'))} · ${esc(typeof fmtDateTime === 'function' ? fmtDateTime(c.at) : String(c.at || '').slice(0, 16).replace('T', ' '))}`).join('<br>')}</div>`;
+  };
+  const addLast = (fn, colOf) => base => function () { let h = base.apply(this, arguments); try { const r = colOf.apply(this, arguments); const l = lastCalls(r); if (l) { const j = h.indexOf('</div>', h.indexOf('class="pocallbar"')); if (j > 0) h = h.slice(0, j + 6) + l + h.slice(j + 6); } } catch (e) { /* ignore */ } return h; };
+  if (typeof vOrderDetail === 'function') vOrderDetail = addLast('order', id => byId('orders', id))(vOrderDetail);
+  if (typeof vTripDetail === 'function') vTripDetail = addLast('trip', id => byId('trips', id))(vTripDetail);
+
+  document.head.insertAdjacentHTML('beforeend', `<style>.pocallbar{display:flex;justify-content:flex-end;margin:0 0 10px}.pocallbar .btn{display:inline-flex;align-items:center;gap:6px}.pocallbar .btn svg{width:16px;height:16px}
+.trfcall{display:inline-flex;align-items:center;gap:6px;margin-inline-start:8px}.trfcall svg{width:15px;height:15px}
+.ccall-last{margin:-4px 0 10px;text-align:end;line-height:1.7}</style>`);
 })();
