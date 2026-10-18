@@ -34772,7 +34772,7 @@ if (typeof STU_ON === 'undefined' || !STU_ON) (function () {
   }
   function listen() {
     const pn = PN(); if (listening || !pn) return; listening = true;
-    pn.addListener('registration', t => { token = (t && t.value) || ''; sendToken(false); });
+    pn.addListener('registration', t => { token = (t && t.value) || ''; sendToken(false); seen(true); });
     pn.addListener('registrationError', e => console.warn('apns registration', e));
     pn.addListener('pushNotificationActionPerformed', a => { const d = (a && a.notification && a.notification.data) || {}; const u = String(d.url || ''); const i = u.indexOf('#'); if (i >= 0) location.hash = u.slice(i); });
   }
@@ -34786,12 +34786,33 @@ if (typeof STU_ON === 'undefined' || !STU_ON) (function () {
     try { await PN().register(); } catch (e) { console.warn('apns register', e); return false; }
     return true;
   }
+  /* v7.97 (Mahmoud 18 Oct): the number on the app icon = the web app badge (unread chat + requests waiting). While the app is open it
+     reports that number (+ its build, so we can see the app really updated after a release) to Edge "push" (action app-seen); the
+     server keeps it and adds one with every notification, and sets the icon right away when it changed. */
+  let seenN = -1, seenAt = 0, seenB = '', seenBusy = false;
+  async function seen(force) {
+    if (!token || !S.session || !hosted() || seenBusy) return false;
+    let n = 0; try { n = typeof notifCount === 'function' ? notifCount() : 0; } catch (e) { n = 0; }
+    const b = String(window.NF_BUILD || '');
+    if (!force && n === seenN && b === seenB && Date.now() - seenAt < 10 * 60000) return true;
+    seenBusy = true;
+    try {
+      const r = await S.sb.functions.invoke('push', { body: { action: 'app-seen', token, platform: isAndroid() ? 'android' : 'ios', n, build: b } });
+      if (r && r.data && r.data.ok) { seenN = n; seenB = b; seenAt = Date.now(); }
+    } catch (e) { /* offline: next time */ }
+    seenBusy = false; return true;
+  }
+  window.nfAppSeen = seen;
   window.nfNativePush = { isNative, enable, async state() { const p = await perm(); return p === 'granted' ? { ok: true } : { ok: false, why: p === 'denied' ? 'ndenied' : 'ndefault' }; } };
   if (isNative()) {
     try { document.documentElement.classList.add('nf-native'); } catch (e) { /* ignore */ }
     try { listen(); } catch (e) { /* ignore */ }   /* v6.86: listen from the start — a tap that launches the app fires before the session boots */
     let booted = '';
     RENDER_HOOKS.push(() => { const sid = S.session && S.session.id; if (!sid || !hosted() || booted === sid) return; booted = sid; setTimeout(() => enable(true), 1500); });
+    /* v7.97: keep the icon number in step — after every screen update (only sent when the number changed) and when the app comes back */
+    let seenT = 0; RENDER_HOOKS.push(() => { clearTimeout(seenT); seenT = setTimeout(() => seen(false), 800); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(() => seen(true), 600); });
+    document.addEventListener('resume', () => setTimeout(() => seen(true), 600));
     if (typeof ACTIONS.pushEnable === 'function') ACTIONS.pushEnable = (base => async (...a) => {
       if (!isNative()) return base(...a);
       const ok = await enable(true);
@@ -53202,6 +53223,14 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
      why, keeps what was typed, updates, and opens the same request again filled in, so the person only presses Save;
    · a reload that still lands on the old copy (the CDN can lag a few minutes) is not repeated for 3 minutes — no reload loop;
    · only on the web app / the phone apps (http/https with NF_PWA); the desktop file build and the tests' local pages are left alone.
+   v7.97 (Mahmoud 18 Oct: «when we release an update and I have the phone app open, tell me there is one and I press update»; he also
+   noticed the TestFlight app never updated by itself):
+   · inside the phone app (Capacitor) a new version is never loaded silently: a card at the bottom says «there is an update» with the
+     main news of this release (whatsnew.json, written with each release) and «Update» / «Later». «Later» hides it until the app comes
+     back to the front. «Update» loads the new version (still arriving on the CDN → the card says so and tries again by itself);
+   · the app looks more often: on open, when it comes back (visibilitychange / focus / pageshow / Capacitor «resume» / App plugin),
+     and every 2 minutes while open — the WebView of the app does not always report coming back to the front;
+   · the web app and computers keep updating by themselves as before; a request from an old copy is still held back (below).
    ===================================================================== */
 (function () {
   if (window.__NF_FRESH770__) return; window.__NF_FRESH770__ = 1;
@@ -53247,7 +53276,7 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
 
   function reloadFresh(why) {
     const k = 'nf.fresh.try'; const prev = JSON.parse(ss.get(k) || 'null');
-    if (prev && prev.v === F.latest && Date.now() - prev.at < 180000) { strip(true); return false; } /* just tried: the CDN is still on the old copy */
+    if (prev && prev.v === F.latest && Date.now() - prev.at < 180000) { if (!nat()) strip(true); return false; } /* just tried: the CDN is still on the old copy */
     ss.set(k, JSON.stringify({ v: F.latest, at: Date.now(), why: why || 'auto' }));
     try { if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) navigator.serviceWorker.getRegistration().then(reg => reg && reg.update()).catch(() => { }); } catch (e) { /* ignore */ }
     const url = location.pathname + '?fresh=' + Date.now() + location.hash;   /* a new address = the page itself comes fresh, not from any cache */
@@ -53256,7 +53285,43 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
   }
   F.go = url => location.replace(url);   /* tests replace this */
 
+  /* v7.97: inside the phone app (iPhone / Android app) */
+  const nat = () => { try { const c = window.Capacitor; return !!(c && typeof c.isNativePlatform === 'function' && c.isNativePlatform()); } catch (e) { return false; } };
+  F.nat = nat;
+  let later = '', news = null, lagT = 0;
+  async function loadNews() {
+    if (news && news.build === F.latest) return news;
+    try { const r = await fetch('whatsnew.json?t=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' }); if (r.ok) { const j = await r.json(); if (j && j.build === F.latest) news = j; } } catch (e) { /* no news line */ }
+    return news;
+  }
+  async function card(state) {
+    if (!state && later === F.latest) return;
+    if (document.getElementById('nf-fresh-dlg')) return;
+    const j = state ? news : await loadNews();
+    let el = document.getElementById('nf-upd-card');
+    if (!el) { el = document.createElement('div'); el.id = 'nf-upd-card'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    const line = j ? String((en() ? j.en : j.ar) || '').trim() : '';
+    const lag = state === 'lag';
+    el.innerHTML = `<div class="nfu-ic">↻</div><div class="nfu-t"><b>${esc(lag ? L('التحديث لسه بيوصل — ثواني', 'The update is still arriving — a few seconds') : L('فيه تحديث جديد للسيستم', 'A new update of the system is ready'))}</b>${line && !lag ? `<span>${esc(line)}</span>` : ''}</div><div class="nfu-b">${lag ? '' : `<button type="button" class="nfu-p" data-fresh="upd">${esc(L('حدّث', 'Update'))}</button><button type="button" data-fresh="later">${esc(L('بعدين', 'Later'))}</button>`}</div>`;
+  }
+  function hideCard() { const el = document.getElementById('nf-upd-card'); if (el) el.remove(); }
+  function natUpdate() {
+    keepDraft();
+    if (reloadFresh('button')) { card('lag'); return; }
+    /* pressed twice within 3 minutes on the same new version: the CDN still serves the old copy — say so and try again by itself */
+    card('lag'); clearTimeout(lagT);
+    lagT = setTimeout(() => { ss.set('nf.fresh.try', null); natUpdate(); }, 20000);
+  }
+  F.card = card;
+
   function onStale() {
+    if (nat()) {
+      /* just pressed «Update» and still on the old copy (the CDN lags a few minutes): keep trying by itself, at most 6 times */
+      let prev = null; try { prev = JSON.parse(ss.get('nf.fresh.try') || 'null'); } catch (e) { prev = null; }
+      const n = +(ss.get('nf.fresh.lagn') || 0);
+      if (prev && prev.v === F.latest && prev.why === 'button' && Date.now() - prev.at < 180000 && n < 6) { card('lag'); clearTimeout(lagT); lagT = setTimeout(() => { ss.set('nf.fresh.lagn', String(n + 1)); ss.set('nf.fresh.try', null); natUpdate(); }, 20000); return; }
+      ss.set('nf.fresh.lagn', null); card(); return;
+    }
     if (!busy()) { reloadFresh('auto'); return; }
     strip(false);
   }
@@ -53271,7 +53336,8 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
     const b = e.target.closest && e.target.closest('[data-fresh]'); if (!b) return; e.preventDefault();
     const k = b.dataset.fresh;
     if (k === 'now') { ss.set('nf.fresh.try', null); keepDraft(); reloadFresh('button'); }
-    if (k === 'later') { const d = document.getElementById('nf-fresh-dlg'); if (d) d.remove(); }
+    if (k === 'later') { const d = document.getElementById('nf-fresh-dlg'); if (d) d.remove(); if (b.closest('#nf-upd-card')) { later = F.latest; hideCard(); } }
+    if (k === 'upd') natUpdate();
   });
 
   /* a request from a stale copy: keep what was typed, update, open it again filled in */
@@ -53317,11 +53383,18 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
   function boot() {
     if (!can()) return;
     if (/[?&]fresh=/.test(location.search)) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* ignore */ } }
-    setTimeout(() => { F.check(true).then(st => { if (!st) { ss.set('nf.fresh.try', null); restoreWhenReady(); } }); }, 2500);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') F.check(); });
+    setTimeout(() => { F.check(true).then(st => { if (!st) { ss.set('nf.fresh.try', null); ss.set('nf.fresh.lagn', null); hideCard(); restoreWhenReady(); } }); }, 2500);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (nat()) later = ''; F.check(nat()); } });
+    if (nat()) {
+      /* v7.97: the app's WebView does not always fire visibilitychange — listen to every «came back» signal, and look every 2 minutes */
+      const back = () => { later = ''; F.check(true); };
+      window.addEventListener('focus', back); window.addEventListener('pageshow', back); document.addEventListener('resume', back);
+      try { const A = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App; if (A && typeof A.addListener === 'function') A.addListener('appStateChange', st => { if (st && st.isActive) back(); }); } catch (e) { /* no App plugin */ }
+      setInterval(() => { if (document.visibilityState !== 'hidden') F.check(true); }, 2 * 60000);
+    }
     setInterval(() => { if (document.visibilityState !== 'hidden') F.check(true); }, 10 * 60000);
     /* a strip is waiting: update the moment the person is free (form closed, nothing typed) */
-    setInterval(() => { if (F.stale && document.getElementById('nf-fresh-bar') && !busy()) reloadFresh('idle'); }, 4000);
+    setInterval(() => { if (F.stale && !nat() && document.getElementById('nf-fresh-bar') && !busy()) reloadFresh('idle'); }, 4000);
   }
   function restoreWhenReady(n) { n = n || 0; if (typeof S !== 'undefined' && S.session && S.route) restore(); else if (n < 40) setTimeout(() => restoreWhenReady(n + 1), 500); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
@@ -53334,7 +53407,13 @@ ${sg ? `اقتراح البوت قبل كده: ${sg.cause} — ${sg.fix}\n` : ''
 #nf-fresh-dlg .nffd-ic{width:52px;height:52px;margin:0 auto 8px;border-radius:50%;background:#e8f0f8;color:#2f4b69;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700}
 #nf-fresh-dlg h3{margin:0 0 6px;font-size:17px}#nf-fresh-dlg p{margin:0 0 14px;font-size:14px;line-height:1.7;opacity:.85}
 #nf-fresh-dlg .nffd-b{display:flex;gap:8px;justify-content:center}#nf-fresh-dlg .nffd-b button{border:0;border-radius:12px;padding:9px 16px;font:inherit;font-size:14px;cursor:pointer;background:var(--bg2,#eef1f5);color:inherit}
-#nf-fresh-dlg .nffd-b .nffd-p{background:#4a6a8c;color:#fff}`;
+#nf-fresh-dlg .nffd-b .nffd-p{background:#4a6a8c;color:#fff}
+#nf-upd-card{position:fixed;inset-inline:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);z-index:2147483000;display:flex;gap:10px;align-items:center;background:#1f2d3d;color:#fff;border-radius:16px;padding:12px;font-size:14px;line-height:1.5;box-shadow:0 12px 34px rgba(0,0,0,.32);max-width:520px;margin-inline:auto;animation:nfuup .25s ease-out}
+@keyframes nfuup{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+#nf-upd-card .nfu-ic{flex:none;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700}
+#nf-upd-card .nfu-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}#nf-upd-card .nfu-t span{font-size:12.5px;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#nf-upd-card .nfu-b{flex:none;display:flex;gap:6px}#nf-upd-card button{border:0;border-radius:10px;padding:8px 12px;font:inherit;font-size:13.5px;cursor:pointer;background:rgba(255,255,255,.14);color:#fff}
+#nf-upd-card button.nfu-p{background:#fff;color:#1f2d3d;font-weight:700}`;
   (document.head || document.documentElement).appendChild(st);
 })();
 /* =====================================================================
