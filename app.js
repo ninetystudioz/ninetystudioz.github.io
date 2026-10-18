@@ -9859,6 +9859,8 @@ const CAD_EXT = ['dwg', 'dxf', 'dwt', 'sldprt', 'sldasm', 'slddrw', 'step', 'stp
 const cadExtOf = name => (String(name || '').split('.').pop() || '').toLowerCase();
 const isCadName = name => CAD_EXT.includes(cadExtOf(name));
 const canSeeCad = () => isAdmin() || ['office', 'tech'].includes(role());
+/* v8.00: only real CAD sources are download-only; a secret PDF / model / page is viewed like any file (by the owner + technical office) */
+const isCadLike = f => !!f && (f.kind === 'cad' || isCadName(f.name));
 FILE_KINDS.cad = ['ملف مصدر CAD — سرّي', 'shield'];
 (document.body || document.head).insertAdjacentHTML('beforeend', `<style>
 .ftile.locked{opacity:.75;cursor:not-allowed}.ftile.locked .fico{color:var(--warn-ink)}
@@ -9886,7 +9888,7 @@ async function filesPutRestricted(blob, mime) {
 }
 /* gallery: locked tiles for everyone else */
 function fileGalleryCad(files, ctx, o = {}) {
-  const isL = f => typeof fileIsLink === 'function' && fileIsLink(f); const cad = files.filter(f => !isL(f) && (f.restricted || f.kind === 'cad')); const rest = files.filter(f => isL(f) || !(f.restricted || f.kind === 'cad'));
+  const isL = f => typeof fileIsLink === 'function' && fileIsLink(f); const cad = files.filter(f => !isL(f) && isCadLike(f)); const rest = files.filter(f => isL(f) || !isCadLike(f));
   let html = fileGalleryBase(rest, ctx, cad.length ? Object.assign({}, o, { empty: '' }) : o);
   if (cad.length) {
     const ok = canSeeCad();
@@ -9896,7 +9898,7 @@ function fileGalleryCad(files, ctx, o = {}) {
 }
 /* viewer: CAD has no in-browser viewer → download only (privileged) */
 ACTIONS.fileOpenCad = id => { const f = byId('files', id); if (!f || !canSeeCad()) return; ACTIONS.fileSave(id); };
-document.addEventListener('click', ev => { const a = ev.target.closest('[data-action="fileOpen"]'); if (!a) return; const id = (a.dataset.arg || '').split(':')[0]; const f = byId('files', id); if (f && !(typeof fileIsLink === 'function' && fileIsLink(f)) && (f.restricted || f.kind === 'cad')) { ev.stopImmediatePropagation(); ev.preventDefault(); if (!canSeeCad()) { toast('ملف مصدر سرّي — متاح للمكتب الفني والمالك فقط', 'err'); return; } toast('ملفات CAD تُحمَّل للفتح في برنامجها (AutoCAD / SolidWorks)'); ACTIONS.fileSave(id); } }, true);
+document.addEventListener('click', ev => { const a = ev.target.closest('[data-action="fileOpen"]'); if (!a) return; const id = (a.dataset.arg || '').split(':')[0]; const f = byId('files', id); if (f && !(typeof fileIsLink === 'function' && fileIsLink(f)) && isCadLike(f)) { ev.stopImmediatePropagation(); ev.preventDefault(); if (!canSeeCad()) { toast('ملف مصدر سرّي — متاح للمكتب الفني والمالك فقط', 'err'); return; } toast('ملفات CAD تُحمَّل للفتح في برنامجها (AutoCAD / SolidWorks)'); ACTIONS.fileSave(id); } }, true);
 /* manual toggle from the file card (edit modal) */
 ACTIONS.fileLockToggle = async id => {
   const f = byId('files', id); if (!f || !canSeeCad() || !canFiles()) return; const to = !f.restricted;
@@ -26271,11 +26273,13 @@ EXTRA_SETTINGS.voice = { label: 'صوت المساعد', render: () => {
       /* files: CAD stays private (cad/…), the rest moves to the normal store so everyone who sees products can open it */
       const fileIds = []; let cover = null;
       for (const f of (r.files || []).filter(x => x.ok)) {
-        const kind = kindOf(f); let ref = f.ref, restricted = !!f.cad;
-        if (!f.cad) { const to = `${ym}/${uid()}`; try { const { error } = await S.sb.storage.from('files').move(f.ref, to); if (!error) ref = to; else restricted = true; } catch (e) { restricted = true; } }
+        const kind = kindOf(f); let ref = f.ref;
+        /* v8.00 (brief secret-drawings): CAD, fabrication PDFs, 3D models and the FULL page stay private (cad/…) — owner + technical office only */
+        const secret = !!f.cad || ['drawing', 'model'].includes(kind) || (kind === 'html' && /(full|complete|كامل)/i.test(String(f.name || ''))); let restricted = secret;
+        if (!secret) { const to = `${ym}/${uid()}`; try { const { error } = await S.sb.storage.from('files').move(f.ref, to); if (!error) ref = to; else restricted = true; } catch (e) { restricted = true; } }
         const doc = { id: uid(), name: f.name, kind: restricted && !f.cad ? kind : kind, mime: f.mime, size: f.size, rev, note: 'من ChatGPT', productId: pid, orderId: order ? order.id : null, byName: S.session?.name || '', thumb: null, pages: null, store: 'sb', ref, enc: null, createdAt: now };
         if (restricted) doc.restricted = true;
-        try { if (!restricted && f.size < 15 * 1048576 && ['render', 'drawing', 'model'].includes(kind)) { const { data } = await S.sb.storage.from('files').createSignedUrl(ref, 600); if (data && data.signedUrl) { if (kind === 'render') doc.thumb = await imageThumb(data.signedUrl); else { const blob = await (await fetch(data.signedUrl)).blob(); if (kind === 'drawing' && typeof pdfThumb === 'function') { const t = await pdfThumb(blob); doc.thumb = t.thumb; doc.pages = t.pages; } else if (kind === 'model' && typeof modelThumb === 'function') doc.thumb = await modelThumb({ blob }); } } } } catch (e) { /* thumbs are optional */ }
+        try { if (!f.cad && f.size < 15 * 1048576 && ['render', 'drawing', 'model'].includes(kind)) { const { data } = await S.sb.storage.from('files').createSignedUrl(ref, 600); if (data && data.signedUrl) { if (kind === 'render') doc.thumb = await imageThumb(data.signedUrl); else { const blob = await (await fetch(data.signedUrl)).blob(); if (kind === 'drawing' && typeof pdfThumb === 'function') { const t = await pdfThumb(blob); doc.thumb = t.thumb; doc.pages = t.pages; } else if (kind === 'model' && typeof modelThumb === 'function') doc.thumb = await modelThumb({ blob }); } } } } catch (e) { /* thumbs are optional */ }
         await Store.save('files', doc, { silent: true }); fileIds.push(doc.id); if (!cover && kind === 'render' && !restricted) cover = doc.id;
       }
       const spec = { revision: rev, stage: d.stage || 'عينة أولى / مراجعة تصنيع', issueDate: d.issueDate || '', dims: d.dims || [], materials: d.materials || [], manufacturing: d.manufacturing || [], bom: d.bom || [], openItems: d.openItems || [], deliverables: d.deliverables || '', summary: d.summary || '', project: projectName, orderId: order ? order.id : null, source: 'chatgpt', inboxId: r.id, at: now };
@@ -40675,10 +40679,10 @@ html.apple .side .nftogs>.nfst{border:0;background:rgba(255,255,255,.07);color:#
 
   /* ---------- 0) open / close a project for overtime ---------- */
   ACTIONS.otnOpen = id => {
-    if (!canOpenProj()) return; const pick = !id; const os = list('orders').filter(o => isOpen(o) && o.status !== 'hold');
+    if (!canOpenProj()) return; const pick = !id; const all = list('orders').filter(o => isOpen(o) && o.status !== 'hold'); const prod = all.filter(o => o.status === 'production'); const os = prod.length ? prod : all;   /* v8.00 (Mahmoud 18 Oct): the projects in production — the ones already open too, marked */
     const o0 = id ? byId('orders', id) : null; if (id && !o0) return; const cur = (o0 && o0.otOpen) || {};
     openModal({ title: L('مفتوح للسهر', 'Open for overtime'), submitLabel: L('افتح للسهر', 'Open for overtime'), body: `<div class="form">
-      ${pick ? field(L('المشروع', 'Project'), `<select name="oid" required><option value="">${esc(L('— اختار —', '— choose —'))}</option>${sortBy(os.filter(o => !isOtOpen(o)), o => o.code || '').map(o => `<option value="${esc(o.id)}">${esc(oName(o))}</option>`).join('')}</select>`, 'full') : `<div class="full"><b>${esc(oName(o0))}</b></div>`}
+      ${pick ? field(L('المشروع', 'Project'), `<select name="oid" required><option value="">${esc(L('— اختار —', '— choose —'))}</option>${sortBy(os, o => o.code || '').map(o => `<option value="${esc(o.id)}">${esc(oName(o))}${isOtOpen(o) ? ' — ' + esc(L('مفتوح للسهر', 'open for overtime')) + (o.otOpen.until ? ' ' + esc(L('لحد', 'until')) + ' ' + esc(fmtDate(o.otOpen.until)) : '') : ''}</option>`).join('')}</select>`, 'full') : `<div class="full"><b>${esc(oName(o0))}</b></div>`}
       ${field(L('لحد يوم (اختياري)', 'Until (optional)'), inp('until', cur.on ? (cur.until || '') : '', `type="date" min="${todayISO()}"`))}
       <div class="tiny muted full">${esc(L('رؤساء الأقسام يقدروا يسجّلوا سهر على المشروع ده بس وهو مفتوح. من غير يوم = مفتوح لحد ما تقفله.', 'Heads can register overtime on this project only while it is open. No day = open until you close it.'))}</div></div>`,
       onSubmit: async f => {
@@ -61838,4 +61842,82 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
     } catch (e) { console.warn('passkey host', e); }
     return base.apply(this, arguments);
   })(punchVerify);
+})();
+/* =====================================================================
+   v8.00 — secret drawings (brief claude/secret-drawings-brief.md, Mahmoud 18 Oct, go-ahead + PIN):
+   · a file marked secret (restricted) — fabrication PDFs, 3D models, the FULL ChatGPT page, CAD sources — is for the owner and the
+     technical office only. The server does not send it to anyone else (restrictive RLS + the file gate); this part keeps the screens
+     in line: no tile, no locked tile, no task link, no name in a task text.
+   · new drawings / models / full pages are born secret (server trigger); the technical office can open or lock any file.
+   · everyone else sees the cover picture and the PREVIEW interactive page, and one line «the detailed drawings are with the
+     technical office».
+   Factory. Phone and computer, Arabic and English.
+   ===================================================================== */
+(function () {
+  if (window.__NF_SECRETDRW__) return; window.__NF_SECRETDRW__ = 1;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en'; const L = (a, b) => (en() ? b : a);
+  const priv = () => (typeof canSeeCad === 'function' ? canSeeCad() : isAdmin());
+  const secret = f => !!f && (f.restricted === true || f.kind === 'cad');
+  /* what someone outside the owner + technical office must not see: the secret flag, a CAD source, or a drawing / model of a product or
+     order that was never opened on purpose (restricted === false) — this also covers copies cached on a phone before the lock */
+  const hidden = f => secret(f) || (!!f && ['drawing', 'model'].includes(f.kind) && f.restricted !== false && !!(f.productId || f.orderId));
+  const fullPage = f => !!f && typeof fileIsHtml === 'function' && fileIsHtml(f) && secret(f);
+  const cadLike = f => (typeof isCadLike === 'function' ? isCadLike(f) : !!f && f.kind === 'cad');
+  const isLink = f => typeof fileIsLink === 'function' && fileIsLink(f);
+  window.nfSecretFile = hidden;
+
+  /* 1) nobody else ever gets a secret file on screen (cached or demo data included) */
+  if (typeof filesOf === 'function') filesOf = (base => function () { const r = base.apply(this, arguments); return priv() ? r : r.filter(f => !hidden(f)); })(filesOf);
+
+  /* 2) the owner + technical office see a «secret» mark on such a tile */
+  if (typeof fileTile === 'function') fileTile = (base => function (f) {
+    const h = base.apply(this, arguments); if (!secret(f) || cadLike(f)) return h;
+    const i = h.indexOf('<div class="fthumb">'); if (i < 0) return h;
+    return h.slice(0, i) + `<span class="flock">${icon('shield')}${esc(L('سري', 'Secret'))}</span>` + h.slice(i);
+  })(fileTile);
+
+  /* 3) lock / open a PDF, model or page: only the flag changes (no move, no kind change — CAD keeps its own way) */
+  const lockBase = ACTIONS.fileLockToggle;
+  ACTIONS.fileLockToggle = async id => {
+    const f = byId('files', id); if (!f || !priv() || !(typeof canFiles === 'function' && canFiles())) return;
+    if (cadLike(f) || isLink(f)) return lockBase(id);
+    const to = !f.restricted;
+    if (!(await confirmDlg(to ? L('تخلّي الملف ده سري؟ مش هيشوفه غير المالك والمكتب الفني.', 'Make this file secret? Only the owner and the technical office will see it.') : L('تفتح الملف ده للأقسام؟ هيظهر لرؤساء الأقسام والموظفين على الأوامر.', 'Open this file to the departments? Heads and staff will see it on the orders.'), to ? L('خليه سري', 'Make it secret') : L('افتحه', 'Open it')))) return;
+    try { await Store.update('files', f.id, { restricted: to }); toast(to ? L('الملف بقى سري — المالك والمكتب الفني بس', 'The file is secret — owner and technical office only') : L('الملف بقى ظاهر للأقسام', 'The file is now visible to the departments')); closeModal(); render(false); }
+    catch (e) { console.error(e); toast(L('مقدرتش أغيّر السرية', 'Could not change the secrecy'), 'err'); }
+  };
+
+  /* 4) the order card: a «full version» button for the owner + technical office, one plain line for everyone else */
+  if (typeof orderDrawingsCard === 'function') orderDrawingsCard = (base => function (o) {
+    let h = base.apply(this, arguments); if (!h || !o) return h;
+    if (priv()) {
+      (typeof orderProducts === 'function' ? orderProducts(o) : []).forEach(p => {
+        const full = filesOf('product', p.id).filter(fullPage).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0]; if (!full) return;
+        const m = `<span class="code">${esc(p.code || '')}</span>`; const i = h.indexOf(m); if (i < 0) return;
+        h = h.slice(0, i + m.length) + `<button type="button" class="btn sm ghost" data-action="fileOpen" data-arg="${esc(full.id)}:order-${esc(o.id)}">${icon('shield')}${esc(L('النسخة الكاملة (سري)', 'Full version (secret)'))}</button>` + h.slice(i + m.length);
+      });
+      return h;
+    }
+    (typeof orderProducts === 'function' ? orderProducts(o) : []).forEach(p => { if (!p || !/(chatgpt\.(site|com)|oaiusercontent\.com|openai\.com)/i.test(String(p.designUrl || ''))) return; h = h.replace(new RegExp(`<button[^>]*data-action="designOpen" data-arg="${String(p.id).replace(/[^\w-]/g, '')}"[^>]*>[\\s\\S]*?</button>`, 'g'), ''); });
+    const k = h.lastIndexOf('</div>'); if (k < 0) return h;
+    return h.slice(0, k) + `<div class="tiny muted" style="margin-top:8px">${icon('shield')} ${esc(L('الرسومات التفصيلية والكميات عند المكتب الفني — اسأل من «استفسار» لو تفصيلة مش واضحة.', 'The detailed drawings and quantities are with the technical office — use «Ask» if a detail is not clear.'))}</div>` + h.slice(k);
+  })(orderDrawingsCard);
+
+  /* 5) the department update task never names or links a secret file */
+  if (typeof orderDrawingTasks === 'function') orderDrawingTasks = (base => function (o, reason) {
+    const all = typeof orderFiles === 'function' ? orderFiles(o) : []; const files = all.filter(f => !hidden(f));
+    const out = base.apply(this, arguments); if (!out.length || files.length === all.length) return out;
+    const names = files.slice(0, 6).map(f => `• ${f.name}${f.rev ? ` (${f.rev})` : ''}`).join('\n') + (files.length > 6 ? `\n… و${files.length - 6} ملفات أخرى` : '');
+    return out.map(t => Object.assign({}, t, { desc: `${reason}\n` + (files.length ? `المعاينة (${files.length}):\n${names}` : 'الرسومات التفصيلية عند المكتب الفني.'), fileId: files.length ? files[0].id : null }));
+  })(orderDrawingTasks);
+
+  /* 6) a design link on the product that points to a ChatGPT page is the owner + technical office's too */
+  const secretUrl = u => /(chatgpt\.(site|com)|oaiusercontent\.com|openai\.com)/i.test(String(u || ''));
+  /* designBtn is a const (73-design-link): its button is taken out of the order card below, and the action refuses */
+  ACTIONS.designOpen = (base => function (id) { const p = byId('products', id); if (p && secretUrl(p.designUrl) && !priv()) { toast(L('اللينك ده للمالك والمكتب الفني بس', 'This link is for the owner and the technical office only'), 'err'); return; } return base.apply(this, arguments); })(ACTIONS.designOpen);
+  if (typeof designCard === 'function') designCard = (base => function (p) { if (p && secretUrl(p.designUrl) && !priv()) return ''; return base.apply(this, arguments); })(designCard);
+
+  /* 7) the upload dialog tells the technical office what happens */
+  const upBase = ACTIONS.fileUpload;
+  ACTIONS.fileUpload = arg => { upBase(arg); setTimeout(() => { const inp = document.getElementById('f-files'); const hint = inp && inp.nextElementSibling; if (hint && priv() && !hint.querySelector('.nfsec')) hint.insertAdjacentHTML('beforeend', ` · <b class="nfsec">${esc(L('رسومات PDF والموديل 3D والنسخة الكاملة بتتحفظ «سري» لوحدها: المالك والمكتب الفني بس. الأقسام بتشوف صفحة المعاينة والصور.', 'PDF drawings, 3D models and the full version are saved as secret by themselves: owner and technical office only. The departments see the preview page and the pictures.'))}</b>`); }, 40); };
 })();
