@@ -28297,11 +28297,40 @@ ${c.clients.join('\n') || '—'}
       try { await navigator.share({ files: [file], text: plain }); } catch (e) { if (e && e.name === 'AbortError') { toast('ماتبعتش'); return; } try { window.open(waLink(s.phone, plain), '_blank', 'noopener'); } catch (e2) { return; } }
       await mark(p, pid, 'phone', null); toast('اتسجّل: اتبعت للمورد بالصورة'); return;
     }
+    /* v8.05 (support #5IK4 — Bahaa, computer: the supplier got the text only): the message is already written in the chat by the link,
+       so the clipboard carries the PICTURE — one paste (Ctrl+V / ⌘V) in the supplier's chat. Download only when the clipboard refuses. */
+    const pk = /Mac|iPad|iPhone/.test(navigator.platform || '') ? '⌘V' : 'Ctrl+V';
+    const canPic = !!(file && navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined');
+    if (canPic) {
+      const png0 = toPng(file); png0.catch(() => { }); /* made while the window is open, so the press only hands it over */
+      /* the button press itself copies the picture (the browser allows it only right after a press) and opens the chat */
+      const go = await new Promise(res => { let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+        openModal({ title: `${L2('إرسال للمورد', 'Send to the supplier')} — ${p.supplier || ''}`, submitLabel: L2('انسخ الصورة وافتح المحادثة', 'Copy the picture and open the chat'), body: `<div class="wasend"><div class="banner info" style="margin:0">${icon('wa')}<span>${esc(L2('الرسالة هتتكتب لوحدها في محادثة المورد، والصورة هتتنسخ.', 'The message is written in the supplier\'s chat by itself, and the picture is copied.'))}<br><span class="gname">${esc(L2(`في المحادثة دوس ${pk} وبعدين ابعت`, `In the chat press ${pk}, then send`))}</span></span></div>${thumbOf(x) ? `<img src="${esc(thumbOf(x))}" alt="">` : ''}<div class="msg">${esc(plain)}</div></div>`,
+          onSubmit: () => { /* copy first (this page still has the focus), then open the chat — at most 1.5 s later */ const cp = copyPic(file, png0); const pr = Promise.race([cp, new Promise(r => setTimeout(() => r(false), 1500))]).then(v => { try { window.open(waLink(s.phone, plain), '_blank', 'noopener'); } catch (e) { /* ignore */ } return v; }); fin(pr); return true; } });
+        const iv = setInterval(() => { if (!document.getElementById('mform')) { clearInterval(iv); fin(null); } }, 300); });
+      if (go === null) return;
+      const pasted = await go;
+      if (!pasted) dl(file);
+      await mark(p, pid, 'phone', null);
+      toast(pasted ? L2(`الصورة اتنسخت — دوس ${pk} في محادثة المورد`, `Picture copied — press ${pk} in the supplier's chat`) : L2('صورة التحويل نزلت على الجهاز — اسحبها في محادثة المورد', 'The transfer picture was downloaded — drag it into the supplier\'s chat'));
+      return;
+    }
     try { await navigator.clipboard.writeText(plain); } catch (e) { /* ignore */ }
-    if (file) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
+    if (file) dl(file);
     try { window.open(waLink(s.phone, plain), '_blank', 'noopener'); } catch (e) { /* ignore */ }
     await mark(p, pid, 'phone', null);
-    toast(file ? 'صورة التحويل نزلت على الجهاز — اسحبها في محادثة المورد' : 'اتسجّل: اتبعت للمورد');
+    toast(file ? L2('صورة التحويل نزلت على الجهاز — اسحبها في محادثة المورد', 'The transfer picture was downloaded — drag it into the supplier\'s chat') : L2('اتسجّل: اتبعت للمورد', 'Saved: sent to the supplier'));
+  }
+  const dl = file => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); };
+  const L2 = (a, b) => (typeof I18N !== 'undefined' && I18N.lang === 'en' ? b : a);
+  /* the picture as PNG on the clipboard (the only image type browsers write) */
+  const toPng = async file => { if (file.type === 'image/png') return file; const bm = await createImageBitmap(file); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; c.getContext('2d').drawImage(bm, 0, 0); try { bm.close && bm.close(); } catch (e) { /* ignore */ } return await new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('png'))), 'image/png')); };
+  async function copyPic(file, png0) {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') return false;
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png0 || toPng(file) })]);
+      return true;
+    } catch (e) { return false; }
   }
   /* the older «WhatsApp to the supplier» button (99zzL) goes the same way — with the picture */
   if (ACTIONS.poWa) ACTIONS.poWa = (base => async function (arg) {
