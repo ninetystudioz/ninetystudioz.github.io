@@ -62341,3 +62341,110 @@ html[data-theme=dark] .joinhist{background:#1d3446;color:#cfe8ff}html[data-theme
 .xfnow li,.xfc .xfs{display:block;padding:0;border:0}.xfc .xfs{display:inline-flex;align-items:center;gap:3px;padding:2px 8px!important;min-height:0;height:auto;line-height:1.4;margin:0;vertical-align:middle}.xfnow li{min-height:0;height:auto;line-height:1.5;margin:0;text-align:start;justify-content:flex-start}.xfnow li::before,.xfnow li::after,.xfc .xfs::before,.xfc .xfs::after,.xfc .xfd::before{content:none!important;display:none!important}
 </style>`);
 })();
+
+/* =====================================================================
+   v8.03.2 — the phone fingerprint after the move to the new address, with no question asked (support, Mahmoud 19 Oct:
+   «everyone cannot punch today — the system tells them to file a fingerprint request»).
+   What was happening on the new address (ninetystudioz.github.io) with a fingerprint made on the old one:
+   · the punch asked «set the finger up again?» — people pressed no, or the phone cancelled → the old fingerprint was tried and
+     refused → then the face → «we could not confirm you — file a punch request». Anyone with no registered face had no way at all.
+   · in the iPhone app the «fingerprint» is Face ID of the app itself and has no web address at all — but it was treated as an
+     old-address one and refused on every punch.
+   Now:
+   · a Face ID fingerprint of the iPhone app never belongs to an address — it keeps working everywhere (and is stamped with this
+     address the first time it is used here, so no screen asks about it again).
+   · a web fingerprint made on the old address: the punch sets the finger up again on this phone BY ITSELF, with no question —
+     the phone asking for the finger IS the check, exactly like a first-time set-up. Then the punch goes through as usual.
+     If the phone refuses or the person cancels, the face is tried next, as before (and the old «set it up again?» question
+     never comes back on this screen).
+   · the log-in button «phone fingerprint» with an old-address fingerprint says plainly: sign in with the face or the password,
+     the finger is set up again by itself at the first punch.
+   All three systems. Phone and computer, Arabic and English. Nothing else changes: no permission, no pipeline, no new feature.
+   ===================================================================== */
+(function () {
+  if (window.__NF_PKHOST2__) return; window.__NF_PKHOST2__ = 1;
+  const en = () => typeof I18N !== 'undefined' && I18N.lang === 'en'; const L = (a, b) => (en() ? b : a);
+  const OLD = 'mahmoudfawzy1212mf-crypto.github.io';
+  const here = () => String(location.hostname || '').toLowerCase();
+  const nat = c => !!(c && (c.native || /^ios-/.test(String(c.id || ''))));          /* Face ID of the iPhone app: no web address */
+  const credHost = c => String((c && c.host) || OLD).toLowerCase();
+  const otherHost = c => !!(c && c.id) && !nat(c) && /github\.io$/.test(here()) && credHost(c) !== here();
+  const natBio = () => { try { return !!(window.nfNativeBio && window.nfNativeBio.available && window.nfNativeBio.available()); } catch (e) { return false; } };
+  const curOf = w => (w && w.id && byId('workers', w.id)) || w;
+  window.nfPasskeyOtherHost = w => otherHost(w && w.deviceCred);
+
+  /* 0) a Face ID fingerprint without an address gets this address once (silently) — the older screens then stop treating it as old */
+  async function stampNative(w) {
+    const c = w && w.deviceCred; if (!nat(c) || (c.host && c.host === here())) return;
+    try { await Store.update('workers', w.id, { deviceCred: Object.assign({}, c, { host: here() }) }, { silent: true }); } catch (e) { /* read-only: next time */ }
+  }
+
+  /* 1) deviceVerify: Face ID of the app is asked directly (whatever address the record carries); an old web fingerprint on a
+        new address is not tried (no empty phone sheet) */
+  if (typeof deviceVerify === 'function') deviceVerify = (base => async function (w) {
+    const c = w && w.deviceCred;
+    if (nat(c) && natBio()) { try { return await window.nfNativeBio.auth(L('أكّد إنك إنت قبل البصمة', 'Confirm it is you')); } catch (e) { return false; } }
+    if (otherHost(c)) return false;
+    return base.apply(this, arguments);
+  })(deviceVerify);
+
+  /* 2) the punch: an old-address fingerprint is set up again on this phone by itself — no question, the phone's own finger prompt
+        is the check; a Face ID record is stamped with the address first so the inner screens see it as current */
+  let silent = false, skipQ = false;
+  if (typeof toast === 'function') toast = (base => function (msg, kind) {
+    if (silent && kind === 'err' && /لم يكتمل التفعيل|Not completed|بصمة الجهاز غير متاحة|not available on this browser/i.test(String(msg || ''))) return;
+    return base.apply(this, arguments);
+  })(toast);
+  /* the older «the system moved — set it up again?» question is answered «no» by itself once this part has already tried */
+  if (typeof confirmDlg === 'function') confirmDlg = (base => function (msg) {
+    if (skipQ && /السيستم اتنقل لعنوان جديد|The system moved to a new address/.test(String(msg || ''))) return Promise.resolve(false);
+    return base.apply(this, arguments);
+  })(confirmDlg);
+  if (typeof punchVerify === 'function') punchVerify = (base => async function (w) {
+    let mine = false;
+    try {
+      const cur = curOf(w); const pm = typeof punchMethodsOf === 'function' ? punchMethodsOf(cur) : {};
+      if (cur && nat(cur.deviceCred)) await stampNative(cur);
+      if (cur && pm.device !== false && otherHost(cur.deviceCred)) {
+        mine = true; skipQ = true;
+        if (deviceBioAvailable() && typeof ACTIONS.deviceEnroll === 'function') {
+          const before = (cur.deviceCred || {}).id;
+          silent = true;
+          try { await ACTIONS.deviceEnroll(cur.id); } catch (e) { console.warn('rehost enroll', e); }
+          silent = false;
+          const w2 = byId('workers', cur.id);
+          if (w2 && w2.deviceCred && w2.deviceCred.id !== before && !otherHost(w2.deviceCred)) {
+            skipQ = false; if (S.session) S.session.deviceAt = Date.now();
+            return { ok: true, verify: { device: 'enroll', rehost: true } };
+          }
+        }
+        /* the phone refused or the person cancelled: the face comes next (inside base); the old question stays closed */
+      }
+    } catch (e) { silent = false; console.warn('passkey rehost', e); }
+    try { return await base.apply(this, arguments); } finally { if (mine) skipQ = false; }
+  })(punchVerify);
+
+  /* 3) log-in by phone fingerprint with an old-address fingerprint: a plain word instead of «not verified» */
+  if (typeof ACTIONS.loginDevice === 'function') ACTIONS.loginDevice = (base => async function () {
+    try {
+      const id = $('#lg-user') && $('#lg-user').value; const p = id && typeof findLoginPerson === 'function' ? findLoginPerson(id) : null;
+      if (p && p.kind === 'worker' && p.rec && otherHost(p.rec.deviceCred) && typeof loginErr === 'function') {
+        loginErr(L('بصمة الموبايل دي اتعملت على العنوان القديم — ادخل بوشّك أو بكلمة السر، وأول بصمة حضور من هنا هتظبط بصمة الموبايل لوحدها.', 'This phone fingerprint was made on the old address — sign in with your face or your password; the first punch from here sets the finger up again by itself.'));
+        return;
+      }
+    } catch (e) { /* fall through */ }
+    return base.apply(this, arguments);
+  })(ACTIONS.loginDevice);
+
+  /* 4) «My gate»: one calm line instead of nothing while the finger belongs to the old address */
+  if (typeof vMeBase === 'function') vMeBase = (base => function () {
+    const html = base.apply(this, arguments);
+    try {
+      const w = S.session && S.session.workerId ? byId('workers', S.session.workerId) : null;
+      if (!w || !otherHost(w.deviceCred) || !deviceBioAvailable()) return html;
+      const note = `<div class="tiny muted" style="margin-top:8px">${L('بصمة الموبايل هتتظبط لوحدها مع أول بصمة من هنا — الموبايل هيطلب صباعك مرة واحدة.', 'The phone fingerprint is set up again by itself at the first punch from here — the phone asks for your finger once.')}</div>`;
+      const i = html.search(/<button class="btn p"[^>]*data-action="selfPunch"[\s\S]*?<\/button>/); if (i < 0) return html;
+      const j = html.indexOf('</button>', i) + 9; return html.slice(0, j) + note + html.slice(j);
+    } catch (e) { return html; }
+  })(vMeBase);
+})();
