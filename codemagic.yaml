@@ -48,10 +48,12 @@ workflows:
           npx cap sync ios
       - name: Signing
         script: xcode-project use-profiles
+      # v8.08: the Codemagic app moved to the new repo (17 Oct) and its build counter started again at 1, while TestFlight is
+      # already at 108 — +200 keeps every new build above the old ones
       - name: Build number
         script: |
           cd ios/App
-          agvtool new-version -all $((BUILD_NUMBER + 100))
+          agvtool new-version -all $((BUILD_NUMBER + 200))
       - name: Build the app (.ipa)
         script: |
           if ! xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"; then
@@ -60,7 +62,7 @@ workflows:
               cp /tmp/pbx.noshare ios/App/App.xcodeproj/project.pbxproj
               cp /tmp/ent.noshare ios/App/App/App.entitlements
               xcode-project use-profiles
-              (cd ios/App && agvtool new-version -all $((BUILD_NUMBER + 100)))
+              (cd ios/App && agvtool new-version -all $((BUILD_NUMBER + 200)))
               xcode-project build-ipa --project "ios/App/App.xcodeproj" --scheme "App"
             else
               exit 1
