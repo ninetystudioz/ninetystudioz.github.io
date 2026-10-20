@@ -20,7 +20,8 @@
     "@capacitor/android": "8.5.2",
     "@capacitor-community/background-geolocation": "1.2.26",
     "ninety-calls": "file:plugins/ninety-calls",
-    "ninety-share": "file:plugins/ninety-share"
+    "ninety-share": "file:plugins/ninety-share",
+    "ninety-geofence": "file:plugins/ninety-geofence"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.2",

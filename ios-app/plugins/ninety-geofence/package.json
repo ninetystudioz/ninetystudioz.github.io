@@ -1,0 +1,18 @@
+{
+  "name": "ninety-geofence",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ninety — native geofence (v8.14): the phone itself wakes the app when the person enters / leaves the factory (or today's project site), even with the app closed; the event goes to the factory server (Edge geo-ping)",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

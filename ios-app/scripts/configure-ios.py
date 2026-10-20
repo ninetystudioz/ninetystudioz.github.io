@@ -10,7 +10,7 @@ d.update({
     'NSPhotoLibraryUsageDescription': 'Ninety lets you attach photos from your library to tasks and requests.',
     'NSPhotoLibraryAddUsageDescription': 'Ninety saves files you export (reports, PDFs) to your photo library.',
     'NSLocationWhenInUseUsageDescription': 'Ninety checks your location when you punch in or out, confirm arrival at an errand, and records the route of a delivery trip you started.',
-    'NSLocationAlwaysAndWhenInUseUsageDescription': 'During a delivery trip you started, Ninety keeps recording the route while the phone is locked, so the fleet manager sees the truck live. Recording stops when you finish the trip.',
+    'NSLocationAlwaysAndWhenInUseUsageDescription': 'During a delivery trip you started, Ninety keeps recording the route while the phone is locked, so the fleet manager sees the truck live. Ninety can also send you a friendly reminder to punch in or out when you start or finish your day at work.',
     'NSMicrophoneUsageDescription': 'Ninety uses the microphone for team calls and voice notes.',
     'NSFaceIDUsageDescription': 'Ninety uses Face ID to confirm it is you when you punch in.',
     'NFCReaderUsageDescription': 'Ninety reads the office door NFC sticker to open the door.',
