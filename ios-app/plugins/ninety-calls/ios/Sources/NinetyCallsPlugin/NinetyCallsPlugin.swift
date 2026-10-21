@@ -4,6 +4,22 @@
 // · Decline → the server is told with the per-call token that came with the ring (works with the app closed).
 // · «end» pushes (cancelled / answered on another device / missed) close the call screen.
 // JS: Capacitor.Plugins.NinetyCalls — voipToken(), pending(), endCall({ callId }), events «voipToken», «callAction».
+//
+// v8.19 (Mahmoud 21 Oct, «أجي أرد بيعلّق»): the answered call stays on the iPhone call screen until the in-app call really talks.
+// · keepAlive({ on }) — the page says it reports the call state (remembered for the next cold start). Then:
+//   · after «Answer» the CallKit call stays up (lock screen keeps the call UI, the audio session stays with the call) until
+//     reportConnected({ callId }) — or endCall({ callId, force: true }) on hang-up / failure; an endCall without force on an
+//     answered call that is not connected yet is ignored (older page code closes the screen right after answering);
+//   · safety: no reportConnected within 45 s of the answer (reportConnecting({ callId }) restarts the 45 s) → the call screen
+//     ends and «callEnded» { reason: "timeout" } goes to the page;
+//   · the red button on the iPhone call screen after answering → «callEnded» { callId, reason: "user" } (the page hangs up);
+//     «Mute» there → «callMuted» { callId, muted } (the page mutes its microphone).
+//   Without keepAlive in this app run (older page code, or a rolled-back page) everything works as before.
+// · The audio session: .playAndRecord / .voiceChat / Bluetooth (HFP + A2DP), no forced speaker; set before CallKit activates it
+//   and again in didActivate; never deactivated by us (WebRTC in the web view owns the audio while the call runs).
+// · The pending «answer» is cleared as soon as the page has it (delivered to a listener, or ack({ callId })).
+// · Decline sends this phone's VoIP token too, so the server can stop the ringing on the other devices but not this one.
+// · caps() → { keepAlive: true, v: 2 } (feature detection; the page also checks the plugin's method list).
 import Foundation
 import UIKit
 import PushKit
@@ -30,6 +46,8 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     public static let shared = NinetyCallManager()
     static let api = URL(string: "https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/push")!
     static let ringSeconds: TimeInterval = 46
+    static let connectSeconds: TimeInterval = 45      // v8.19: answered → the page must say «connected» within this
+    private static let keepAliveKey = "nfcalls.keepAlive"
 
     private var registry: PKPushRegistry?
     private let provider: CXProvider
@@ -37,10 +55,20 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     private var ids: [UUID: String] = [:]
     private var tokens: [UUID: String] = [:]
     private var answered = Set<UUID>()
+    private var connected = Set<UUID>()                // v8.19
     private var timers: [UUID: DispatchWorkItem] = [:]
+    private var connectTimers: [UUID: DispatchWorkItem] = [:]   // v8.19: safety after the answer
     private var ended: [String: Date] = [:]
     public private(set) var token: String = ""
     weak var plugin: NinetyCallsPlugin?
+
+    /// v8.19: the page reports the call state (reportConnected / endCall force) — remembered for the next cold start
+    var keepAlive: Bool {
+        get { UserDefaults.standard.bool(forKey: NinetyCallManager.keepAliveKey) }
+        set { UserDefaults.standard.set(newValue, forKey: NinetyCallManager.keepAliveKey); keepAliveNow = newValue }
+    }
+    /// the page running now said so (a rolled-back page that never calls keepAlive gets the old behaviour: endCall closes at once)
+    private(set) var keepAliveNow = false
 
     override init() {
         let cfg = CXProviderConfiguration()
@@ -108,8 +136,10 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         /* cancelled / answered elsewhere / missed */
         if !callId.isEmpty { ended[callId] = Date() }
         if let uuid = calls[callId] {
-            provider.reportCall(with: uuid, endedAt: Date(), reason: kind == "ring" ? .remoteEnded : (answered.contains(uuid) ? .remoteEnded : .unanswered))
+            let wasAnswered = answered.contains(uuid)
+            provider.reportCall(with: uuid, endedAt: Date(), reason: kind == "ring" ? .remoteEnded : (wasAnswered ? .remoteEnded : .unanswered))
             forget(uuid)
+            if wasAnswered { plugin?.emitEnded(callId, "remote") }   // v8.19: the page checks the call row
             completion()
             return
         }
@@ -148,13 +178,30 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         DispatchQueue.main.asyncAfter(deadline: .now() + NinetyCallManager.ringSeconds, execute: w)
     }
 
+    /// v8.19: answered but the page never said «connected» → end the call screen and tell the page
+    private func armConnect(_ uuid: UUID) {
+        connectTimers[uuid]?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self = self, let id = self.ids[uuid], self.answered.contains(uuid), !self.connected.contains(uuid) else { return }
+            self.ended[id] = Date()
+            self.provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
+            self.forget(uuid)
+            self.plugin?.emitEnded(id, "timeout")
+        }
+        connectTimers[uuid] = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + NinetyCallManager.connectSeconds, execute: w)
+    }
+
     private func forget(_ uuid: UUID) {
         timers[uuid]?.cancel()
         timers[uuid] = nil
+        connectTimers[uuid]?.cancel()
+        connectTimers[uuid] = nil
         if let id = ids[uuid] { calls[id] = nil }
         ids[uuid] = nil
         tokens[uuid] = nil
         answered.remove(uuid)
+        connected.remove(uuid)
     }
 
     private func pruneEnded() {
@@ -162,24 +209,64 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         ended = ended.filter { $0.value > limit }
     }
 
-    /// the in-app call took over or finished → close the iPhone call screen
-    func end(_ callId: String) {
+    /// the in-app call took over or finished → close the iPhone call screen.
+    /// v8.19: with keepAlive, an answered call that is not connected yet stays unless force (the page hung up / failed).
+    /// Returns false when the call was kept.
+    @discardableResult
+    func end(_ callId: String, force: Bool = false) -> Bool {
         let id = callId.lowercased()
-        guard !id.isEmpty else { return }
+        guard !id.isEmpty else { return true }
+        if let uuid = calls[id], !force, keepAliveNow, answered.contains(uuid), !connected.contains(uuid) { return false }
         ended[id] = Date()
-        guard let uuid = calls[id] else { return }
+        guard let uuid = calls[id] else { return true }
         provider.reportCall(with: uuid, endedAt: Date(), reason: answered.contains(uuid) ? .remoteEnded : .answeredElsewhere)
         forget(uuid)
+        return true
+    }
+
+    /// v8.19: the in-app call is talking — the call screen stays as the iPhone's own call until endCall
+    func connectedNow(_ callId: String) -> Bool {
+        guard let uuid = calls[callId.lowercased()] else { return false }
+        connected.insert(uuid)
+        connectTimers[uuid]?.cancel()
+        connectTimers[uuid] = nil
+        return true
+    }
+
+    /// v8.19: still connecting — the 45 s start again
+    func connectingNow(_ callId: String) -> Bool {
+        guard let uuid = calls[callId.lowercased()], answered.contains(uuid), !connected.contains(uuid) else { return false }
+        armConnect(uuid)
+        return true
+    }
+
+    func state(_ callId: String) -> [String: Any] {
+        guard let uuid = calls[callId.lowercased()] else { return ["exists": false] }
+        return ["exists": true, "answered": answered.contains(uuid), "connected": connected.contains(uuid)]
+    }
+
+    // MARK: audio (v8.19)
+    private func configureAudio(_ session: AVAudioSession) {
+        do {
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
+        } catch {
+            NSLog("[NinetyCalls] audio category: \(error)")
+        }
     }
 
     // MARK: CallKit
     public func providerDidReset(_ provider: CXProvider) {
+        let gone = answered.compactMap { ids[$0] }
         for (_, w) in timers { w.cancel() }
+        for (_, w) in connectTimers { w.cancel() }
         timers = [:]
+        connectTimers = [:]
         calls = [:]
         ids = [:]
         tokens = [:]
         answered = []
+        connected = []
+        for id in gone { plugin?.emitEnded(id, "reset") }
     }
 
     public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
@@ -187,11 +274,11 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         answered.insert(uuid)
         timers[uuid]?.cancel()
         timers[uuid] = nil
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
+        configureAudio(AVAudioSession.sharedInstance())   // before CallKit activates the session
         if let id = ids[uuid] {
-            savePending("answer", id)
-            plugin?.emitAction("answer", id)
+            if keepAlive { armConnect(uuid) }
+            if let p = plugin { p.emitAction("answer", id) }  // saved as pending only when no page listens yet
+            else { savePending("answer", id) }                // the page / plugin is not loaded yet (cold start)
         }
         action.fulfill()
     }
@@ -200,15 +287,30 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         let uuid = action.callUUID
         if let id = ids[uuid] {
             ended[id] = Date()
-            if !answered.contains(uuid) { decline(id, tokens[uuid] ?? "") }
+            if answered.contains(uuid) {
+                plugin?.emitEnded(id, "user")                 // v8.19: red button after answering → the page hangs up
+            } else {
+                decline(id, tokens[uuid] ?? "")
+                plugin?.emitEnded(id, "declined")
+            }
         }
         forget(uuid)
         action.fulfill()
     }
 
-    public func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) { }
+    /// v8.19: «Mute» on the iPhone call screen (the call now stays there) → the page mutes its microphone
+    public func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
+        if let id = ids[action.callUUID] { plugin?.emitMuted(id, action.isMuted) }
+        action.fulfill()
+    }
 
-    public func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) { }
+    public func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        configureAudio(audioSession)                          // CallKit owns activation; WebRTC in the web view uses it
+    }
+
+    public func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        /* nothing to undo: we never activate / deactivate it ourselves (WebRTC keeps its own session use) */
+    }
 
     // MARK: server
     private func decline(_ id: String, _ t: String) {
@@ -217,7 +319,9 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         req.httpMethod = "POST"
         req.timeoutInterval = 10
         req.setValue("application/json", forHTTPHeaderField: "content-type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["action": "call-decline", "id": id, "t": t])
+        var body: [String: Any] = ["action": "call-decline", "id": id, "t": t]
+        if !token.isEmpty { body["voip"] = token }            // v8.19 (push v16): skip this phone, stop the others
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         let box = BgTask()
         box.id = UIApplication.shared.beginBackgroundTask(withName: "nf-call-decline") { box.finish() }
         URLSession.shared.dataTask(with: req) { _, _, _ in
@@ -228,8 +332,15 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     // MARK: pending action (answer pressed while the page was not loaded)
     private let pendingKey = "nfcalls.pending"
 
-    private func savePending(_ action: String, _ id: String) {
+    func savePending(_ action: String, _ id: String) {
         UserDefaults.standard.set(["action": action, "callId": id, "at": Date().timeIntervalSince1970], forKey: pendingKey)
+    }
+
+    /// v8.19: the page has it → forget it (only this call's pending; empty id clears any)
+    func clearPending(_ id: String) {
+        guard let p = UserDefaults.standard.dictionary(forKey: pendingKey) else { return }
+        let pid = (p["callId"] as? String ?? "").lowercased()
+        if id.isEmpty || pid == id.lowercased() { UserDefaults.standard.removeObject(forKey: pendingKey) }
     }
 
     func takePending() -> [String: Any] {
@@ -249,6 +360,12 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "voipToken", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pending", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endCall", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "keepAlive", returnType: CAPPluginReturnPromise),         // v8.19
+        CAPPluginMethod(name: "reportConnecting", returnType: CAPPluginReturnPromise),  // v8.19
+        CAPPluginMethod(name: "reportConnected", returnType: CAPPluginReturnPromise),   // v8.19
+        CAPPluginMethod(name: "ack", returnType: CAPPluginReturnPromise),               // v8.19
+        CAPPluginMethod(name: "callState", returnType: CAPPluginReturnPromise),         // v8.19
+        CAPPluginMethod(name: "caps", returnType: CAPPluginReturnPromise),              // v8.19
         CAPPluginMethod(name: "startWork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopWork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "permState", returnType: CAPPluginReturnPromise),
@@ -267,8 +384,24 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         notifyListeners("voipToken", data: ["token": t])
     }
 
+    /// the answer reaches the page now (a listener is there) — otherwise it is kept as pending + retained for the first listener
     func emitAction(_ action: String, _ callId: String) {
+        if hasListeners("callAction") {
+            NinetyCallManager.shared.clearPending(callId)
+        } else {
+            NinetyCallManager.shared.savePending(action, callId)
+        }
         notifyListeners("callAction", data: ["action": action, "callId": callId, "url": ""], retainUntilConsumed: true)
+    }
+
+    /// v8.19: the iPhone call screen ended (reason user / declined / timeout / remote / reset)
+    func emitEnded(_ callId: String, _ reason: String) {
+        notifyListeners("callEnded", data: ["callId": callId, "reason": reason], retainUntilConsumed: reason == "user")
+    }
+
+    /// v8.19: «Mute» pressed on the iPhone call screen
+    func emitMuted(_ callId: String, _ muted: Bool) {
+        notifyListeners("callMuted", data: ["callId": callId, "muted": muted])
     }
 
     @objc func voipToken(_ call: CAPPluginCall) {
@@ -284,10 +417,46 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func endCall(_ call: CAPPluginCall) {
         let id = call.getString("callId") ?? ""
+        let force = call.getBool("force") ?? false
         DispatchQueue.main.async {
-            NinetyCallManager.shared.end(id)
+            let done = NinetyCallManager.shared.end(id, force: force)
+            call.resolve(["ended": done])
+        }
+    }
+
+    @objc func keepAlive(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? true
+        DispatchQueue.main.async {
+            NinetyCallManager.shared.keepAlive = on
+            call.resolve(["on": on])
+        }
+    }
+
+    @objc func reportConnecting(_ call: CAPPluginCall) {
+        let id = call.getString("callId") ?? ""
+        DispatchQueue.main.async { call.resolve(["ok": NinetyCallManager.shared.connectingNow(id)]) }
+    }
+
+    @objc func reportConnected(_ call: CAPPluginCall) {
+        let id = call.getString("callId") ?? ""
+        DispatchQueue.main.async { call.resolve(["ok": NinetyCallManager.shared.connectedNow(id)]) }
+    }
+
+    @objc func ack(_ call: CAPPluginCall) {
+        let id = call.getString("callId") ?? ""
+        DispatchQueue.main.async {
+            NinetyCallManager.shared.clearPending(id)
             call.resolve()
         }
+    }
+
+    @objc func callState(_ call: CAPPluginCall) {
+        let id = call.getString("callId") ?? ""
+        DispatchQueue.main.async { call.resolve(NinetyCallManager.shared.state(id)) }
+    }
+
+    @objc func caps(_ call: CAPPluginCall) {
+        call.resolve(["keepAlive": true, "v": 2])
     }
 
     /* Android only (work mode, battery, full-screen permission) — nothing to do on the iPhone */
