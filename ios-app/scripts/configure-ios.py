@@ -20,6 +20,10 @@ d.update({
     'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait'],
     # v7.48: the app runs natively on iPad too (Apple Pencil in Concept) — the iPad turns every way, the iPhone stays upright
     'UISupportedInterfaceOrientations~ipad': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
+    # v8.20 (Mahmoud 21 Oct: «عايز الأبليكيشن يبقى مفتوح ويبقى ظاهر هنا على الجنب»): the iPad app can be resized / put in Slide Over
+    # and Split View next to other apps (never forced full screen)
+    'UIRequiresFullScreen': False,
+    'UIRequiresFullScreen~ipad': False,
 })
 plistlib.dump(d, open(INFO, 'wb'))
 open('ios/App/App/App.entitlements', 'w').write('''<?xml version="1.0" encoding="UTF-8"?>

@@ -37,13 +37,18 @@ import java.util.Map;
  * Ninety — the Android incoming-call screen, shown from a data-only FCM message (the app may be closed):
  * a full-screen call (lock screen too) with the ringtone, «Answer» opens the app straight on the call,
  * «Decline» tells the server with the per-call token. «stop» / «end» messages close it (end = «missed call» note).
+ * v8.20 (Android calls): every ring message posts / updates a visible call notification (also when the app is open, quietly)
+ * and tells the server what happened (action «call-rang»: shown or why not, permissions, channel, app state, delay) — the
+ * caller then sees «بيرن عنده». A ring channel the user silenced is replaced by a new one (once a day at most). Answer from the
+ * notification goes through the call screen, which opens the app over the lock screen (no PIN needed to answer).
+ * «test» rings («جرّب الرنة») always show, even with the app open.
  */
 public final class CallUI {
     public static final String EXTRA_ACTION = "nfcall_action";
     public static final String EXTRA_CALL_ID = "nfcall_id";
     public static final String EXTRA_URL = "nfcall_url";
     public static final String ACTION_DECLINE = "app.ninety.calls.DECLINE";
-    static final String CH_RING = "nf_calls_ring_v1";
+    static final String CH_RING = "nf_calls_ring_v1";   /* the first ring channel; later ones are nf_calls_ring_v2, v3 … */
     static final String CH_MISSED = "nf_calls_missed";
     static final String API = "https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/push";
     static final long RING_MS = 46000L;
@@ -68,27 +73,98 @@ public final class CallUI {
         return arabic(c) ? ar : en;
     }
 
+    /** the ring channel in use now (it gets a new id when the user silenced the old one) */
+    static String ringChannel(Context c) {
+        return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("ringCh", CH_RING);
+    }
+
+    private static void createRing(NotificationManager nm, Context c, String id) {
+        NotificationChannel ch = new NotificationChannel(id, tr(c, "المكالمات الواردة", "Incoming calls"), NotificationManager.IMPORTANCE_HIGH);
+        Uri tone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+        AudioAttributes aa = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+        ch.setSound(tone, aa);
+        ch.enableVibration(true);
+        ch.setVibrationPattern(new long[]{0, 1000, 800, 1000, 800});
+        ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        ch.setBypassDnd(false);
+        nm.createNotificationChannel(ch);
+    }
+
+    /** true when the channel cannot ring: turned off, lowered below «pop on screen», or its sound removed */
+    static boolean silenced(NotificationChannel ch) {
+        return ch == null || ch.getImportance() < NotificationManager.IMPORTANCE_HIGH || ch.getSound() == null;
+    }
+
     private static void channels(Context c) {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
-        if (nm.getNotificationChannel(CH_RING) == null) {
-            NotificationChannel ch = new NotificationChannel(CH_RING, tr(c, "المكالمات الواردة", "Incoming calls"), NotificationManager.IMPORTANCE_HIGH);
-            Uri tone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-            AudioAttributes aa = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build();
-            ch.setSound(tone, aa);
-            ch.enableVibration(true);
-            ch.setVibrationPattern(new long[]{0, 1000, 800, 1000, 800});
-            ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-            ch.setBypassDnd(false);
-            nm.createNotificationChannel(ch);
+        SharedPreferences sp = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String id = ringChannel(c);
+        NotificationChannel cur = nm.getNotificationChannel(id);
+        if (cur == null) {
+            createRing(nm, c, id);
+        } else if (silenced(cur)) {
+            /* the user (or a phone «optimizer») silenced the call channel — a new channel brings the ringtone back, once a day at most */
+            long last = sp.getLong("ringChAt", 0L);
+            if (System.currentTimeMillis() - last > 24L * 3600L * 1000L) {
+                int v = sp.getInt("ringChV", 1) + 1;
+                String nid = "nf_calls_ring_v" + v;
+                try { nm.deleteNotificationChannel(id); } catch (Exception ignored) { }
+                createRing(nm, c, nid);
+                sp.edit().putString("ringCh", nid).putInt("ringChV", v).putLong("ringChAt", System.currentTimeMillis()).apply();
+            }
         }
         if (nm.getNotificationChannel(CH_MISSED) == null) {
             NotificationChannel ch = new NotificationChannel(CH_MISSED, tr(c, "مكالمات فايتة", "Missed calls"), NotificationManager.IMPORTANCE_DEFAULT);
             nm.createNotificationChannel(ch);
+        }
+    }
+
+    /** the ring channel as the app sees it (for permState and the ring report) */
+    static JSObject channelState(Context c) {
+        channels(c);
+        JSObject o = new JSObject();
+        String id = ringChannel(c);
+        o.put("id", id);
+        if (Build.VERSION.SDK_INT < 26) {
+            o.put("importance", 4);
+            o.put("sound", true);
+            o.put("ok", true);
+            return o;
+        }
+        NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationChannel ch = nm == null ? null : nm.getNotificationChannel(id);
+        o.put("importance", ch == null ? -1 : ch.getImportance());
+        o.put("sound", ch != null && ch.getSound() != null);
+        o.put("ok", !silenced(ch));
+        o.put("recreatedAt", c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("ringChAt", 0L));
+        return o;
+    }
+
+    static boolean fullScreenOk(Context c) {
+        if (Build.VERSION.SDK_INT < 34) return true;
+        try {
+            NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+            return nm == null || nm.canUseFullScreenIntent();
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    static String appState(Context c) {
+        try {
+            if (appInFront(c)) return "front";
+            KeyguardManager km = (KeyguardManager) c.getSystemService(Context.KEYGUARD_SERVICE);
+            if (km != null && km.isKeyguardLocked()) return "locked";
+            PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isInteractive()) return "off";
+            return "bg";
+        } catch (Exception e) {
+            return "?";
         }
     }
 
@@ -97,9 +173,79 @@ public final class CallUI {
         String type = d.get("type");
         String id = d.get("callId");
         if (id == null || id.isEmpty()) return;
-        if ("ring".equals(type)) ring(ctx, d);
+        if ("ring".equals(type)) {
+            long got = System.currentTimeMillis();
+            String why;
+            try { why = ring(ctx, d); } catch (Exception e) { why = "error"; }
+            report(ctx, d, why, got);
+        }
         else if ("end".equals(type)) missed(ctx, d);
         else stop(ctx, id);
+    }
+
+    /** v8.20: tell the server what happened with this ring (the caller's page then shows «بيرن عنده») */
+    static void report(Context ctx, Map<String, String> d, String why, long got) {
+        final String id = val(d, "callId");
+        final String t = val(d, "t");
+        if (id.isEmpty() || t.isEmpty()) return;
+        final Context app = ctx.getApplicationContext();
+        Thread th = new Thread(() -> {
+            HttpURLConnection con = null;
+            try {
+                JSONObject info = new JSONObject();
+                boolean shown = "shown".equals(why) || "showing".equals(why) || "front".equals(why);
+                info.put("shown", shown);
+                info.put("reason", why);
+                long exp = 0;
+                try { exp = Long.parseLong(val(d, "exp")); } catch (Exception ignored) { }
+                if (exp > 0) info.put("delayMs", got - (exp - 45000L));
+                info.put("fsi", fullScreenOk(app));
+                info.put("notif", NotificationManagerCompat.from(app).areNotificationsEnabled());
+                JSObject ch = channelState(app);
+                info.put("chId", ch.getString("id"));
+                info.put("chImp", ch.optInt("importance", -1));
+                info.put("chSound", ch.optBoolean("sound", false));
+                info.put("app", appState(app));
+                info.put("sdk", Build.VERSION.SDK_INT);
+                info.put("make", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER);
+                info.put("model", Build.MODEL == null ? "" : Build.MODEL);
+                info.put("vc", versionCode(app));
+                info.put("test", "1".equals(d.get("test")));
+                JSONObject o = new JSONObject();
+                o.put("action", "call-rang");
+                o.put("id", id);
+                o.put("t", t);
+                o.put("info", info);
+                con = (HttpURLConnection) new URL(API).openConnection();
+                con.setRequestMethod("POST");
+                con.setConnectTimeout(6000);
+                con.setReadTimeout(6000);
+                con.setDoOutput(true);
+                con.setRequestProperty("content-type", "application/json");
+                try (OutputStream os = con.getOutputStream()) {
+                    os.write(o.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                con.getResponseCode();
+            } catch (Exception ignored) {
+            } finally {
+                if (con != null) con.disconnect();
+            }
+        });
+        th.start();
+        /* the FCM service runs this on its own worker thread: wait a little so the report is not cut off when the service stops */
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            try { th.join(7000); } catch (InterruptedException ignored) { }
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    static long versionCode(Context c) {
+        try {
+            android.content.pm.PackageInfo pi = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+            return Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : (long) pi.versionCode;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     static String val(Map<String, String> d, String k) {
@@ -116,16 +262,20 @@ public final class CallUI {
         return imp + tr(ctx, "بخصوص: ", "About: ") + task;
     }
 
+    /** shows / updates the call notification; returns what happened: shown · showing · front · expired · handled · no_permission */
     @SuppressLint("MissingPermission")
-    static void ring(Context ctx, Map<String, String> d) {
+    static String ring(Context ctx, Map<String, String> d) {
         String id = val(d, "callId");
+        boolean test = "1".equals(d.get("test"));
         long exp = 0;
         try { exp = Long.parseLong(val(d, "exp")); } catch (Exception ignored) { }
-        if (exp > 0 && System.currentTimeMillis() > exp) return;
-        if (handled(ctx, id)) return;
-        if (appInFront(ctx)) return;   /* the app is open on the screen — its own call screen rings */
-        if (showing(ctx, nid(id))) return;   /* already ringing (the caller's page rings again every few seconds) */
+        if (exp > 0 && System.currentTimeMillis() > exp) return "expired";
+        if (handled(ctx, id)) return "handled";
+        /* v8.20: the app open on the screen rings itself — the notification is still posted (quietly, as a banner) */
+        boolean front = !test && appInFront(ctx);
+        boolean again = showing(ctx, nid(id));   /* already ringing (the caller rings again every ~20 s) → just update it */
         channels(ctx);
+        if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return "no_permission";
         String caller = val(d, "caller");
         if (caller.isEmpty()) caller = val(d, "title");
         if (caller.isEmpty()) caller = "Ninety";
@@ -150,10 +300,13 @@ public final class CallUI {
         dec.putExtra("t", t);
         PendingIntent decPI = PendingIntent.getBroadcast(ctx, n + 1, dec, flags);
 
-        PendingIntent ansPI = PendingIntent.getActivity(ctx, n + 2, answerIntent(ctx, id), flags);
+        /* v8.20: «Answer» on the notification goes through the call screen (it may open over the lock screen) */
+        Intent ans = new Intent(full);
+        ans.putExtra("answerNow", true);
+        PendingIntent ansPI = PendingIntent.getActivity(ctx, n + 2, ans, flags);
 
         Person who = new Person.Builder().setName(caller).setImportant(true).build();
-        NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CH_RING)
+        NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, ringChannel(ctx))
                 .setSmallIcon(android.R.drawable.sym_call_incoming)
                 .setContentTitle(caller)
                 .setContentText(text)
@@ -165,17 +318,19 @@ public final class CallUI {
                 .setOnlyAlertOnce(true)
                 .setTimeoutAfter(RING_MS)
                 .setContentIntent(fullPI)
-                .setFullScreenIntent(fullPI, true)
+                .setFullScreenIntent(fullPI, true)   /* a CallStyle notification needs it (Android 12+); in front it shows as a banner */
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), Notification.STREAM_DEFAULT)
                 .setVibrate(new long[]{0, 1000, 800, 1000, 800})
                 .setStyle(NotificationCompat.CallStyle.forIncomingCall(who, decPI, ansPI).setIsVideo(video));
+        if (front) b.setSilent(true);
         Notification nf = b.build();
-        nf.flags |= Notification.FLAG_INSISTENT;
+        if (!front) nf.flags |= Notification.FLAG_INSISTENT;
         try {
             NotificationManagerCompat.from(ctx).notify(n, nf);
         } catch (Exception e) {
-            /* no notification permission — nothing to show */
+            return "no_permission";
         }
+        return front ? "front" : again ? "showing" : "shown";
     }
 
     /** the launch intent of the app that opens straight on the call */
@@ -286,6 +441,17 @@ public final class CallUI {
             o.put("url", url == null ? "" : url);
             o.put("at", System.currentTimeMillis());
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("pending", o.toString()).apply();
+        } catch (Exception ignored) { }
+    }
+
+    /** v8.20: the page has the answer — forget it (only this call's; empty id clears any) */
+    static void clearPending(Context ctx, String callId) {
+        try {
+            SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String s = sp.getString("pending", null);
+            if (s == null) return;
+            String pid = new JSONObject(s).optString("callId", "");
+            if (callId == null || callId.isEmpty() || callId.equalsIgnoreCase(pid)) sp.edit().remove("pending").apply();
         } catch (Exception ignored) { }
     }
 

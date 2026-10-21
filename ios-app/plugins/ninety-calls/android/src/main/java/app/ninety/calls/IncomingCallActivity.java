@@ -22,7 +22,9 @@ import android.widget.TextView;
 
 import java.lang.ref.WeakReference;
 
-/** The full-screen incoming call (also over the lock screen): caller, what it is about, «Decline» / «Answer». */
+/** The full-screen incoming call (also over the lock screen): caller, what it is about, «Decline» / «Answer».
+ *  v8.20: «Answer» opens the app straight over the lock screen (the app shows over it while the call lasts) — no PIN first;
+ *  «Answer» on the notification comes here with answerNow and answers at once. */
 public class IncomingCallActivity extends Activity {
     private static WeakReference<IncomingCallActivity> current = new WeakReference<>(null);
     private String callId = "";
@@ -130,6 +132,10 @@ public class IncomingCallActivity extends Activity {
 
         h.removeCallbacksAndMessages(null);
         h.postDelayed(this::finish, CallUI.RING_MS);
+        if (in.getBooleanExtra("answerNow", false)) {
+            in.removeExtra("answerNow");
+            h.post(this::answer);
+        }
     }
 
     private Button roundButton(String label, String color) {
@@ -150,26 +156,10 @@ public class IncomingCallActivity extends Activity {
     private void answer() {
         final String id = callId;
         final Context app = getApplicationContext();
-        Runnable open = () -> {
-            try { startActivity(CallUI.answerIntent(app, id)); } catch (Exception ignored) { }
-            CallUI.stop(app, id);
-            finish();
-        };
-        KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
-        if (Build.VERSION.SDK_INT >= 26 && km != null && km.isKeyguardLocked()) {
-            km.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
-                @Override
-                public void onDismissSucceeded() { open.run(); }
-
-                @Override
-                public void onDismissCancelled() { }
-
-                @Override
-                public void onDismissError() { open.run(); }
-            });
-        } else {
-            open.run();
-        }
+        /* v8.20: no keyguard dismissal (a PIN prompt could block or cancel the answer) — the app opens over the lock screen */
+        try { startActivity(CallUI.answerIntent(app, id)); } catch (Exception ignored) { }
+        CallUI.stop(app, id);
+        finish();
     }
 
     @Override

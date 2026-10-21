@@ -1,5 +1,6 @@
 package app.ninety.calls;
 
+import android.app.Activity;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -9,8 +10,11 @@ import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.view.WindowManager;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -31,11 +35,17 @@ import java.net.URL;
  * over this one (PackageInstaller; the first time Android asks once, later updates go through by themselves on Android 12+);
  * «updateProgress» / «updateStatus» events; openSettings({kind}) — the phone settings that make calls ring
  * (notifications · channel · fullscreen · battery · autostart · install · app).
+ * v8.20 (Android calls): permState() also gives the ring channel (id / importance / sound / ok — a silenced one is replaced),
+ * sdk, make, model; ack({callId}) clears the pending answer (it is not kept at all when the page is listening); an answered
+ * call opens the app over the lock screen (no PIN needed to talk) until endCall({callId, force: true}) / 3 h at most;
+ * openSettings({kind: "channel"}) opens the ring channel in use.
  */
 @CapacitorPlugin(name = "NinetyCalls")
 public class NinetyCallsPlugin extends Plugin {
 
     static NinetyCallsPlugin self;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private final Runnable lockOff = () -> overLock(false);
     private static volatile boolean updating = false;
     private static volatile boolean front = false;
 
@@ -88,7 +98,10 @@ public class NinetyCallsPlugin extends Plugin {
         String url = intent.getStringExtra(CallUI.EXTRA_URL);
         intent.removeExtra(CallUI.EXTRA_ACTION);
         if (callId != null) CallUI.stop(getContext(), callId);
-        CallUI.setPending(getContext(), action, callId, url);
+        /* v8.20: kept for pending() only when no page listens yet (cold start); a listening page gets it right now */
+        if (hasListeners("callAction")) CallUI.clearPending(getContext(), null);
+        else CallUI.setPending(getContext(), action, callId, url);
+        if ("answer".equals(action)) overLock(true);
         JSObject o = new JSObject();
         o.put("action", action);
         o.put("callId", callId == null ? "" : callId);
@@ -112,7 +125,38 @@ public class NinetyCallsPlugin extends Plugin {
     public void endCall(PluginCall call) {
         String id = call.getString("callId", "");
         if (id != null && !id.isEmpty()) CallUI.stop(getContext(), id);
+        /* v8.20: force = the call is over (the page hung up / it failed) → the lock screen comes back */
+        Boolean force = call.getBoolean("force", false);
+        if (force != null && force) overLock(false);
         call.resolve();
+    }
+
+    /** v8.20: the page has the answer → forget the pending one */
+    @PluginMethod
+    public void ack(PluginCall call) {
+        CallUI.clearPending(getContext(), call.getString("callId", ""));
+        call.resolve();
+    }
+
+    /** v8.20: during an answered call the app shows over the lock screen (talking does not need the PIN); 3 h at most */
+    @SuppressWarnings("deprecation")
+    private void overLock(boolean on) {
+        final Activity a = getActivity();
+        if (a == null) return;
+        ui.removeCallbacks(lockOff);
+        if (on) ui.postDelayed(lockOff, 3L * 3600L * 1000L);
+        a.runOnUiThread(() -> {
+            try {
+                if (Build.VERSION.SDK_INT >= 27) {
+                    a.setShowWhenLocked(on);
+                    a.setTurnScreenOn(on);
+                } else if (on) {
+                    a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+                } else {
+                    a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+                }
+            } catch (Exception ignored) { }
+        });
     }
 
     @PluginMethod
@@ -156,6 +200,11 @@ public class NinetyCallsPlugin extends Plugin {
         o.put("fullScreen", fullScreen);
         o.put("notifications", notif);
         o.put("canInstall", canInstall(c));
+        o.put("channel", CallUI.channelState(c));   /* v8.20 */
+        o.put("sdk", Build.VERSION.SDK_INT);
+        o.put("make", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER);
+        o.put("model", Build.MODEL == null ? "" : Build.MODEL);
+        o.put("v", 2);
         call.resolve(o);
     }
 
@@ -334,7 +383,7 @@ public class NinetyCallsPlugin extends Plugin {
         String kind = call.getString("kind", "app");
         boolean ok;
         if ("notifications".equals(kind)) ok = openNotifications(c, null);
-        else if ("channel".equals(kind)) ok = openNotifications(c, call.getString("channel", "nf_calls"));
+        else if ("channel".equals(kind)) ok = openNotifications(c, call.getString("channel", CallUI.ringChannel(c)));
         else if ("fullscreen".equals(kind)) ok = openFullScreen(c);
         else if ("battery".equals(kind)) ok = openBattery(c);
         else if ("autostart".equals(kind)) ok = openAutostart(c) || openAppDetails(c);
