@@ -28,6 +28,12 @@
 //   «callEnded» { reason: "user" }, «Mute» there → «callMuted» — the same events as an answered call.
 // · audioPriority({ on }) — for a call that has no iPhone call screen: the voice-chat audio session is activated by the app
 //   itself (not mixable, so another app holding the microphone is interrupted); off gives it back (notify others).
+//
+// v8.32 (Mahmoud 23 Oct, «صوت المكالمة من الأبليكيشن نفسه»): an AUDIO call talks through the app's own WebRTC (NinetyRTC.swift)
+// instead of the web view's — the web view could not record under CallKit nor in the background (zero audio sent on every call
+// answered on the iPhone call screen since 22 Oct). The page drives it: rtcCaps / rtcCreate / rtcOffer / rtcAnswer / rtcSetLocal /
+// rtcSetRemote / rtcAddIce / rtcStats / rtcMute / rtcSpeaker / rtcRingback / rtcClose / rtcCloseAll / rtcState, events «rtcEvent».
+// CallKit's audio activation goes to WebRTC's RTCAudioSession (manual audio). caps() → v 4, rtc: true.
 import Foundation
 import UIKit
 import PushKit
@@ -74,6 +80,9 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     weak var plugin: NinetyCallsPlugin?
 
     /// v8.19: the page reports the call state (reportConnected / endCall force) — remembered for the next cold start
+    /// v8.32: a CallKit call (ringing / answered / outgoing) is up — NinetyRTC waits for its audio before taking the session
+    var hasCalls: Bool { return !calls.isEmpty }
+
     var keepAlive: Bool {
         get { UserDefaults.standard.bool(forKey: NinetyCallManager.keepAliveKey) }
         set { UserDefaults.standard.set(newValue, forKey: NinetyCallManager.keepAliveKey); keepAliveNow = newValue }
@@ -382,11 +391,12 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     }
 
     public func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        configureAudio(audioSession)                          // CallKit owns activation; WebRTC in the web view uses it
+        configureAudio(audioSession)                          // CallKit owns activation
+        NinetyRTC.shared.callKitActivated(audioSession)       // v8.32: the app's WebRTC records / plays from now on
     }
 
     public func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-        /* nothing to undo: we never activate / deactivate it ourselves (WebRTC keeps its own session use) */
+        NinetyRTC.shared.callKitDeactivated(audioSession)     // v8.32: an open native call takes the session itself again
     }
 
     // MARK: server
@@ -449,13 +459,29 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "requestIgnoreBattery", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openFullScreenSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startCallUI", returnType: CAPPluginReturnPromise),       // v8.29
-        CAPPluginMethod(name: "audioPriority", returnType: CAPPluginReturnPromise)      // v8.29
+        CAPPluginMethod(name: "audioPriority", returnType: CAPPluginReturnPromise),     // v8.29
+        CAPPluginMethod(name: "rtcCaps", returnType: CAPPluginReturnPromise),           // v8.32 native call audio
+        CAPPluginMethod(name: "rtcCreate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcOffer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcAnswer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcSetLocal", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcSetRemote", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcAddIce", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcStats", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcMute", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcSpeaker", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcRingback", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcClose", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcCloseAll", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtcState", returnType: CAPPluginReturnPromise)
     ]
 
     override public func load() {
         DispatchQueue.main.async {
             NinetyCallManager.shared.start()
             NinetyCallManager.shared.plugin = self
+            NinetyRTC.shared.plugin = self                                          // v8.32
+            NinetyRTC.shared.hasCallKitCall = { NinetyCallManager.shared.hasCalls }
         }
     }
 
@@ -535,7 +561,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func caps(_ call: CAPPluginCall) {
-        call.resolve(["keepAlive": true, "v": 3, "outgoing": true, "audio": true])
+        call.resolve(["keepAlive": true, "v": 4, "outgoing": true, "audio": true, "rtc": true])
     }
 
     /// v8.29: a call this phone makes shows as an iPhone call (audio priority)
@@ -550,6 +576,109 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func audioPriority(_ call: CAPPluginCall) {
         let on = call.getBool("on") ?? true
         DispatchQueue.main.async { call.resolve(["ok": NinetyCallManager.shared.audioPriority(on), "on": on]) }
+    }
+
+    // MARK: v8.32 native call audio (NinetyRTC) — all on the main thread
+    @objc func rtcCaps(_ call: CAPPluginCall) {
+        call.resolve(["v": 1, "audio": true, "video": false])
+    }
+
+    @objc func rtcCreate(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        let raw: [Any] = (call.getArray("iceServers") ?? []).map { $0 as Any }
+        DispatchQueue.main.async {
+            let servers = NinetyRTC.iceServers(raw)
+            if NinetyRTC.shared.create(id, servers) { call.resolve(["ok": true, "servers": servers.count]) } else { call.reject("rtc create failed") }
+        }
+    }
+
+    @objc func rtcOffer(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        let restart = call.getBool("iceRestart") ?? false
+        DispatchQueue.main.async {
+            NinetyRTC.shared.offer(id, restart: restart) { sdp, err in
+                if let sdp = sdp { call.resolve(["type": "offer", "sdp": sdp]) } else { call.reject(err ?? "offer failed") }
+            }
+        }
+    }
+
+    @objc func rtcAnswer(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        DispatchQueue.main.async {
+            NinetyRTC.shared.answer(id) { sdp, err in
+                if let sdp = sdp { call.resolve(["type": "answer", "sdp": sdp]) } else { call.reject(err ?? "answer failed") }
+            }
+        }
+    }
+
+    @objc func rtcSetLocal(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        let type = call.getString("type") ?? "offer"
+        let sdp = call.getString("sdp") ?? ""
+        DispatchQueue.main.async {
+            NinetyRTC.shared.setLocal(id, type, sdp) { d, err in
+                if let d = d { call.resolve(d) } else { call.reject(err ?? "setLocal failed") }
+            }
+        }
+    }
+
+    @objc func rtcSetRemote(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        let type = call.getString("type") ?? "offer"
+        let sdp = call.getString("sdp") ?? ""
+        DispatchQueue.main.async {
+            NinetyRTC.shared.setRemote(id, type, sdp) { d, err in
+                if let d = d { call.resolve(d) } else { call.reject(err ?? "setRemote failed") }
+            }
+        }
+    }
+
+    @objc func rtcAddIce(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        let cand = call.getString("candidate") ?? ""
+        let mid = call.getString("sdpMid")
+        let index = call.getInt("sdpMLineIndex") ?? 0
+        if cand.isEmpty { call.resolve(); return }
+        DispatchQueue.main.async {
+            NinetyRTC.shared.addIce(id, cand, mid, index) { err in
+                if let err = err { call.reject(err) } else { call.resolve() }
+            }
+        }
+    }
+
+    @objc func rtcStats(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        DispatchQueue.main.async {
+            NinetyRTC.shared.stats(id) { arr in call.resolve(["stats": arr]) }
+        }
+    }
+
+    @objc func rtcMute(_ call: CAPPluginCall) {
+        let on = call.getBool("muted") ?? false
+        DispatchQueue.main.async { NinetyRTC.shared.setMuted(on); call.resolve(["muted": on]) }
+    }
+
+    @objc func rtcSpeaker(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? false
+        DispatchQueue.main.async { NinetyRTC.shared.setSpeaker(on); call.resolve(["on": on]) }
+    }
+
+    @objc func rtcRingback(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? false
+        DispatchQueue.main.async { NinetyRTC.shared.ringback(on); call.resolve(["on": on]) }
+    }
+
+    @objc func rtcClose(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        DispatchQueue.main.async { NinetyRTC.shared.close(id); call.resolve() }
+    }
+
+    @objc func rtcCloseAll(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { NinetyRTC.shared.closeAll(); call.resolve() }
+    }
+
+    @objc func rtcState(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { call.resolve(NinetyRTC.shared.state()) }
     }
 
     /* Android only (work mode, battery, full-screen permission) — nothing to do on the iPhone */

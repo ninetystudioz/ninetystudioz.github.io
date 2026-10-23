@@ -91,6 +91,7 @@ workflows:
     # repo: the build asks the factory server for it (Edge "app-build", action signing), which checks with the Codemagic API
     # that this exact build of this app is running before answering, once - so it is fetched once and used for all four.
     # v7.48: iOS-only files (the Apple Pencil plugin, the iOS project script) and this file do not rebuild the Android app —
+    # v8.32: nor the iPhone side of the calls plugin (its Swift sources + Package.swift with the WebRTC xcframework) —
     # a new APK makes every Android phone update, so it is built only when something Android actually changed.
     triggering:
       events:
@@ -105,6 +106,8 @@ workflows:
           - 'ios-app/'
         excludes:
           - 'ios-app/plugins/ninety-pencil/'
+          - 'ios-app/plugins/ninety-calls/ios/'
+          - 'ios-app/plugins/ninety-calls/Package.swift'
           - 'ios-app/scripts/configure-ios.py'
           - 'ios-app/share-ext/'
           - 'ios-app/scripts/add-share-ext.rb'
