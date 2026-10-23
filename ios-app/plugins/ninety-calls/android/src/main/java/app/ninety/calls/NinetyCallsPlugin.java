@@ -8,6 +8,9 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -470,5 +473,55 @@ public class NinetyCallsPlugin extends Plugin {
             if (start(c, new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + c.getPackageName())))) return true;
         }
         return openAppDetails(c);
+    }
+
+    /* ---------------- v8.29: the call gets the audio first (Mahmoud 23 Oct «يبقى ليه أولوية في الاتصال») ----------------
+       audioPriority({ on: true }) while an in-app call runs: the phone switches to call mode (MODE_IN_COMMUNICATION — the mic is
+       captured as a voice call, which Android puts ahead of other apps' recording) and takes the audio focus for a voice call
+       (music / other apps pause). audioPriority({ on: false }) when the call ends gives everything back. */
+    private AudioFocusRequest focusReq;
+    private boolean audioHeld = false;
+
+    @PluginMethod
+    public void audioPriority(PluginCall call) {
+        boolean on = call.getBoolean("on", true);
+        JSObject o = new JSObject();
+        try {
+            AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) { o.put("ok", false); call.resolve(o); return; }
+            if (on) {
+                int r;
+                if (Build.VERSION.SDK_INT >= 26) {
+                    AudioAttributes aa = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build();
+                    if (focusReq == null) focusReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                        .setAudioAttributes(aa)
+                        .setAcceptsDelayedFocusGain(false)
+                        .setOnAudioFocusChangeListener(fc -> { })
+                        .build();
+                    r = am.requestAudioFocus(focusReq);
+                } else {
+                    r = am.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                }
+                am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                audioHeld = true;
+                o.put("ok", r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+            } else {
+                if (audioHeld) {
+                    if (Build.VERSION.SDK_INT >= 26) { if (focusReq != null) am.abandonAudioFocusRequest(focusReq); }
+                    else am.abandonAudioFocus(null);
+                    am.setMode(AudioManager.MODE_NORMAL);
+                }
+                audioHeld = false;
+                o.put("ok", true);
+            }
+        } catch (Exception e) {
+            o.put("ok", false);
+            o.put("error", String.valueOf(e.getMessage()));
+        }
+        o.put("on", on);
+        call.resolve(o);
     }
 }

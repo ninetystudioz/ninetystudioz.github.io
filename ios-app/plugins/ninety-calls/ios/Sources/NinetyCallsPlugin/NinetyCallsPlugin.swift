@@ -19,7 +19,15 @@
 //   and again in didActivate; never deactivated by us (WebRTC in the web view owns the audio while the call runs).
 // · The pending «answer» is cleared as soon as the page has it (delivered to a listener, or ack({ callId })).
 // · Decline sends this phone's VoIP token too, so the server can stop the ringing on the other devices but not this one.
-// · caps() → { keepAlive: true, v: 2 } (feature detection; the page also checks the plugin's method list).
+// · caps() → { keepAlive: true, v: 3, outgoing: true, audio: true } (feature detection; the page also checks the method list).
+//
+// v8.29 (Mahmoud 23 Oct, «الميكروفون بتاعك مش شغال (تطبيق تاني ماسكه؟)» → «يبقى ليه أولوية في الاتصال»):
+// · startCallUI({ callId, name, video }) — a call this phone makes is shown as an iPhone call too (CallKit outgoing call):
+//   iOS then gives it the call's audio priority (other apps' audio and recording stop, the green call pill, lock screen).
+//   reportConnected({ callId }) marks it connected; endCall({ callId, force: true }) ends it; the red button there →
+//   «callEnded» { reason: "user" }, «Mute» there → «callMuted» — the same events as an answered call.
+// · audioPriority({ on }) — for a call that has no iPhone call screen: the voice-chat audio session is activated by the app
+//   itself (not mixable, so another app holding the microphone is interrupted); off gives it back (notify others).
 import Foundation
 import UIKit
 import PushKit
@@ -58,6 +66,9 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     private var connected = Set<UUID>()                // v8.19
     private var timers: [UUID: DispatchWorkItem] = [:]
     private var connectTimers: [UUID: DispatchWorkItem] = [:]   // v8.19: safety after the answer
+    private let controller = CXCallController()        // v8.29: calls this phone makes
+    private var outgoing = Set<UUID>()                 // v8.29
+    private var heldAudio = false                      // v8.29: audioPriority activated the session itself
     private var ended: [String: Date] = [:]
     public private(set) var token: String = ""
     weak var plugin: NinetyCallsPlugin?
@@ -202,6 +213,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         tokens[uuid] = nil
         answered.remove(uuid)
         connected.remove(uuid)
+        outgoing.remove(uuid)
     }
 
     private func pruneEnded() {
@@ -230,7 +242,65 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         connected.insert(uuid)
         connectTimers[uuid]?.cancel()
         connectTimers[uuid] = nil
+        if outgoing.contains(uuid) { provider.reportOutgoingCall(with: uuid, connectedAt: Date()) }   // v8.29
         return true
+    }
+
+    /// v8.29: a call this phone makes → an iPhone (CallKit) outgoing call, so the call owns the audio like a phone call
+    func startOutgoing(_ callId: String, _ name: String, _ video: Bool) -> Bool {
+        let id = callId.lowercased()
+        guard !id.isEmpty else { return false }
+        if calls[id] != nil { return true }
+        let uuid = UUID()
+        calls[id] = uuid
+        ids[uuid] = id
+        outgoing.insert(uuid)
+        answered.insert(uuid)                          // the red button / mute there go to the page like an answered call
+        configureAudio(AVAudioSession.sharedInstance())
+        let handle = CXHandle(type: .generic, value: name.isEmpty ? "Ninety" : String(name.prefix(70)))
+        let action = CXStartCallAction(call: uuid, handle: handle)
+        action.isVideo = video
+        action.contactIdentifier = name
+        controller.request(CXTransaction(action: action)) { [weak self] err in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let err = err {
+                    NSLog("[NinetyCalls] outgoing call UI: \(err)")
+                    self.forget(uuid)
+                    return
+                }
+                let u = CXCallUpdate()
+                u.remoteHandle = handle
+                u.localizedCallerName = name
+                u.hasVideo = video
+                u.supportsHolding = false
+                u.supportsGrouping = false
+                u.supportsUngrouping = false
+                u.supportsDTMF = false
+                self.provider.reportCall(with: uuid, updated: u)
+            }
+        }
+        return true
+    }
+
+    /// v8.29: the voice-chat audio session for a call without an iPhone call screen (on) / given back (off)
+    func audioPriority(_ on: Bool) -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            if on {
+                if !calls.isEmpty { return true }             // CallKit owns the session while its call is up
+                configureAudio(session)
+                try session.setActive(true, options: [])
+                heldAudio = true
+            } else if heldAudio {
+                heldAudio = false
+                if calls.isEmpty { try session.setActive(false, options: [.notifyOthersOnDeactivation]) }
+            }
+            return true
+        } catch {
+            NSLog("[NinetyCalls] audioPriority \(on): \(error)")
+            return false
+        }
     }
 
     /// v8.19: still connecting — the 45 s start again
@@ -295,6 +365,13 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
             }
         }
         forget(uuid)
+        action.fulfill()
+    }
+
+    /// v8.29: the outgoing call (startCallUI) — the audio is set before CallKit activates it
+    public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        configureAudio(AVAudioSession.sharedInstance())
+        provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: Date())
         action.fulfill()
     }
 
@@ -370,7 +447,9 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopWork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "permState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestIgnoreBattery", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openFullScreenSettings", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openFullScreenSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startCallUI", returnType: CAPPluginReturnPromise),       // v8.29
+        CAPPluginMethod(name: "audioPriority", returnType: CAPPluginReturnPromise)      // v8.29
     ]
 
     override public func load() {
@@ -456,7 +535,21 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func caps(_ call: CAPPluginCall) {
-        call.resolve(["keepAlive": true, "v": 2])
+        call.resolve(["keepAlive": true, "v": 3, "outgoing": true, "audio": true])
+    }
+
+    /// v8.29: a call this phone makes shows as an iPhone call (audio priority)
+    @objc func startCallUI(_ call: CAPPluginCall) {
+        let id = call.getString("callId") ?? ""
+        let name = call.getString("name") ?? ""
+        let video = call.getBool("video") ?? false
+        DispatchQueue.main.async { call.resolve(["ok": NinetyCallManager.shared.startOutgoing(id, name, video)]) }
+    }
+
+    /// v8.29: voice-chat audio session on / off for a call without the iPhone call screen
+    @objc func audioPriority(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? true
+        DispatchQueue.main.async { call.resolve(["ok": NinetyCallManager.shared.audioPriority(on), "on": on]) }
     }
 
     /* Android only (work mode, battery, full-screen permission) — nothing to do on the iPhone */
