@@ -34,6 +34,10 @@
 // answered on the iPhone call screen since 22 Oct). The page drives it: rtcCaps / rtcCreate / rtcOffer / rtcAnswer / rtcSetLocal /
 // rtcSetRemote / rtcAddIce / rtcStats / rtcMute / rtcSpeaker / rtcRingback / rtcClose / rtcCloseAll / rtcState, events «rtcEvent».
 // CallKit's audio activation goes to WebRTC's RTCAudioSession (manual audio). caps() → v 4, rtc: true.
+//
+// v8.69 (Mahmoud 25 Oct «حل جذري للمكالمات» → LiveKit on our own server): lkJoin / lkLeave / lkMute / lkSpeaker / lkState / lkStats, events «lkEvent»
+// (NinetyLK.swift, LiveKit Swift SDK) — when both sides can, the call's audio goes through our LiveKit server instead of a direct
+// connection; CallKit / the held session decide when its audio engine runs. rtcMute / rtcCloseAll reach it too. caps() → v 5, lk: true.
 import Foundation
 import UIKit
 import PushKit
@@ -473,7 +477,13 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "rtcRingback", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "rtcClose", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "rtcCloseAll", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "rtcState", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "rtcState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lkJoin", returnType: CAPPluginReturnPromise),            // v8.69 LiveKit
+        CAPPluginMethod(name: "lkLeave", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lkMute", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lkSpeaker", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lkState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lkStats", returnType: CAPPluginReturnPromise)
     ]
 
     override public func load() {
@@ -481,6 +491,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
             NinetyCallManager.shared.start()
             NinetyCallManager.shared.plugin = self
             NinetyRTC.shared.plugin = self                                          // v8.32
+            NinetyLK.shared.plugin = self                                           // v8.69
             NinetyRTC.shared.hasCallKitCall = { NinetyCallManager.shared.hasCalls }
         }
     }
@@ -561,7 +572,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func caps(_ call: CAPPluginCall) {
-        call.resolve(["keepAlive": true, "v": 4, "outgoing": true, "audio": true, "rtc": true])
+        call.resolve(["keepAlive": true, "v": 5, "outgoing": true, "audio": true, "rtc": true, "lk": true])
     }
 
     /// v8.29: a call this phone makes shows as an iPhone call (audio priority)
@@ -655,7 +666,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func rtcMute(_ call: CAPPluginCall) {
         let on = call.getBool("muted") ?? false
-        DispatchQueue.main.async { NinetyRTC.shared.setMuted(on); call.resolve(["muted": on]) }
+        DispatchQueue.main.async { NinetyRTC.shared.setMuted(on); NinetyLK.shared.setMuted(on); call.resolve(["muted": on]) }
     }
 
     @objc func rtcSpeaker(_ call: CAPPluginCall) {
@@ -674,11 +685,51 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func rtcCloseAll(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { NinetyRTC.shared.closeAll(); call.resolve() }
+        DispatchQueue.main.async { NinetyLK.shared.leaveAll(); NinetyRTC.shared.closeAll(); call.resolve() }
     }
 
     @objc func rtcState(_ call: CAPPluginCall) {
         DispatchQueue.main.async { call.resolve(NinetyRTC.shared.state()) }
+    }
+
+    // MARK: v8.69 LiveKit (NinetyLK) — all on the main thread
+    @objc func lkJoin(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        let url = call.getString("url") ?? ""
+        let token = call.getString("token") ?? ""
+        let muted = call.getBool("muted") ?? false
+        let raw: [Any] = (call.getArray("iceServers") ?? []).map { $0 as Any }
+        DispatchQueue.main.async {
+            NinetyLK.shared.join(id, url: url, token: token, servers: NinetyLK.iceServers(raw), muted: muted) { err in
+                if let err = err { call.reject(err) } else { call.resolve(["ok": true]) }
+            }
+        }
+    }
+
+    @objc func lkLeave(_ call: CAPPluginCall) {
+        let id = call.getString("pcId") ?? ""
+        DispatchQueue.main.async { NinetyLK.shared.leave(id); call.resolve() }
+    }
+
+    @objc func lkMute(_ call: CAPPluginCall) {
+        let on = call.getBool("muted") ?? false
+        DispatchQueue.main.async { NinetyLK.shared.setMuted(on); call.resolve(["muted": on]) }
+    }
+
+    @objc func lkSpeaker(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? false
+        DispatchQueue.main.async { NinetyRTC.shared.setSpeaker(on); call.resolve(["on": on]) }   // the shared AVAudioSession route
+    }
+
+    @objc func lkState(_ call: CAPPluginCall) {
+        let id = call.getString("pcId")
+        DispatchQueue.main.async { call.resolve(NinetyLK.shared.state(id)) }
+    }
+
+    /// same as lkState (bytes in / out + level come from the tracks' statistics)
+    @objc func lkStats(_ call: CAPPluginCall) {
+        let id = call.getString("pcId")
+        DispatchQueue.main.async { call.resolve(NinetyLK.shared.state(id)) }
     }
 
     /* Android only (work mode, battery, full-screen permission) — nothing to do on the iPhone */

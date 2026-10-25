@@ -86,6 +86,11 @@ final class NinetyRTC: NSObject {
     private var ringPlayer: AVAudioPlayer?
 
     var count: Int { return pcs.count }
+    /// v8.69: the call's audio session is ours (CallKit activated it, or the app holds the voice-chat session)
+    var sessionOurs: Bool { return callKitAudio || heldAudio }
+    /// v8.69: something talks — a native connection here or a LiveKit room (NinetyLK)
+    private var busy: Bool { return !pcs.isEmpty || NinetyLK.shared.count > 0 }
+    private var releaseItem: DispatchWorkItem?
 
     // MARK: setup
     private func makeFactory() -> RTCPeerConnectionFactory {
@@ -128,6 +133,9 @@ final class NinetyRTC: NSObject {
         guard !id.isEmpty else { return false }
         if pcs[id] != nil { return true }
         let f = makeFactory()
+        releaseItem?.cancel()
+        releaseItem = nil
+        RTCAudioSession.sharedInstance().isAudioEnabled = callKitAudio || heldAudio   // v8.69: may have been switched off for a LiveKit call
         let cfg = RTCConfiguration()
         cfg.iceServers = servers
         cfg.sdpSemantics = .unifiedPlan
@@ -277,7 +285,38 @@ final class NinetyRTC: NSObject {
         pcs[id] = nil
         delegates[id] = nil
         tracks[id] = nil
-        if pcs.isEmpty { allClosed() }
+        if pcs.isEmpty { pcsGone() }
+    }
+
+    /// v8.69: the last native connection closed. With a LiveKit room up the session stays (only this WebRTC's audio stops);
+    /// otherwise it is given back after a short grace — the page closes the native connection right before it joins LiveKit.
+    private func pcsGone() {
+        if NinetyLK.shared.count > 0 {
+            RTCAudioSession.sharedInstance().isAudioEnabled = false
+            return
+        }
+        releaseItem?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.releaseItem = nil
+            if self.pcs.isEmpty && NinetyLK.shared.count == 0 { self.allClosed() }
+        }
+        releaseItem = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: w)
+    }
+
+    /// v8.69: a LiveKit room joined / the last one left (NinetyLK)
+    func lkChanged() {
+        if NinetyLK.shared.count > 0 {
+            releaseItem?.cancel()
+            releaseItem = nil
+            if pcs.isEmpty { RTCAudioSession.sharedInstance().isAudioEnabled = false }
+            if !callKitAudio && !heldAudio { ensureTries = 0; scheduleEnsure(0.3) }
+        } else if pcs.isEmpty {
+            releaseItem?.cancel()
+            releaseItem = nil
+            allClosed()
+        }
     }
 
     func closeAll() {
@@ -289,6 +328,8 @@ final class NinetyRTC: NSObject {
     }
 
     private func allClosed() {
+        releaseItem?.cancel()
+        releaseItem = nil
         ringback(false)
         ensureItem?.cancel()
         ensureItem = nil
@@ -303,10 +344,11 @@ final class NinetyRTC: NSObject {
             s.audioSessionDidDeactivate(av)
             do { try av.setActive(false, options: [.notifyOthersOnDeactivation]) } catch { NSLog("[NinetyRTC] release: \(error)") }
         }
+        NinetyLK.shared.sync()
     }
 
     func state() -> [String: Any] {
-        return ["pcs": pcs.count, "audio": RTCAudioSession.sharedInstance().isAudioEnabled, "callkit": callKitAudio, "held": heldAudio, "muted": muted, "speaker": speaker]
+        return ["pcs": pcs.count, "audio": RTCAudioSession.sharedInstance().isAudioEnabled, "callkit": callKitAudio, "held": heldAudio, "muted": muted, "speaker": speaker, "lk": NinetyLK.shared.count]
     }
 
     // MARK: audio session
@@ -317,10 +359,11 @@ final class NinetyRTC: NSObject {
         let s = RTCAudioSession.sharedInstance()
         if heldAudio { heldAudio = false }      // CallKit owns it now
         s.audioSessionDidActivate(session)
-        s.isAudioEnabled = true
+        s.isAudioEnabled = !(pcs.isEmpty && NinetyLK.shared.count > 0)   // v8.69: a LiveKit-only call keeps this WebRTC silent
         if speaker { setSpeaker(true) }
         startRing()
         emitAll(["kind": "audio", "state": "callkit"])
+        NinetyLK.shared.sync()                  // v8.69: LiveKit's engine may run now
     }
 
     func callKitDeactivated(_ session: AVAudioSession) {
@@ -328,8 +371,9 @@ final class NinetyRTC: NSObject {
         let s = RTCAudioSession.sharedInstance()
         s.audioSessionDidDeactivate(session)
         s.isAudioEnabled = false
-        if !pcs.isEmpty { ensureTries = 0; scheduleEnsure(0.4) }   // still talking (in-app answer closed the ringing screen)
+        if busy { ensureTries = 0; scheduleEnsure(0.4) }   // still talking (in-app answer closed the ringing screen)
         emitAll(["kind": "audio", "state": "off"])
+        NinetyLK.shared.sync()
     }
 
     private func scheduleEnsure(_ after: TimeInterval) {
@@ -342,8 +386,12 @@ final class NinetyRTC: NSObject {
     /// no CallKit session for an open connection → take the voice-chat session (a CallKit call that is about to activate gets ~4 s)
     private func ensureAudio() {
         ensureItem = nil
-        guard !pcs.isEmpty, !callKitAudio else { return }
-        if RTCAudioSession.sharedInstance().isAudioEnabled && heldAudio { return }
+        guard busy, !callKitAudio else { return }
+        if heldAudio {                           // already ours — v8.69: just make sure the right engine plays
+            RTCAudioSession.sharedInstance().isAudioEnabled = !(pcs.isEmpty && NinetyLK.shared.count > 0)
+            NinetyLK.shared.sync()
+            return
+        }
         if hasCallKitCall() && ensureTries < 4 {
             ensureTries += 1
             scheduleEnsure(1.0)
@@ -356,10 +404,11 @@ final class NinetyRTC: NSObject {
             heldAudio = true
             let s = RTCAudioSession.sharedInstance()
             s.audioSessionDidActivate(av)
-            s.isAudioEnabled = true
+            s.isAudioEnabled = !(pcs.isEmpty && NinetyLK.shared.count > 0)
             if speaker { setSpeaker(true) }
             startRing()
             emitAll(["kind": "audio", "state": "held"])
+            NinetyLK.shared.sync()
         } catch {
             NSLog("[NinetyRTC] audio session: \(error)")
             emitAll(["kind": "audio", "state": "error", "error": "\(error)"])

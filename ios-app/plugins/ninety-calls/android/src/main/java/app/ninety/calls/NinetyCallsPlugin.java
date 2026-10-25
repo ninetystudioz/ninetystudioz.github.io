@@ -42,6 +42,9 @@ import java.net.URL;
  * sdk, make, model; ack({callId}) clears the pending answer (it is not kept at all when the page is listening); an answered
  * call opens the app over the lock screen (no PIN needed to talk) until endCall({callId, force: true}) / 3 h at most;
  * openSettings({kind: "channel"}) opens the ring channel in use.
+ * v8.69 (LiveKit on our own server, Mahmoud 25 Oct): lkJoin({pcId, url, token, iceServers, muted}) / lkLeave({pcId}) / lkMute({muted}) /
+ * lkSpeaker({on}) / lkState({pcId}), events «lkEvent» — the call's audio in the app itself (NinetyLK.kt) + «call in progress»
+ * foreground service (CallService) while a room is up.
  */
 @CapacitorPlugin(name = "NinetyCalls")
 public class NinetyCallsPlugin extends Plugin {
@@ -59,6 +62,7 @@ public class NinetyCallsPlugin extends Plugin {
     @Override
     public void load() {
         self = this;
+        NinetyLK.setSink(o -> ui.post(() -> notifyListeners("lkEvent", o)));   /* v8.69 */
         if (getActivity() != null && getActivity().getIntent() != null) takeIntent(getActivity().getIntent());
     }
 
@@ -473,6 +477,73 @@ public class NinetyCallsPlugin extends Plugin {
             if (start(c, new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + c.getPackageName())))) return true;
         }
         return openAppDetails(c);
+    }
+
+    /* ---------------- v8.69: LiveKit (NinetyLK) — all on the main thread ---------------- */
+    @PluginMethod
+    public void lkJoin(PluginCall call) {
+        final String id = call.getString("pcId", "");
+        final String url = call.getString("url", "");
+        final String token = call.getString("token", "");
+        final boolean muted = call.getBoolean("muted", false);
+        final org.json.JSONArray ice = call.getArray("iceServers");
+        ui.post(() -> {
+            CallService.start(getContext());
+            NinetyLK.join(getContext(), id, url, token, ice, muted, err -> {
+                if (err != null) {
+                    if (NinetyLK.count() == 0) CallService.stop(getContext());
+                    call.reject(err);
+                } else {
+                    JSObject o = new JSObject();
+                    o.put("ok", true);
+                    call.resolve(o);
+                }
+            });
+        });
+    }
+
+    @PluginMethod
+    public void lkLeave(PluginCall call) {
+        final String id = call.getString("pcId", "");
+        ui.post(() -> {
+            NinetyLK.leave(id);
+            if (NinetyLK.count() == 0) CallService.stop(getContext());
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void lkMute(PluginCall call) {
+        final boolean on = call.getBoolean("muted", false);
+        ui.post(() -> {
+            NinetyLK.setMuted(on);
+            JSObject o = new JSObject();
+            o.put("muted", on);
+            call.resolve(o);
+        });
+    }
+
+    @PluginMethod
+    public void lkSpeaker(PluginCall call) {
+        final boolean on = call.getBoolean("on", false);
+        ui.post(() -> {
+            NinetyLK.setSpeaker(on);
+            JSObject o = new JSObject();
+            o.put("on", on);
+            call.resolve(o);
+        });
+    }
+
+    @PluginMethod
+    public void lkState(PluginCall call) {
+        final String id = call.getString("pcId", null);
+        ui.post(() -> call.resolve(NinetyLK.state(id)));
+    }
+
+    @PluginMethod
+    public void lkStats(PluginCall call) {
+        final String id = call.getString("pcId", null);
+        ui.post(() -> NinetyLK.stats(id, call::resolve));
     }
 
     /* ---------------- v8.29: the call gets the audio first (Mahmoud 23 Oct «يبقى ليه أولوية في الاتصال») ----------------

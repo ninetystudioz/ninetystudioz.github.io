@@ -35,6 +35,15 @@ if has:
 else:
     print('no google-services.json for %s yet (Android notifications off until it is added in Firebase and uploaded)' % app_id)
 
+# v8.69: the calls plugin is Kotlin + LiveKit — Kotlin Gradle plugin on the root classpath, JitPack (only LiveKit's audio-routing
+# library, com.github.davidliu) for every module
+rg = open('android/build.gradle').read()
+if 'kotlin-gradle-plugin' not in rg:
+    rg = rg.replace("classpath 'com.android.tools.build:gradle:", "classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21'\n        classpath 'com.android.tools.build:gradle:", 1)
+if 'jitpack.io' not in rg:
+    rg = re.sub(r'(allprojects\s*\{\s*repositories\s*\{)', r"\1\n        maven { url 'https://jitpack.io'; content { includeGroup 'com.github.davidliu' } }", rg, count=1)
+open('android/build.gradle', 'w').write(rg)
+
 g = open(GRADLE).read()
 g = re.sub(r'versionCode\s+\d+', 'versionCode %d' % version_code, g)
 g = re.sub(r'versionName\s+"[^"]*"', 'versionName "%s"' % version_name, g)
@@ -53,6 +62,9 @@ android {
         }
     }''', 1)
     g = re.sub(r'(buildTypes\s*\{\s*release\s*\{)', r'\1\n            signingConfig signingConfigs.release', g, count=1)
+# v8.69: LiveKit's WebRTC library is ~12 MB per CPU type — phones only (arm64 + 32-bit arm), no emulator builds (x86)
+if 'abiFilters' not in g:
+    g = re.sub(r'(defaultConfig\s*\{)', r"\1\n        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }", g, count=1)
 open(GRADLE, 'w').write(g)
 
 m = open(MANIFEST).read()

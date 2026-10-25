@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v8.69: LiveKit calls in the app — microphone, call audio routing, «call in progress» service -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- v7.36: the app updates itself from the site (the new Ninety.apk, same signing key) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application>
@@ -20,6 +24,7 @@
         <service android:name="app.ninety.calls.WorkService" android:exported="false" android:foregroundServiceType="remoteMessaging" />
         <activity android:name="app.ninety.calls.IncomingCallActivity" android:exported="false" android:showWhenLocked="true" android:turnScreenOn="true" android:launchMode="singleInstance" android:excludeFromRecents="true" android:taskAffinity="app.ninety.calls.incoming" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
         <receiver android:name="app.ninety.calls.CallActionReceiver" android:exported="false" />
+        <service android:name="app.ninety.calls.CallService" android:exported="false" android:foregroundServiceType="microphone" />
         <!-- v7.36: self-update result (PackageInstaller) + «updated — tap to open» after the new version is in -->
         <receiver android:name="app.ninety.calls.UpdateReceiver" android:exported="false">
             <intent-filter>

@@ -1,4 +1,17 @@
 // Ninety — native call screen plugin (Android library module, picked up by `npx cap sync android`)
+// v8.69: + Kotlin + LiveKit Android SDK (NinetyLK.kt — calls through our LiveKit server). The Kotlin Gradle plugin is put on the
+// root classpath by scripts/configure-android.py (with JitPack for LiveKit's audio-routing library); this buildscript block is the
+// same, for a project generated without that script.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21'
+    }
+}
+
 ext {
     androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
     androidxCoreVersion = project.hasProperty('androidxCoreVersion') ? rootProject.ext.androidxCoreVersion : '1.16.0'
@@ -6,6 +19,7 @@ ext {
 }
 
 apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
 
 android {
     namespace = "app.ninety.calls"
@@ -21,11 +35,18 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+    kotlinOptions {
+        jvmTarget = '21'
+    }
 }
 
 repositories {
     google()
     mavenCentral()
+    maven {
+        url 'https://jitpack.io'
+        content { includeGroup 'com.github.davidliu' }
+    }
 }
 
 dependencies {
@@ -34,4 +55,6 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.core:core:$androidxCoreVersion"
     implementation "com.google.firebase:firebase-messaging:$firebaseMessagingVersion"
+    implementation "io.livekit:livekit-android:2.28.2"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
 }
