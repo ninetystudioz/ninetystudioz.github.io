@@ -22,6 +22,9 @@ final class NinetyLKRoom: NSObject, RoomDelegate, @unchecked Sendable {
     let room: Room
     weak var owner: NinetyLK?
     var mic: LocalAudioTrack?          // our own microphone track (with statistics → bytes sent for the call log)
+    var micOK = false                  // v8.71: published (a failed publish is retried — calls-lk-fixes #3)
+    var micBusy = false
+    var micTries = 0
 
     init(_ id: String, _ owner: NinetyLK) {
         self.id = id
@@ -94,6 +97,7 @@ final class NinetyLK: NSObject {
             try AudioManager.shared.setEngineAvailability(want ? AudioEngineAvailability.default : AudioEngineAvailability.none)
             engineOn = want
             emitAll(["kind": "audio", "state": want ? "on" : "off"])
+            if want { for (_, r) in rooms where !r.micOK { r.micTries = 0; publishMic(r) } }   // v8.71: the engine is back → the mic again
         } catch {
             NSLog("[NinetyLK] engine \(want): \(error)")
             emitAll(["kind": "audio", "state": "error", "error": "\(error)"])
@@ -150,19 +154,37 @@ final class NinetyLK: NSObject {
         }
     }
 
-    /// the microphone is published after the room is up (it starts recording once the engine is allowed — CallKit / held session)
+    /// the microphone is published after the room is up (it starts recording once the engine is allowed — CallKit / held session).
+    /// v8.71 (calls-lk-fixes #3, 25 Oct 58bf5048: «Audio engine returned error code -3010» with the app in the background → the other
+    /// side never heard him): a failed publish is retried — every 2 s up to 8 times, and again as soon as the engine is allowed.
     private func publishMic(_ r: NinetyLKRoom) {
+        guard !r.micOK, !r.micBusy, rooms[r.id] === r else { return }
+        r.micBusy = true
+        r.micTries += 1
         let m = muted
         let id = r.id
+        let old = r.mic
+        r.mic = nil
         Task {
+            if let old = old {
+                for pub in r.room.localParticipant.localAudioTracks where pub.track === old { try? await r.room.localParticipant.unpublish(publication: pub) }
+                try? await old.stop()
+            }
             do {
                 let track = await LocalAudioTrack.createTrack(reportStatistics: true)
-                r.mic = track
                 _ = try await r.room.localParticipant.publish(audioTrack: track)
                 if m { try await track.mute() }
-                DispatchQueue.main.async { [weak self] in self?.emit(id, ["kind": "mic", "on": !m]) }
+                DispatchQueue.main.async { [weak self] in
+                    r.mic = track; r.micOK = true; r.micBusy = false
+                    self?.emit(id, ["kind": "mic", "on": !m, "tries": r.micTries])
+                }
             } catch {
-                DispatchQueue.main.async { [weak self] in self?.emit(id, ["kind": "mic", "on": false, "error": "\(error)"]) }
+                DispatchQueue.main.async { [weak self] in
+                    r.micBusy = false
+                    guard let self = self else { return }
+                    self.emit(id, ["kind": "mic", "on": false, "error": "\(error)", "tries": r.micTries])
+                    if r.micTries < 8 { DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.publishMic(r) } }
+                }
             }
         }
     }
@@ -217,6 +239,9 @@ final class NinetyLK: NSObject {
             var inBytes: UInt64 = 0
             var level: Double = 0
             var remoteAudio = 0
+            var pRecv: UInt64 = 0
+            var pLost: Int64 = 0
+            var jitter: Double = 0
             for (_, p) in r.room.remoteParticipants {
                 for pub in p.audioTracks {
                     guard let t = pub.track else { continue }
@@ -225,16 +250,34 @@ final class NinetyLK: NSObject {
                         for x in s.inboundRtpStream {
                             inBytes += x.bytesReceived ?? 0
                             level = max(level, x.audioLevel ?? 0)
+                            pRecv += x.packetsReceived ?? 0
+                            pLost += max(0, x.packetsLost ?? 0)
+                            jitter = max(jitter, x.jitter ?? 0)
                         }
                     }
                 }
             }
             var outBytes: UInt64 = 0
-            if let s = r.mic?.statistics { for x in s.outboundRtpStream { outBytes += x.bytesSent ?? 0 } }
+            var fLost: Double = -1
+            var rtt: Double = -1
+            if let s = r.mic?.statistics {
+                for x in s.outboundRtpStream { outBytes += x.bytesSent ?? 0 }
+                for x in s.remoteInboundRtpStream {
+                    if let f = x.fractionLost { fLost = max(fLost, f) }
+                    if let t = x.roundTripTime { rtt = max(rtt, t) }
+                }
+            }
             out["remoteAudio"] = remoteAudio
             out["inBytes"] = inBytes
             out["outBytes"] = outBytes
             out["level"] = level
+            out["micOK"] = r.micOK
+            // v8.71 (calls-lk-fixes #5): what the call screen's quality check reads (packets / loss / jitter / round trip)
+            out["packetsReceived"] = pRecv
+            out["packetsLost"] = pLost
+            out["jitter"] = jitter
+            if fLost >= 0 { out["fractionLost"] = fLost }
+            if rtt >= 0 { out["rtt"] = rtt }
         }
         return out
     }

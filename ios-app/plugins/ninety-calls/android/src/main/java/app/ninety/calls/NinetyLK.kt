@@ -114,11 +114,21 @@ object NinetyLK {
                 done.done(null)
                 emit(id, "joined") { it.put("ms", System.currentTimeMillis() - t0); it.put("peers", room.remoteParticipants.size) }
                 applySpeaker(r)
-                try {
-                    room.localParticipant.setMicrophoneEnabled(!muted)
-                    emit(id, "mic") { it.put("on", !muted) }
-                } catch (ex: Exception) {
-                    emit(id, "mic") { it.put("on", false); it.put("error", ex.toString()) }
+                /* v8.71 (calls-lk-fixes #3): a microphone that fails to start is tried again — every 2 s, up to 8 times */
+                var tries = 0
+                while (rooms[id] === r) {
+                    tries += 1
+                    try {
+                        room.localParticipant.setMicrophoneEnabled(!muted)
+                        val n = tries
+                        emit(id, "mic") { it.put("on", !muted); it.put("tries", n) }
+                        break
+                    } catch (ex: Exception) {
+                        val n = tries
+                        emit(id, "mic") { it.put("on", false); it.put("error", ex.toString()); it.put("tries", n) }
+                        if (tries >= 8) break
+                        kotlinx.coroutines.delay(2000)
+                    }
                 }
             } catch (ex: Throwable) {
                 if (rooms[id] === r) {
@@ -201,7 +211,8 @@ object NinetyLK {
         return o
     }
 
-    /** audio bytes in / out + the incoming level (both connections of the room) — for the call screen and the call log */
+    /** audio bytes in / out + packets / loss / jitter / round trip + the incoming level — both connections of the room, every
+     *  stats type read from both reports (v8.71, calls-lk-fixes #4/#5: the subscriber report alone gave inBytes 0 on 25 Oct) */
     @JvmStatic
     fun stats(id: String?, done: StatsDone) {
         val o = state(id)
@@ -209,37 +220,58 @@ object NinetyLK {
         if (r == null) { done.done(o); return }
         var inBytes = 0L
         var outBytes = 0L
+        var pRecv = 0L
+        var pLost = 0L
+        var jitter = 0.0
         var level = 0.0
+        var fLost = -1.0
+        var rtt = -1.0
         var left = 2
+        var sent = false
         val main = android.os.Handler(android.os.Looper.getMainLooper())
+        fun num(v: Any?): Double = (v as? Number)?.toDouble() ?: 0.0
         fun finish() {
             left -= 1
-            if (left > 0) return
+            if (left > 0 || sent) return
+            sent = true
             o.put("inBytes", inBytes)
             o.put("outBytes", outBytes)
             o.put("level", level)
+            o.put("packetsReceived", pRecv)
+            o.put("packetsLost", pLost)
+            o.put("jitter", jitter)
+            if (fLost >= 0) o.put("fractionLost", fLost)
+            if (rtt >= 0) o.put("rtt", rtt)
             done.done(o)
         }
-        try {
-            r.room.getSubscriberRTCStats { rep ->
-                for (st in rep.statsMap.values) {
-                    if (st.type == "inbound-rtp" && (st.members["kind"] ?: st.members["mediaType"]) == "audio") {
-                        inBytes += (st.members["bytesReceived"] as? Number)?.toLong() ?: 0L
-                        level = maxOf(level, (st.members["audioLevel"] as? Number)?.toDouble() ?: 0.0)
+        val read = livekit.org.webrtc.RTCStatsCollectorCallback { rep ->
+            main.post {
+                try {
+                    for (st in rep.statsMap.values) {
+                        val m = st.members
+                        val audio = (m["kind"] ?: m["mediaType"]) == "audio"
+                        when (st.type) {
+                            "inbound-rtp" -> if (audio) {
+                                inBytes += num(m["bytesReceived"]).toLong()
+                                pRecv += num(m["packetsReceived"]).toLong()
+                                pLost += maxOf(0L, num(m["packetsLost"]).toLong())
+                                jitter = maxOf(jitter, num(m["jitter"]))
+                                level = maxOf(level, num(m["audioLevel"]))
+                            }
+                            "outbound-rtp" -> if (audio) outBytes += num(m["bytesSent"]).toLong()
+                            "remote-inbound-rtp" -> if (audio) {
+                                if (m["fractionLost"] != null) fLost = maxOf(fLost, num(m["fractionLost"]))
+                                if (m["roundTripTime"] != null) rtt = maxOf(rtt, num(m["roundTripTime"]))
+                            }
+                            "candidate-pair" -> if (m["state"] == "succeeded" && m["nominated"] == true && m["currentRoundTripTime"] != null) rtt = maxOf(rtt, num(m["currentRoundTripTime"]))
+                        }
                     }
-                }
-                main.post { finish() }
+                } catch (_: Exception) { }
+                finish()
             }
-        } catch (_: Exception) { main.post { finish() } }
-        try {
-            r.room.getPublisherRTCStats { rep ->
-                for (st in rep.statsMap.values) {
-                    if (st.type == "outbound-rtp" && (st.members["kind"] ?: st.members["mediaType"]) == "audio") {
-                        outBytes += (st.members["bytesSent"] as? Number)?.toLong() ?: 0L
-                    }
-                }
-                main.post { finish() }
-            }
-        } catch (_: Exception) { main.post { finish() } }
+        }
+        try { r.room.getSubscriberRTCStats(read) } catch (_: Exception) { main.post { finish() } }
+        try { r.room.getPublisherRTCStats(read) } catch (_: Exception) { main.post { finish() } }
+        main.postDelayed({ left = 0; if (!sent) { left = 1; finish() } }, 3000)   // a report that never comes back does not hold the page
     }
 }
