@@ -6,8 +6,11 @@ APP = 'android/app'
 GRADLE = APP + '/build.gradle'
 MANIFEST = APP + '/src/main/AndroidManifest.xml'
 build_no = int(os.environ.get('BUILD_NUMBER', '0') or 0)
-version_code = 100 + build_no          # above the old Ninety.apk / Play bundle (version codes 1–3)
-version_name = '2.0.%d' % build_no
+# v8.69: the Codemagic app moved to the new repo (17 Oct) and its build counter started again at 1 — the phones already have
+# versionCode 109 (2.0.9) from the old repo, so 100 + build gave 103/104 and Android refused them as a downgrade. +200 keeps every
+# new build above the old ones (the iPhone build number does the same).
+version_code = 200 + build_no
+version_name = '2.1.%d' % build_no
 
 sig = {}
 try:
