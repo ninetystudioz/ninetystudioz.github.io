@@ -56,7 +56,7 @@
         <div class="grid g4" style="gap:10px 14px;font-size:13px">
           <div><div class="tiny muted">البراند</div>${brandChip(t.brandId)}</div>
           <div><div class="tiny muted">العميل</div><a href="#/clients/${esc(t.clientId||"")}">${esc(clientName(t.clientId))}</a></div>
-          <div><div class="tiny muted">الكمية</div><span class="num">${fmtNum(t.qty)} ${esc(t.unit||"")}</span></div>
+          <div><div class="tiny muted">الكمية</div><span class="num">${fmtNum(t.qty)} ${esc(t.unit||"")}</span>${(t.items||[]).filter(m=>m&&+m.qty).length>1?`<div class="nfo-qi" style="font-size:12px;color:var(--ink2,#666);margin-top:3px;line-height:1.55">${t.items.filter(m=>m&&+m.qty).map(m=>`<div><span class="num">${fmtNum(m.qty)}</span> × ${m.productId?`<a href="#/products/${esc(m.productId)}">${esc(m.name||"—")}</a>`:esc(m.name||"—")}</div>`).join("")}</div>`:""}</div>
           <div><div class="tiny muted">تاريخ الأمر</div>${fmtDate(t.orderDate)}</div>
           <div><div class="tiny muted">تاريخ التسليم</div><b>${fmtDate(t.dueDate)}</b></div>
           ${seesFinance()?`<div><div class="tiny muted">قيمة الأمر</div>${money(t.value)} ${CUR()}</div><div><div class="tiny muted">المحصّل</div><span style="color:var(--good-ink)">${money(s)}</span></div><div><div class="tiny muted">المتبقي</div><span style="color:${i>0?"var(--crit-ink)":"inherit"}">${money(i)}</span></div>`:""}
