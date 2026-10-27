@@ -1949,4 +1949,4 @@ ${t("اتسجّلوا من شيت إكسل بالمشتريات. راجعهم و
 .nft.nfcb.open > .nft-cur{background:var(--surface);border-color:color-mix(in srgb,var(--accent,#2d7ff9) 55%,transparent);margin-bottom:6px}
 .nft.nfcb.open > .nft-cur .ns-cv{transform:rotate(180deg)}
 .nft-tiles.nfcb.open > .nft-items{max-height:min(320px,45vh);overflow:auto;-webkit-overflow-scrolling:touch;padding:2px}
-</style>`)}();
+</style>`)}(),function(){if(window.__NF_ESCLOOP__)return;window.__NF_ESCLOOP__=1;const t=n=>{try{return typeof escAcked=="function"&&!!escAcked(n)}catch{return!1}},e=window.nfEscRoute;window.nfEscRoute=function(n){return n&&t(n)?{wait:!0}:typeof e=="function"?e.apply(this,arguments):null}}();
