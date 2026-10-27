@@ -1,10 +1,10 @@
 /* Ninety Fabrication — service worker (app shell cache). Data never lives here: it is on the server. */
-const BUILD = '20261026-1905-c2a79a';
+const BUILD = '20261027-0710-f84ce6';
 /* v4.17: several Ninety apps share one origin (/ = factory, /studioz/ = office) — each service worker keeps to its own scope and its own cache prefix */
 const SCOPE = new URL(self.registration.scope).pathname;
 const TAG = SCOPE.replace(/^\/|\/$/g, '').replace(/\//g, '-');
 const CACHE = 'nf-shell-' + (TAG ? TAG + '-' : '') + BUILD;
-const SHELL = ["./core.js?v=cc27632df7", "./app.js?v=20261026-1905-c2a79a", "./index.html", "./config.js", "./manifest.json", "./vendor/supabase.js", "./vendor/three.bundle.js", "./vendor/pdf.min.js", "./vendor/pdf.worker.min.js", "./vendor/leaflet.js", "./icons/icon-192.png", "./icons/icon-512.png", "./en.json", "./laeha.pdf", "./lof-c01.pdf"];
+const SHELL = ["./core.js?v=cc27632df7", "./app.js?v=20261027-0710-f84ce6", "./index.html", "./config.js", "./manifest.json", "./vendor/supabase.js", "./vendor/three.bundle.js", "./vendor/pdf.min.js", "./vendor/pdf.worker.min.js", "./vendor/leaflet.js", "./icons/icon-192.png", "./icons/icon-512.png", "./en.json", "./laeha.pdf", "./lof-c01.pdf"];
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(async c => { for (const u of SHELL) { try { const had = await caches.match(new Request(u)); if (had && had.ok) { await c.put(u, had); continue; } const r = await fetch(new Request(u, { cache: 'reload' })); if (r.ok || r.type === 'opaque') await c.put(u, r); } catch (x) { /* next */ } } }).catch(() => { }));
