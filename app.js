@@ -3094,3 +3094,93 @@ body.nfnocopy form,body.nfnocopy .modal,body.nfnocopy :has(> input),body.nfnocop
 
 ;(function(){if(window.__NF_NEWITEMNOTE__||typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction())return;window.__NF_NEWITEMNOTE__=1;const o=/^newitem_hd_/,s=Store.save;Store.save=function(i,t){const e=s.apply(this,arguments);try{i==="tasks"&&t&&o.test(String(t.id||""))&&["open","doing"].includes(t.status||"open")&&Promise.resolve(e).then(()=>setTimeout(()=>{try{const n=typeof nowISO=="function"?nowISO():new Date().toISOString();Store.update("tasks",t.id,{status:"done",doneAt:n,doneByName:"\u0644\u0644\u0639\u0644\u0645 \u2014 \u0627\u062A\u0642\u0641\u0644\u062A \u0644\u0648\u062D\u062F\u0647\u0627",autoDone:!0},{silent:!0})}catch{}},1500),()=>{})}catch{}return e}})();
 
+
+;/* dept-head-primary — v8.99a (29 Oct 2026, support fix, factory only)
+   1) deptHeads(d): the department's own head (worker.deptId === d) comes first; heads who only have the
+      department through accessDepts / headDepts come after. poHead (head receipt, technical approval,
+      PR approval), the custody confirmation and the AI context all take [0] = the department's real head.
+      Before: the order was whatever list("workers") returned, so carpentry POs went to the paint head
+      (he has carp in accessDepts) — RFQ-26-048 and PR-26-052/053/055/056 never reached the carpentry head.
+   2) po_recv_wait_<po> ("X recorded the receipt — waiting for yours") can't be closed while that receipt
+      is still missing: the person who can record it gets the receipt dialog, anyone else a message.
+      Same rule the receipt guard already applies to po_recv_head_ / po_recv_store_ — the storekeeper had
+      been closing the head's task, so the PO stayed "arrived — waiting for dual receipt" with no task anywhere. */
+(function () {
+  try {
+    if (window.__NF_HEADPRIM__ || (typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_HEADPRIM__ = 1;
+    var tr = function (ar, en) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? en : ar; } catch (e) { return ar; } };
+
+    if (typeof deptHeads === "function") {
+      deptHeads = (function (base) {
+        var f = function (d) {
+          var r = base.apply(this, arguments) || [];
+          try {
+            if (!d || !Array.isArray(r) || r.length < 2) return r;
+            var own = function (h) { try { var w = h && byId("workers", h.id); return w && w.deptId === d ? 0 : 1; } catch (e) { return 1; } };
+            return r.map(function (h, i) { return { h: h, i: i, o: own(h) }; })
+              .sort(function (x, y) { return x.o - y.o || x.i - y.i; })
+              .map(function (x) { return x.h; });
+          } catch (e) { return r; }
+        };
+        f.__primaryFirst = true;
+        return f;
+      })(deptHeads);
+    }
+
+    var OPEN = ["approved", "ordered", "arrived", "partial"];
+    var waitInfo = function (id) {
+      var m = /^po_recv_wait_(.+)$/.exec(String(id || ""));
+      if (!m) return null;
+      var p = byId("purchases", m[1]);
+      if (!p || OPEN.indexOf(p.status) < 0) return null;
+      var rc = p.receipts || {};
+      var side = rc.store && !rc.head ? "head" : rc.head && !rc.store ? "store" : null;
+      return side ? { po: p, side: side } : null;
+    };
+    var canSide = function (p, side) {
+      try { return typeof nfRcvCan === "function" ? nfRcvCan(p, side) : side === "head" ? poIsHeadActor(p) : poIsStoreActor(); }
+      catch (e) { return false; }
+    };
+
+    if (typeof ACTIONS === "object" && ACTIONS.taskStatus) {
+      ACTIONS.taskStatus = (function (base) {
+        return async function (arg) {
+          try {
+            var a = String(arg || "").split(":");
+            if (a[1] === "done") {
+              var w = waitInfo(a[0]);
+              if (w) {
+                if (canSide(w.po, w.side) && writable()) {
+                  toast(tr("المهمة دي بتتقفل بتسجيل الاستلام نفسه — سجّله هنا", "This task closes by recording the receipt itself — record it here"));
+                  return ACTIONS.poReceiveAs(w.po.id + ":" + w.side);
+                }
+                toast(w.side === "head"
+                  ? tr("الاستلام الفني بيسجّله رئيس القسم (أو مدير المصنع) من زرار الاستلام", "The technical receipt is recorded by the department head (or the factory manager)")
+                  : tr("استلام الكميات بيسجّله أمين المخزن من زرار الاستلام", "The quantity receipt is recorded by the storekeeper"), "err");
+                return;
+              }
+            }
+          } catch (e) { console.warn("recv wait task", e); }
+          return base.apply(this, arguments);
+        };
+      })(ACTIONS.taskStatus);
+    }
+
+    if (typeof Store === "object" && typeof Store.update === "function") {
+      Store.update = (function (base) {
+        return function (col, id, patch) {
+          try {
+            if (col === "tasks" && patch && patch.status === "done" && waitInfo(id)) {
+              var u = Object.assign({}, patch);
+              ["status", "doneAt", "doneByName", "proof"].forEach(function (k) { delete u[k]; });
+              console.warn("receipt wait task kept open — receipt still missing", id);
+              return Object.keys(u).length ? base.apply(this, [col, id, u].concat([].slice.call(arguments, 3))) : Promise.resolve(byId(col, id));
+            }
+          } catch (e) { }
+          return base.apply(this, arguments);
+        };
+      })(Store.update);
+    }
+  } catch (e) { console.warn("dept-head-primary", e); }
+})();
