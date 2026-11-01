@@ -444,3 +444,5 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     .tk-topic{margin-top:8px;font-size:13.5px;line-height:1.6;border-top:1px dashed var(--line);padding-top:6px}
     </style>`)}catch{}})();
 
+;(function(){if(window.__NF_FABLEFT__)return;window.__NF_FABLEFT__=1;const e="@media (max-width:900px){html[dir=ltr] body:not(#i18n-fableft) .nfdial .nfd-main{left:14px!important;right:auto!important}}",t=document.createElement("style");t.id="nf-fab-left",t.textContent=e;const n=()=>{document.getElementById("nf-fab-left")||(document.head||document.documentElement).appendChild(t)};n(),document.addEventListener("DOMContentLoaded",n)})();
+
