@@ -3548,3 +3548,32 @@ Complete the drawings and pricing — open the survey (it has the PDF).`);typeof
 
 ;(function(){if(window.__NF_FUNDPAYNOTE__)return;try{if(typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction())return}catch{return}window.__NF_FUNDPAYNOTE__=1;const c=()=>{try{return!!S.session&&isAdmin()&&(typeof writable!="function"||writable())&&(!S.db||S.loaded&&S.loaded.requests&&S.loaded.tasks)}catch{return!1}},i=e=>{try{return!!e&&e.type==="fund"&&e.status==="approved"&&typeof fundToPay=="function"&&fundToPay(e)}catch{return!1}};let s=!1,a=0;async function o(){if(!(s||!c()||Date.now()-a<4e3)){s=!0,a=Date.now();try{const e=list("requests").filter(t=>t&&t.type==="fund");for(const t of e.filter(i).slice(0,10)){const n="fundpay_"+t.id;if(byId("tasks",n))continue;const r=typeof walletOf=="function"?walletOf(t.walletId):null,u=`حوّل لعهدة ${r&&r.name||t.requesterName||""}: ${fmtMoney(+t.amount||0)} ${typeof CUR=="function"?CUR():""}`.trim(),d=`${t.reason?"«"+t.reason+"» — ":""}اتوافق عليه ومستني التحويل. دوس «حوّل للعهدة» أو من «الفلوس والعهد» ← «مستحق عليك تحويله».`,l=Date.now()-new Date(t.decidedAt||t.updatedAt||0).getTime()<15*6e4;try{l&&typeof notifyOwner=="function"?await notifyOwner(u,d,{id:n,reqId:t.id,priority:"high"}):await Store.save("tasks",{id:n,title:u,desc:d,deptId:null,assigneeId:null,toRole:"admin",dueDate:todayISO(),priority:"high",status:"open",kind:"notice",source:"owner-notify",reqId:t.id,link:"/#/requests",createdBy:(S.session||{}).id||null,createdByName:(S.session||{}).name||"",createdAt:nowISO()},{silent:!0})}catch{}}for(const t of list("tasks").filter(n=>n&&String(n.id||"").startsWith("fundpay_")&&["open","doing"].includes(n.status))){const n=byId("requests",String(t.id).slice(8));if(!(n&&i(n)))try{await Store.update("tasks",t.id,{status:"done",doneAt:nowISO()},{silent:!0})}catch{}}}catch{}finally{s=!1}}}try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(()=>setTimeout(o,300))}catch{}setInterval(o,3e4),window.nfFundPaySweep=o})();
 
+;(function(){if(window.__NF_PAYFIT__||(window.__NF_PAYFIT__=1,typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction()||typeof RENDER_HOOKS=="undefined"))return;(document.head||document.body).insertAdjacentHTML("beforeend",`<style id="nf-payfit-css">@media screen{
+#view .tablewrap.payfitw{overflow-x:hidden!important}
+#view table.payfit{width:100%!important;min-width:0!important;table-layout:fixed;font-size:12.5px}
+#view table.payfit th,#view table.payfit td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;padding:8px 5px!important;min-width:0!important;vertical-align:top}
+#view table.payfit th{font-size:12px;line-height:1.3}
+#view table.payfit td *{white-space:normal!important;max-width:100%}
+#view table.payfit td.n,#view table.payfit td.n>b{white-space:nowrap!important;overflow-wrap:normal;word-break:normal}
+#view table.payfit td.n .tiny{white-space:normal}
+#view table.payfit th:nth-child(1){width:17%}#view table.payfit th:nth-child(2){width:10%}#view table.payfit th:nth-child(3){width:7%}#view table.payfit th:nth-child(4){width:6%}
+#view table.payfit thead th:nth-child(13),#view table.payfit tbody td:nth-child(13),#view table.payfit tfoot td:nth-child(9){display:none}
+#view table.payfit tbody tr[data-svwid] td:first-child b{display:block}
+}
+@media screen and (max-width:1000px){
+#view table.payfit{font-size:12px}
+#view table.payfit thead th:nth-child(2),#view table.payfit thead th:nth-child(3),#view table.payfit tbody td:nth-child(2),#view table.payfit tbody td:nth-child(3){display:none}
+#view table.payfit th:nth-child(1){width:20%}
+}
+@media screen and (max-width:700px){
+#view table.payfit{font-size:13px}
+#view table.payfit thead th:is(:nth-child(5),:nth-child(7),:nth-child(8),:nth-child(9),:nth-child(10),:nth-child(11)),
+#view table.payfit tbody td:is(:nth-child(5),:nth-child(7),:nth-child(8),:nth-child(9),:nth-child(10),:nth-child(11)),
+#view table.payfit tfoot td:is(:nth-child(3),:nth-child(4),:nth-child(5),:nth-child(6),:nth-child(7)){display:none}
+#view table.payfit th:nth-child(1){width:42%}#view table.payfit th:nth-child(4){width:14%}
+#view .payfit-hint{display:block}
+}
+#view .payfit-hint{display:none;margin:0 0 8px;font-size:12px;opacity:.75}
+@media print{#view .payfit-hint{display:none!important}}
+</style>`);const h=()=>typeof I18N!="undefined"&&I18N.lang==="en",o=()=>matchMedia("(max-width:700px)").matches?2:matchMedia("(max-width:1000px)").matches?3:5;function a(){try{if(!S.route||S.route.view!=="payroll")return;document.querySelectorAll("#view table.paytbl").forEach(t=>{var d,l;if(t.querySelectorAll("thead th").length!==13)return;const i=t.querySelector("tfoot td[colspan]");if(!(!i&&!t.classList.contains("payfit"))){if(i&&!i.dataset.cs&&(i.dataset.cs=i.getAttribute("colspan")),!t.classList.contains("payfit")){t.classList.add("payfit");const e=t.closest(".tablewrap");e&&e.classList.add("payfitw"),e&&!((l=(d=e.previousElementSibling)==null?void 0:d.classList)!=null&&l.contains("payfit-hint"))&&e.insertAdjacentHTML("beforebegin",`<div class="payfit-hint">${h()?"Tap an employee for the full salary details":"دوس على الموظف لتفاصيل المرتب كاملة"}</div>`)}if(i&&+i.dataset.cs==5){const e=o();i.colSpan!==e&&(i.colSpan=e)}}})}catch(t){console.warn("payfit",t)}}RENDER_HOOKS.push(a);let n=0;addEventListener("resize",()=>{clearTimeout(n),n=setTimeout(a,120)}),addEventListener("beforeprint",()=>document.querySelectorAll("#view table.payfit tfoot td[data-cs]").forEach(t=>{t.colSpan=+t.dataset.cs})),addEventListener("afterprint",a)})();
+
