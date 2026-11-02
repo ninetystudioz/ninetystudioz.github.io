@@ -3616,3 +3616,27 @@ html body #view .tablewrap table.wkfit td.wk-wage{white-space:normal!important}
           ${field("Secret Access Key",inp("secret","",`type="password" class="ltr" autocomplete="new-password" placeholder="${s?esc(o("محفوظ — اكتب جديد بس لو هتغيّره","Saved — type a new one only to change it")):""}"`))}
         </div>`}
         <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">${s&&!t.open?`<button type="button" class="btn sm" data-action="r2Edit">${esc(o("تغيير المفاتيح","Change keys"))}</button>`:`<button type="button" class="btn sm p" data-action="r2Save">${esc(o("حفظ","Save"))}</button>`}${s?`<button type="button" class="btn sm" data-action="r2Test">${esc(o("اختبار الاتصال","Test connection"))}</button>`:""}<span class="small">${esc(t.msg||"")}</span></div></div>`);const c=document.getElementById("nf-r2");if(Object.entries(t.draft).forEach(([r,l])=>{const y=c.querySelector(`[name="${r}"]`);y&&l&&(y.value=l)}),e){const r=c.querySelector(`[name="${e}"]`);r&&r.focus()}}catch(e){console.warn("r2 card",e)}}typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(()=>setTimeout(i,40)),window.nfR2Card=i})();
+
+;/* tcf-head-actor — v9.33a (2 Nov 2026, support fix, factory only)
+   «تأكيد استلام السواق من الجهة» (tripconfirm) is created from the driver's phone, and a Store.save wrapper stamps
+   workerId = the driver on it. stepActor('head', r) resolves the "head" step through the worker's department —
+   for a driver that is fleet, so only the fleet manager passed, and the head of the purchase's department
+   (r.deptId — the one the notification goes to) got the dialog with no approve / reject buttons.
+   Seen on TR-26-341 / RFQ-26-062 (carpentry head Osama Hassan, 2 Nov 10:09).
+   Now: on a tripconfirm request, the head of r.deptId is an actor of the "head" step. Nothing else changes. */
+(function () {
+  try {
+    if (window.__NF_TCFHEAD__ || (typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_TCFHEAD__ = 1;
+    if (typeof stepActor !== "function") return;
+    stepActor = (function (base) {
+      return function (step, r) {
+        try {
+          if (step === "head" && r && r.type === "tripconfirm" && r.deptId &&
+              role() === "head" && typeof myDepts === "function" && (myDepts() || []).includes(r.deptId)) return true;
+        } catch (e) { }
+        return base.apply(this, arguments);
+      };
+    })(stepActor);
+  } catch (e) { console.warn("tcf-head-actor", e); }
+})();
