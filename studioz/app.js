@@ -994,3 +994,298 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     window.nfDevGuard = { exempt: exempt, locked: function () { return tripped; } };
   } catch (e) { console.warn("nf-devguard", e); }
 })();
+
+;/* stu-pc-fix — v9.36 (2 Nov 2026, studio)
+   Mahmoud (two photos of «Chats» on his laptop): «عايزك تظبط شكل اليو اي. مش عايز مشاكل من النوع ده في السيستم»,
+   «اليو اي محتاج يتظبط», «وعايز ازود علامة x لاني احب اخرج من الشات».
+   (1) The open conversation is a layer laid over its place in the page (#pchost over #pcslot). It was placed once when
+       the chat opened and moved again only on a window resize, so when the page finished laying itself out a moment
+       later the conversation sat ~200 px to the left (covering the group names) and stopped short of the right edge.
+       It now follows its place whenever that place moves or changes size, with the card's exact height and corners.
+   (2) An X at the end of the conversation header closes the chat and goes back to the list.
+   (3) The date pills that stay pinned at the top while scrolling were stacking (the older, wider pill peeking out
+       around «Today»); only the latest pinned pill shows now.
+   (4) Group names in the list sat on the far side in English; they now start on the reading side of the page. */
+(function () {
+  try {
+    if (window.__NF_PCFIX__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_PCFIX__ = 1;
+    var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+    var XSVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+    /* (1) keep the conversation on its place */
+    var ro = null, roSlot = null;
+    function place() {
+      var host = document.getElementById("pchost");
+      if (!host || host.className !== "pc-page") return;
+      var slot = document.getElementById("pcslot");
+      if (!slot) return;
+      if (ro && roSlot !== slot) { try { ro.disconnect(); } catch (e) { } roSlot = null; }
+      if (ro && !roSlot) { try { ro.observe(slot); roSlot = slot; } catch (e) { } }
+      var r = slot.getBoundingClientRect();
+      if (!r.width) return;
+      var h = r.height >= 200 ? r.height : Math.max(200, innerHeight - r.top - 12);
+      var s = host.style, want = [r.top + "px", r.left + "px", r.width + "px", h + "px"];
+      if (s.top !== want[0] || s.left !== want[1] || s.width !== want[2] || s.height !== want[3]) {
+        s.top = want[0]; s.left = want[1]; s.width = want[2]; s.height = want[3];
+      }
+      var rad = getComputedStyle(slot).direction === "rtl" ? "14px 0 0 14px" : "0 14px 14px 0";
+      if (s.borderRadius !== rad) s.borderRadius = rad;
+    }
+    try { ro = new ResizeObserver(function () { place(); }); } catch (e) { ro = null; }
+    setInterval(place, 250);
+    window.addEventListener("resize", function () { requestAnimationFrame(place); });
+    document.addEventListener("transitionend", function () { place(); }, true);
+    try { RENDER_HOOKS.push(function () { requestAnimationFrame(place); setTimeout(place, 120); }); } catch (e) { }
+
+    /* (2) X in the header */
+    function addX() {
+      var host = document.getElementById("pchost");
+      if (!host || host.className !== "pc-page") return;
+      var h = host.querySelector(".pcconv .pch");
+      if (!h || h.querySelector(".pcx")) return;
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "pchb pcx"; b.setAttribute("data-action", "pcClose");
+      b.title = T("اقفل الشات", "Close the chat"); b.setAttribute("aria-label", b.title);
+      b.innerHTML = XSVG;
+      h.appendChild(b);
+    }
+
+    /* (3) one pinned date pill at a time */
+    function pills(sc) {
+      try {
+        var days = sc.querySelectorAll(".pcday");
+        if (!days.length) return;
+        var top = sc.getBoundingClientRect().top, stuck = [];
+        for (var i = 0; i < days.length; i++) {
+          var d = days[i], r = d.getBoundingClientRect();
+          if (r.top <= top + 7) stuck.push(d); else if (d.classList.contains("pcday-off")) d.classList.remove("pcday-off");
+        }
+        for (var j = 0; j < stuck.length; j++) stuck[j].classList.toggle("pcday-off", j < stuck.length - 1);
+      } catch (e) { }
+    }
+    document.addEventListener("scroll", function (e) {
+      var t = e.target;
+      if (t && t.classList && t.classList.contains("pcmsgs")) pills(t);
+    }, true);
+
+    var mo = null;
+    function watch() {
+      var host = document.getElementById("pchost");
+      if (!host || mo) return;
+      mo = new MutationObserver(function () {
+        addX();
+        var sc = host.querySelector(".pcmsgs");
+        if (sc) pills(sc);
+      });
+      mo.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      addX();
+    }
+    setInterval(function () { watch(); if (!mo) return; addX(); }, 1000);
+
+    var css = document.createElement("style");
+    css.id = "nf-pcfix";
+    css.textContent = [
+      "#pchost.pc-page .pch .pcx{margin-inline-start:2px}",
+      ".pcmsgs .pcday.pcday-off{visibility:hidden}",
+      ".pcli .r1 b{direction:inherit;unicode-bidi:isolate;text-align:start!important}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(css);
+    window.nfPcFix = { place: place };
+  } catch (e) { console.warn("stu-pc-fix", e); }
+})();
+
+;/* nf-reqfix — v9.36 (2 Nov 2026, all 3 systems)
+   Mahmoud, on Said's «Correct a forgotten punch out»: «عايز هنا لما احب اغير ميعاد الانصراف يبقي عندي الاوبشن ده»
+   and «مش عايز سابق يشوف طلبات سعيد — طلبات سعيد تحوّل لي أنا بس».
+   (1) Whoever approves a forgotten-punch-out correction can change the punch-out time first: a time box in the request
+       window, filled with the asked time. On «Approve» a changed time is saved on the request (the asked time kept in
+       outAsked, a line added to the thread) and the approval then records that time.
+   (2) People whose requests go to the owner only (worker.ownerOnlyReqs — Said) still had their forgotten-punch-out
+       corrections sent to department head → manager, because that window saves the request directly instead of going
+       through requestCreateHook. Any new request of such a person is now routed to the owner only (chain admin,
+       ownerOnly — the server already hides ownerOnly requests from the manager), whichever window creates it.
+   (3) Studio: the "manager" step is the art director, not "factory manager". */
+(function () {
+  try {
+    if (window.__NF_REQFIX__) return;
+    window.__NF_REQFIX__ = 1;
+    var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+    var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+    var tm = function (v) { try { return typeof fmtTm === "function" ? fmtTm(v) : String(v || ""); } catch (e) { return String(v || ""); } };
+
+    /* (2) owner-only people: every new request goes to the owner only */
+    if (typeof Store === "object" && Store && typeof Store.save === "function") {
+      Store.save = (function (orig) {
+        return function (col, doc) {
+          try {
+            if (col === "requests" && doc && typeof doc === "object" && doc.workerId && !doc.ownerOnly && !(doc.id && byId("requests", doc.id))) {
+              var w = byId("workers", doc.workerId);
+              if (w && w.ownerOnlyReqs) Object.assign(doc, { chain: ["admin"], step: 0, ownerOnly: true });
+            }
+          } catch (e) { }
+          return orig.apply(this, arguments);
+        };
+      })(Store.save);
+    }
+
+    /* (1) change the punch-out time before approving */
+    function addOutBox(id) {
+      var t = byId("requests", id);
+      if (!t || t.type !== "outfix" || t.status !== "pending") return;
+      if (!(typeof awaitingMe === "function" && awaitingMe(t))) return;
+      var msg = document.getElementById("rq-msg");
+      if (!msg || document.getElementById("rq-ofx")) return;
+      var row = msg.closest(".row") || msg.parentNode;
+      var box = document.createElement("div");
+      box.id = "rq-ofx"; box.className = "rq-ofx";
+      box.innerHTML = '<label for="rq-ofx-out">' + H(T("ميعاد الانصراف اللي هيتسجّل", "Punch-out time to record")) + '</label>' +
+        '<input type="time" id="rq-ofx-out" class="inp ltr" value="' + H(String(t.out || "").slice(0, 5)) + '">' +
+        '<span class="tiny muted">' + H(T("المطلوب: ", "Asked: ") + tm(t.outAsked || t.out) + " — " + T("غيّره لو عايز تعتمد ميعاد تاني", "change it to approve a different time")) + '</span>';
+      row.parentNode.insertBefore(box, row);
+    }
+    if (typeof ACTIONS === "object" && typeof ACTIONS.reqOpen === "function") {
+      ACTIONS.reqOpen = (function (orig) {
+        return function (id) {
+          var r = orig.apply(this, arguments);
+          try { addOutBox(id); setTimeout(function () { try { addOutBox(id); } catch (e) { } }, 60); } catch (e) { }
+          return r;
+        };
+      })(ACTIONS.reqOpen);
+    }
+    if (typeof ACTIONS === "object" && typeof ACTIONS.reqAct === "function") {
+      ACTIONS.reqAct = (function (orig) {
+        return async function (arg) {
+          try {
+            var p = String(arg || "").split(":"), id = p[0], dec = p[1];
+            var inp = document.getElementById("rq-ofx-out"), t = byId("requests", id);
+            if (dec === "approved" && inp && t && t.type === "outfix" && t.status === "pending") {
+              var v = String(inp.value || "").slice(0, 5);
+              if (!/^\d{2}:\d{2}$/.test(v)) { toast(T("اكتب ميعاد الانصراف", "Enter the punch-out time"), "err"); return; }
+              if (v !== String(t.out || "").slice(0, 5)) {
+                var me = S.session || {}, th = (t.thread || []).slice();
+                th.push({ id: uid(), at: nowISO(), by: me.id || null, byName: me.name || "", role: typeof role === "function" ? role() : "", kind: "system",
+                  text: "عدّل ميعاد الانصراف من " + tm(t.out) + " إلى " + tm(v) + (me.name ? " — " + me.name : "") });
+                await Store.update("requests", id, { out: v, outAsked: t.outAsked || t.out, thread: th });
+              }
+            }
+          } catch (e) { console.warn("reqfix out", e); }
+          return orig.apply(this, arguments);
+        };
+      })(ACTIONS.reqAct);
+    }
+
+    /* (3) studio label */
+    try { if (typeof isStuSys === "function" && isStuSys() && typeof CHAIN_LABEL === "object" && CHAIN_LABEL) CHAIN_LABEL.manager = "المدير الفني"; } catch (e) { }
+
+    var css = document.createElement("style");
+    css.id = "nf-reqfix";
+    css.textContent = ".rq-ofx{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--surface-2,rgba(127,127,127,.08));border:1px solid var(--line,rgba(127,127,127,.2))}" +
+      ".rq-ofx label{font-weight:600;font-size:13.5px}.rq-ofx input{width:140px;max-width:100%}";
+    (document.head || document.documentElement).appendChild(css);
+  } catch (e) { console.warn("nf-reqfix", e); }
+})();
+
+;/* stu-money-guard — v9.36 (2 Nov 2026, studio)
+   Mahmoud: «مفيش اي فلوس ولا اسعار ولا مقايسات ولا تحويلات لعملا ولا ايداعات شيكات او فلوس تبان لاي حد في المكتب —
+   انا وسعيد فقط» and, on the round «+» menu, «عايز هنا كل واحد يظهرله الحاجات اللي مفروض تظهرله فقط».
+   Screens only — the server rules that keep the same data from reaching other people wait for the owner's approval.
+   For everyone in the office except the owner and accounts & HR (Said):
+   - the money pages are gone from the menu and their links (quotations, invoices, accounts, expenses, project costs,
+     money & custody, payroll, advance transfers, office purchases, subscriptions, BOQs, price library, CRM, finishes);
+   - any amount with a currency on any other page or window shows as «•••», and table columns headed amount / price /
+     total / cost / value / balance / paid are hidden (a person's own portal keeps his own figures).
+   The «+» menu: custody received / spent from custody belong to whoever holds the office custody (accounts & HR),
+   not to the owner. */
+(function () {
+  try {
+    if (window.__NF_STUMONEY__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_STUMONEY__ = 1;
+    var allowed = function () {
+      try { return !S.session || (typeof isAdmin === "function" && isAdmin()) || (typeof role === "function" && role() === "hr"); } catch (e) { return true; }
+    };
+    var MONEY_VIEWS = { quotes: 1, invoices: 1, accounts: 1, expenses: 1, projectcosts: 1, money: 1, payroll: 1, advpay: 1, spurch: 1, subs: 1,
+      cprojects: 1, boq: 1, cratelib: 1, crm: 1, finish: 1, purchases: 1, suppliers: 1, saleskit: 1 };
+    if (typeof canSee === "function") {
+      canSee = (function (orig) { return function (v) { if (MONEY_VIEWS[v] && !allowed()) return false; return orig.apply(this, arguments); }; })(canSee);
+    }
+
+    var CUR = /(?:(?:EGP|LE|USD|SAR|EUR|AED|US\$|\$|€)\s?[\d٠-٩][\d٠-٩,٬.]*|[\d٠-٩][\d٠-٩,٬.]*\s?(?:ج\.م\.?|جنيه(?:ًا|ا)?|ج\.|EGP|LE\b|USD|SAR|EUR|AED|\$|€|ريال|دولار|درهم))/g;
+    var COL = /^(?:ال)?(?:مبلغ|سعر|أسعار|إجمالي|اجمالي|تكلفة|قيمة|رصيد|مدفوع|متبقي|مستحق|صافي|خصم)|amount|price|total|cost|value|balance|paid|due|net\b/i;
+    var SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, INPUT: 1, SELECT: 1, OPTION: 1, NOSCRIPT: 1 };
+    function maskText(root) {
+      var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, hit = [];
+      while ((n = w.nextNode())) {
+        var v = n.nodeValue;
+        if (!v || v.length < 2 || !/[\d٠-٩]/.test(v)) continue;
+        var p = n.parentNode;
+        if (!p || SKIP[p.nodeName] || (p.closest && p.closest("[contenteditable],.nfmm-skip"))) continue;
+        CUR.lastIndex = 0;
+        if (CUR.test(v)) hit.push(n);
+      }
+      for (var i = 0; i < hit.length; i++) { CUR.lastIndex = 0; hit[i].nodeValue = hit[i].nodeValue.replace(CUR, "•••"); }
+    }
+    function hideCols(root) {
+      var tables = root.querySelectorAll("table");
+      for (var t = 0; t < tables.length; t++) {
+        var tb = tables[t], head = tb.tHead && tb.tHead.rows.length ? tb.tHead.rows[tb.tHead.rows.length - 1] : tb.rows[0];
+        if (!head) continue;
+        var idx = [];
+        for (var c = 0; c < head.cells.length; c++) if (COL.test((head.cells[c].textContent || "").trim())) idx.push(c);
+        if (!idx.length) continue;
+        for (var r = 0; r < tb.rows.length; r++) {
+          var row = tb.rows[r];
+          if (row.cells.length !== head.cells.length) continue; // rows with merged cells keep their shape (text mask still applies)
+          for (var k = 0; k < idx.length; k++) row.cells[idx[k]].classList.add("nfmm-col");
+        }
+      }
+    }
+    var timer = 0;
+    function run() {
+      timer = 0;
+      if (allowed()) return;
+      try {
+        if (!(S.route && S.route.view === "me")) {           // a person's own portal (and its windows) keeps his own figures
+          var roots = document.querySelectorAll("#view, #overlay, .overlay, .modal, #nfdrawer");
+          for (var i = 0; i < roots.length; i++) { hideCols(roots[i]); maskText(roots[i]); }
+        }
+        if (S.route && MONEY_VIEWS[S.route.view] && typeof go === "function") go("dashboard");
+      } catch (e) { }
+    }
+    var later = function () { if (!timer) timer = setTimeout(run, 80); };
+    try { RENDER_HOOKS.push(later); } catch (e) { }
+    try { new MutationObserver(function (m) { if (!allowed()) later(); }).observe(document.documentElement, { childList: true, subtree: true, characterData: true }); } catch (e) { }
+
+    /* «+» menu: the custody actions are for the custody holder, not the owner */
+    function dial() {
+      try {
+        if (!(typeof isAdmin === "function" && isAdmin())) return;
+        var d = document.getElementById("nfdial");
+        if (!d || !d.classList.contains("open")) return;
+        var items = d.querySelector(".nfd-items");
+        var cu = items && items.querySelectorAll(".nfd-cu");
+        if (!cu || !cu.length) return;
+        for (var i = 0; i < cu.length; i++) cu[i].remove();
+        var all = items.querySelectorAll(".nfd-it");
+        if (!all.length) return;
+        var step = Math.abs(parseFloat(String(all[0].style.getPropertyValue("--dy") || "0"))) || 52;
+        for (var j = 0; j < all.length; j++) all[j].style.setProperty("--dy", (-step * (j + 1)).toFixed(1) + "px");
+        var rail = items.querySelector(".nfd-rail");
+        if (rail) { rail.style.setProperty("--h", (step * all.length + 14).toFixed(1) + "px"); rail.style.setProperty("--top", (-(step * all.length) - 34).toFixed(1) + "px"); }
+      } catch (e) { }
+    }
+    var dialObs = null;
+    setInterval(function () {
+      var d = document.getElementById("nfdial");
+      if (!d || dialObs) return;
+      dialObs = new MutationObserver(function () { setTimeout(dial, 0); setTimeout(dial, 120); });
+      dialObs.observe(d, { attributes: true, attributeFilter: ["class"], childList: true, subtree: true });
+    }, 1000);
+
+    var css = document.createElement("style");
+    css.id = "nf-stumoney";
+    css.textContent = ".nfmm-col{display:none!important}";
+    (document.head || document.documentElement).appendChild(css);
+    window.nfMoneyGuard = { run: run, allowed: allowed };
+  } catch (e) { console.warn("stu-money-guard", e); }
+})();

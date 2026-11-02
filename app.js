@@ -3810,3 +3810,94 @@ html body #view .tablewrap table.wkfit td.wk-wage{white-space:normal!important}
     window.nfDevGuard = { exempt: exempt, locked: function () { return tripped; } };
   } catch (e) { console.warn("nf-devguard", e); }
 })();
+
+;/* nf-reqfix — v9.36 (2 Nov 2026, all 3 systems)
+   Mahmoud, on Said's «Correct a forgotten punch out»: «عايز هنا لما احب اغير ميعاد الانصراف يبقي عندي الاوبشن ده»
+   and «مش عايز سابق يشوف طلبات سعيد — طلبات سعيد تحوّل لي أنا بس».
+   (1) Whoever approves a forgotten-punch-out correction can change the punch-out time first: a time box in the request
+       window, filled with the asked time. On «Approve» a changed time is saved on the request (the asked time kept in
+       outAsked, a line added to the thread) and the approval then records that time.
+   (2) People whose requests go to the owner only (worker.ownerOnlyReqs — Said) still had their forgotten-punch-out
+       corrections sent to department head → manager, because that window saves the request directly instead of going
+       through requestCreateHook. Any new request of such a person is now routed to the owner only (chain admin,
+       ownerOnly — the server already hides ownerOnly requests from the manager), whichever window creates it.
+   (3) Studio: the "manager" step is the art director, not "factory manager". */
+(function () {
+  try {
+    if (window.__NF_REQFIX__) return;
+    window.__NF_REQFIX__ = 1;
+    var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+    var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+    var tm = function (v) { try { return typeof fmtTm === "function" ? fmtTm(v) : String(v || ""); } catch (e) { return String(v || ""); } };
+
+    /* (2) owner-only people: every new request goes to the owner only */
+    if (typeof Store === "object" && Store && typeof Store.save === "function") {
+      Store.save = (function (orig) {
+        return function (col, doc) {
+          try {
+            if (col === "requests" && doc && typeof doc === "object" && doc.workerId && !doc.ownerOnly && !(doc.id && byId("requests", doc.id))) {
+              var w = byId("workers", doc.workerId);
+              if (w && w.ownerOnlyReqs) Object.assign(doc, { chain: ["admin"], step: 0, ownerOnly: true });
+            }
+          } catch (e) { }
+          return orig.apply(this, arguments);
+        };
+      })(Store.save);
+    }
+
+    /* (1) change the punch-out time before approving */
+    function addOutBox(id) {
+      var t = byId("requests", id);
+      if (!t || t.type !== "outfix" || t.status !== "pending") return;
+      if (!(typeof awaitingMe === "function" && awaitingMe(t))) return;
+      var msg = document.getElementById("rq-msg");
+      if (!msg || document.getElementById("rq-ofx")) return;
+      var row = msg.closest(".row") || msg.parentNode;
+      var box = document.createElement("div");
+      box.id = "rq-ofx"; box.className = "rq-ofx";
+      box.innerHTML = '<label for="rq-ofx-out">' + H(T("ميعاد الانصراف اللي هيتسجّل", "Punch-out time to record")) + '</label>' +
+        '<input type="time" id="rq-ofx-out" class="inp ltr" value="' + H(String(t.out || "").slice(0, 5)) + '">' +
+        '<span class="tiny muted">' + H(T("المطلوب: ", "Asked: ") + tm(t.outAsked || t.out) + " — " + T("غيّره لو عايز تعتمد ميعاد تاني", "change it to approve a different time")) + '</span>';
+      row.parentNode.insertBefore(box, row);
+    }
+    if (typeof ACTIONS === "object" && typeof ACTIONS.reqOpen === "function") {
+      ACTIONS.reqOpen = (function (orig) {
+        return function (id) {
+          var r = orig.apply(this, arguments);
+          try { addOutBox(id); setTimeout(function () { try { addOutBox(id); } catch (e) { } }, 60); } catch (e) { }
+          return r;
+        };
+      })(ACTIONS.reqOpen);
+    }
+    if (typeof ACTIONS === "object" && typeof ACTIONS.reqAct === "function") {
+      ACTIONS.reqAct = (function (orig) {
+        return async function (arg) {
+          try {
+            var p = String(arg || "").split(":"), id = p[0], dec = p[1];
+            var inp = document.getElementById("rq-ofx-out"), t = byId("requests", id);
+            if (dec === "approved" && inp && t && t.type === "outfix" && t.status === "pending") {
+              var v = String(inp.value || "").slice(0, 5);
+              if (!/^\d{2}:\d{2}$/.test(v)) { toast(T("اكتب ميعاد الانصراف", "Enter the punch-out time"), "err"); return; }
+              if (v !== String(t.out || "").slice(0, 5)) {
+                var me = S.session || {}, th = (t.thread || []).slice();
+                th.push({ id: uid(), at: nowISO(), by: me.id || null, byName: me.name || "", role: typeof role === "function" ? role() : "", kind: "system",
+                  text: "عدّل ميعاد الانصراف من " + tm(t.out) + " إلى " + tm(v) + (me.name ? " — " + me.name : "") });
+                await Store.update("requests", id, { out: v, outAsked: t.outAsked || t.out, thread: th });
+              }
+            }
+          } catch (e) { console.warn("reqfix out", e); }
+          return orig.apply(this, arguments);
+        };
+      })(ACTIONS.reqAct);
+    }
+
+    /* (3) studio label */
+    try { if (typeof isStuSys === "function" && isStuSys() && typeof CHAIN_LABEL === "object" && CHAIN_LABEL) CHAIN_LABEL.manager = "المدير الفني"; } catch (e) { }
+
+    var css = document.createElement("style");
+    css.id = "nf-reqfix";
+    css.textContent = ".rq-ofx{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--surface-2,rgba(127,127,127,.08));border:1px solid var(--line,rgba(127,127,127,.2))}" +
+      ".rq-ofx label{font-weight:600;font-size:13.5px}.rq-ofx input{width:140px;max-width:100%}";
+    (document.head || document.documentElement).appendChild(css);
+  } catch (e) { console.warn("nf-reqfix", e); }
+})();
