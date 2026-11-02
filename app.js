@@ -3642,3 +3642,38 @@ html body #view .tablewrap table.wkfit td.wk-wage{white-space:normal!important}
 })();
 ;(function(){if(window.__NF_HTMLSHIM__)return;window.__NF_HTMLSHIM__=1;function h(){var l="("+h.toString()+")()",c=function(t){if(t=String(t),t.indexOf("__nfShim")>=0)return t;var e="<script>"+l+"<\/script>",r=/<head[^>]*>/i.exec(t);return r?t.slice(0,r.index+r[0].length)+e+t.slice(r.index+r[0].length):e+t};try{if(window.__nfShim)return;window.__nfShim=1}catch{}try{var n=window.history,i=function(t){return function(e,r,y){try{return t.apply(n,arguments)}catch{try{if(y!=null){var a=String(y),f=a.indexOf("#");f>=0&&location.hash!==a.slice(f)&&(location.hash=a.slice(f))}}catch{}}}};n.pushState=i(n.pushState),n.replaceState=i(n.replaceState)}catch{}var m=function(){var t={};return{getItem:function(e){return Object.prototype.hasOwnProperty.call(t,e)?t[e]:null},setItem:function(e,r){t[e]=String(r)},removeItem:function(e){delete t[e]},clear:function(){t={}},key:function(e){return Object.keys(t)[e]||null},get length(){return Object.keys(t).length}}};["localStorage","sessionStorage"].forEach(function(t){var e=!0;try{window[t].getItem("x")}catch{e=!1}if(!e)try{Object.defineProperty(window,t,{value:m(),configurable:!0})}catch{}});try{document.cookie}catch{try{Object.defineProperty(document,"cookie",{get:function(){return""},set:function(){},configurable:!0})}catch{}}try{var o=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,"srcdoc");o&&o.set&&Object.defineProperty(HTMLIFrameElement.prototype,"srcdoc",{configurable:!0,get:function(){return o.get.call(this)},set:function(t){o.set.call(this,c(t))}})}catch{}try{var s=window.Blob,g=function(t,e){try{e&&/^text\/html/i.test(e.type||"")&&t&&t.length&&typeof t[0]=="string"&&(t=t.slice(),t[0]=c(t[0]))}catch{}return new s(t,e)};g.prototype=s.prototype,window.Blob=g}catch{}}const u="<script>("+h.toString()+")()<\/script>";if(window.nfHtmlShimTag=u,typeof htmlWithCapture=="function"){const l=htmlWithCapture;htmlWithCapture=function(c){let n=l(c);if(String(n).indexOf("__nfShim")>=0)return n;const i=/<head[^>]*>/i.exec(n);return i?n.slice(0,i.index+i[0].length)+u+n.slice(i.index+i[0].length):u+n}}})();
 ;(function(){if(window.__NF_HTMLR2__||(window.__NF_HTMLR2__=1,typeof isStuSys=="function"&&isStuSys()||typeof mountHtmlViewer!="function"))return;const a=(t,o)=>typeof I18N!="undefined"&&I18N.lang==="en"?o:t,s={};async function c(t,o){try{if(!t||!t.id||t.r2||s[t.id]||!window.nfFiles||!isAdmin())return;s[t.id]=1;const n=htmlWithCapture(o),l="html/"+t.id+"-"+Date.now().toString(36)+".html",i=new Blob([n],{type:"text/html;charset=utf-8"}),r=await window.nfFiles.put(i,l);await Store.update("files",t.id,{r2:r,r2At:nowISO()},{silent:!0}),t.r2=r}catch(n){console.warn("html→r2",n&&n.message)}finally{delete s[t.id]}}const u=mountHtmlViewer;mountHtmlViewer=async function(t,o,n){if(n&&n.r2&&window.nfFiles)try{const e=(await window.nfFiles.urls([n.r2]))[n.r2];if(e){t.innerHTML=`<div class="nfv-html"><iframe sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-popups allow-downloads" referrerpolicy="no-referrer" title="${esc(n.name||"")}"></iframe></div>`;const w=t.querySelector("iframe");return w.src=e,o.innerHTML=fileActs(n),()=>{try{w.src="about:blank"}catch{}}}}catch(e){console.warn("html r2 view",e&&e.message)}let l=null;const i=n&&!n.r2&&isAdmin()&&window.nfFiles&&typeof Files=="object"&&typeof Files.blob=="function",r=i?Files.blob:null;i&&(Files.blob=async function(){const e=await r.apply(this,arguments);return l=e,e});let f;try{f=await u.apply(this,arguments)}finally{i&&(Files.blob=r)}try{i&&l&&l.text().then(e=>c(n,e))}catch{}return f},window.nfHtmlToR2=c})();
+
+;/* fs-menu-groups — v9.33s (2 Nov 2026)
+   Mahmoud: «الناس في المكتب الفل سكرين … بيهنج مبيردش يفتح المشاريع» (after the full-screen button).
+   In full screen the side bar is hidden and the menu is a copy of it under the NINETY logo (#nffsnav). The group
+   headers there (Projects / Design / Communication / My account) still ran ACTIONS.navGrp, which only works on the
+   side bar: on a computer it opened the group in the hidden side bar (nothing visible changed), on a phone it opened
+   the fly-out and closed it at once because the side bar is not open. So an engineer could not reach any project
+   page in full screen. Now a group header inside the full-screen menu opens / closes its group in place. */
+(function () {
+  try {
+    if (window.__NF_FSGRP__) return;
+    window.__NF_FSGRP__ = 1;
+    document.addEventListener("click", function (ev) {
+      try {
+        var h = ev.target && ev.target.closest && ev.target.closest("#nffsnav .ngh");
+        if (!h) return;
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        var g = h.closest(".ngrp");
+        if (!g) return;
+        var key = g.getAttribute("data-g") || "";
+        var open = !g.classList.contains("open");
+        var all = document.querySelectorAll("#nffsnav .ngrp[data-g]");
+        for (var i = 0; i < all.length; i++) {
+          var on = open && all[i] === g;
+          all[i].classList.toggle("open", on);
+          var b = all[i].querySelector(".ngh");
+          if (b) b.setAttribute("aria-expanded", String(on));
+        }
+        try { var st = window.nfNavModules && window.nfNavModules.state; if (st) st.open = open ? key : ""; } catch (e) { }
+        try { var fl = window.nfNavModules && window.nfNavModules.flyClose; if (typeof fl === "function") fl(); } catch (e) { }
+      } catch (e) { }
+    }, true);
+  } catch (e) { console.warn("fs-menu-groups", e); }
+})();

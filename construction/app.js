@@ -6606,3 +6606,38 @@ ${r().toFixed(2)}× · ${Rn()} lines`,kt=0,qt=Ft),requestAnimationFrame(Tt)};req
 
 ;(function(){if(window.__NF_SELFOT_NOMONEY__)return;window.__NF_SELFOT_NOMONEY__=1;try{const e=document.createElement("style");e.id="nf-selfot-nomoney",e.textContent="#selfotcard .kp>div:nth-child(n+2){display:none!important}#selfotcard .kp{grid-template-columns:1fr!important}",(document.head||document.documentElement).appendChild(e)}catch{}const t=()=>{try{document.querySelectorAll("#selfotcard .kp").forEach(e=>{Array.from(e.children).slice(1).forEach(n=>n.remove())})}catch{}};try{new MutationObserver(t).observe(document.documentElement,{childList:!0,subtree:!0})}catch{}t(),window.nfSelfOtStrip=t})();
 
+
+;/* fs-menu-groups — v9.33s (2 Nov 2026)
+   Mahmoud: «الناس في المكتب الفل سكرين … بيهنج مبيردش يفتح المشاريع» (after the full-screen button).
+   In full screen the side bar is hidden and the menu is a copy of it under the NINETY logo (#nffsnav). The group
+   headers there (Projects / Design / Communication / My account) still ran ACTIONS.navGrp, which only works on the
+   side bar: on a computer it opened the group in the hidden side bar (nothing visible changed), on a phone it opened
+   the fly-out and closed it at once because the side bar is not open. So an engineer could not reach any project
+   page in full screen. Now a group header inside the full-screen menu opens / closes its group in place. */
+(function () {
+  try {
+    if (window.__NF_FSGRP__) return;
+    window.__NF_FSGRP__ = 1;
+    document.addEventListener("click", function (ev) {
+      try {
+        var h = ev.target && ev.target.closest && ev.target.closest("#nffsnav .ngh");
+        if (!h) return;
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        var g = h.closest(".ngrp");
+        if (!g) return;
+        var key = g.getAttribute("data-g") || "";
+        var open = !g.classList.contains("open");
+        var all = document.querySelectorAll("#nffsnav .ngrp[data-g]");
+        for (var i = 0; i < all.length; i++) {
+          var on = open && all[i] === g;
+          all[i].classList.toggle("open", on);
+          var b = all[i].querySelector(".ngh");
+          if (b) b.setAttribute("aria-expanded", String(on));
+        }
+        try { var st = window.nfNavModules && window.nfNavModules.state; if (st) st.open = open ? key : ""; } catch (e) { }
+        try { var fl = window.nfNavModules && window.nfNavModules.flyClose; if (typeof fl === "function") fl(); } catch (e) { }
+      } catch (e) { }
+    }, true);
+  } catch (e) { console.warn("fs-menu-groups", e); }
+})();
