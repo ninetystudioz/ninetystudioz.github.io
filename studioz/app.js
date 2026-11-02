@@ -633,3 +633,259 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     if (document.body) add(); else document.addEventListener("DOMContentLoaded", add);
   } catch (e) { console.warn("stu-wide", e); }
 })();
+
+;/* stu-qr-ask-lock — v9.34 (2 Nov 2026, studio)
+   Mahmoud (phone screenshot, arrow on the round scan button): «عايز المربع بتاع الكيو ار كود يبقي ظاهر وقت لما ادوس
+   بنش ان او بريك او بنش اوت وبعد كده يختفي وعايز لما حد يعمل بريك تو وقت صلا ويبصم السيستم يتعمل لوك وميفتحش
+   غير ببصمه تاني».
+   (1) The phone's round «scan computer code» button shows only while that person's computer is showing a punch
+       code (check in / break / prayer / back / check out), then hides once the code is scanned or closed.
+       The computer tells the phone over the realtime channel nqp:<workerId>: "ask" every 2.5 s while the code is
+       up, "end" when it goes; a phone that opens later sends "ping" and gets the "ask" at once.
+       If realtime can't connect, the button stays as it was (always there) so nobody is stuck.
+   (2) While someone is on a QR break or prayer, every device signed in as them shows a break screen with no
+       password and no close. It opens only with another punch: «رجعت» on the computer shows the back-from-break
+       code and the phone scans it (or «انصراف» shows the check-out code). Follows the system-lock settings
+       (stuLock: off, owner/art-director exemption, exempt people) and never locks someone viewing as another. */
+(function () {
+  try {
+    if (window.__NF_QRASKLOCK__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_QRASKLOCK__ = 1;
+    var en = function () { try { return typeof I18N !== "undefined" && I18N.lang === "en"; } catch (e) { return false; } };
+    var T = function (a, b) { return en() ? b : a; };
+    var H = function (s) {
+      s = String(s == null ? "" : s);
+      try { if (typeof esc === "function") return esc(s); } catch (e) { }
+      return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
+    };
+    var phone = function () {
+      try {
+        if (window.nfQrOnly && typeof nfQrOnly.phone === "function") return !!nfQrOnly.phone();
+        return matchMedia("(pointer:coarse)").matches && Math.min(screen.width, screen.height) < 820;
+      } catch (e) { return innerWidth < 760; }
+    };
+    var sb = function () { try { return window.__NQ_SB__ || (S && S.sb) || null; } catch (e) { return null; } };
+    var me = function () {
+      try {
+        if (!S.session || S.viewOrig || !S.session.workerId) return null;
+        if (typeof role === "function" && role() === "kiosk") return null;
+        var w = byId("workers", S.session.workerId);
+        if (!w || w.noPunch || (typeof nfAttAway === "function" && nfAttAway(w))) return null;
+        return w;
+      } catch (e) { return null; }
+    };
+    var today = function () { try { return todayISO(); } catch (e) { return new Date().toISOString().slice(0, 10); } };
+    var recOf = function (w) { try { return (attendanceFor(today()) || {})[w.id] || {}; } catch (e) { return {}; } };
+    var openBreak = function (r) {
+      var b = (r && r.breaks) || [], x = b[b.length - 1];
+      return r && r.in && !r.out && x && !x.e ? x : null;
+    };
+    var exempt = function (w) {
+      try {
+        var c = Object.assign({ on: true, exempt: true }, (S.settings && S.settings.stuLock) || {});
+        if (!c.on) return true;
+        if (c.exempt && ((typeof isAdmin === "function" && isAdmin()) || (typeof role === "function" && role() === "manager"))) return true;
+        return Array.isArray(c.exemptIds) && c.exemptIds.indexOf(w.id) >= 0;
+      } catch (e) { return false; }
+    };
+    var allowed = function (w) { try { var n = +((shiftFor(w) || {}).breakMinutes); return n > 0 ? n : 60; } catch (e) { return 60; } };
+    var usedMin = function (r, w) {
+      try { if (typeof window.nfBreakUsed === "function") return +window.nfBreakUsed(r, w) || 0; } catch (e) { }
+      try { var b = openBreak(r); return b && b.sAt ? (Date.now() - new Date(b.sAt).getTime()) / 60000 : 0; } catch (e) { return 0; }
+    };
+    var mins = function (n) { return String(Math.max(0, Math.round(n))); };
+
+    /* ---------- (1) the phone's scan button follows the computer's code ---------- */
+    var A = { ch: null, wid: "", ready: false, born: 0, until: 0, label: "", qrOn: false, sent: 0 };
+    function qrLabel() {
+      try {
+        var q = document.querySelector(".nq-ov #nq-qr"), box = q && q.closest(".nq-box"), h = box && box.querySelector("h3");
+        return h ? h.textContent.trim().slice(0, 60) : "";
+      } catch (e) { return ""; }
+    }
+    function send(ev) {
+      if (!A.ch || !A.ready) return;
+      var p = { at: Date.now() };
+      if (ev === "ask") p.t = qrLabel();
+      try { A.ch.send({ type: "broadcast", event: ev, payload: p }); } catch (e) { }
+    }
+    function drop() {
+      if (A.ch) { try { sb().removeChannel(A.ch); } catch (e) { } }
+      A.ch = null; A.ready = false; A.until = 0;
+      document.body.classList.remove("nq-askrt");
+    }
+    function channel(w) {
+      var wid = w ? w.id : "";
+      if (wid === A.wid && (A.ch || !wid)) return;
+      if (wid !== A.wid) drop();
+      A.wid = wid;
+      var c = sb();
+      if (!wid || !c || typeof c.channel !== "function") return;
+      try {
+        var ch = c.channel("nqp:" + wid, { config: { broadcast: { self: false } } });
+        ch.on("broadcast", { event: "ask" }, function (m) {
+          var p = (m && m.payload) || {};
+          A.until = Date.now() + 7000; A.label = String(p.t || ""); paint();
+        }).on("broadcast", { event: "end" }, function () {
+          A.until = 0; paint();
+        }).on("broadcast", { event: "ping" }, function () {
+          if (A.qrOn) send("ask");
+        }).subscribe(function (st) {
+          if (st === "SUBSCRIBED") {
+            A.ready = true; document.body.classList.add("nq-askrt");
+            if (phone()) send("ping");
+          }
+        });
+        A.ch = ch; A.born = Date.now();
+        document.body.classList.add("nq-askrt"); // hidden from the start; brought back below if realtime never connects
+      } catch (e) { A.ch = null; }
+    }
+    function paint() {
+      var on = A.until > Date.now();
+      document.body.classList.toggle("nq-askon", on);
+      var f = document.getElementById("nq-fab"), chip = document.getElementById("nq-askchip");
+      var r = null;
+      if (on && f) { try { r = f.getBoundingClientRect(); if (!r.width) r = null; } catch (e) { r = null; } }
+      if (!r) { if (chip) chip.hidden = true; }
+      else {
+        if (!chip) { chip = document.createElement("div"); chip.id = "nq-askchip"; chip.setAttribute("aria-hidden", "true"); document.body.appendChild(chip); }
+        var t = A.label ? T("سكان الكود: ", "Scan the code: ") + A.label : T("سكان كود الكمبيوتر", "Scan computer code");
+        if (chip.textContent !== t) chip.textContent = t;
+        // placed in px from the button itself (the app mirrors left/right CSS for English, so no sides in the stylesheet)
+        chip.style.bottom = Math.round(innerHeight - r.top + 10) + "px";
+        if (r.left + r.width / 2 >= innerWidth / 2) { chip.style.right = Math.round(innerWidth - r.right) + "px"; chip.style.left = "auto"; }
+        else { chip.style.left = Math.round(r.left) + "px"; chip.style.right = "auto"; }
+        chip.hidden = false;
+      }
+      if (L.el) L.el.classList.toggle("nqb-ask", on);
+    }
+    function askTick() {
+      var w = me();
+      channel(w);
+      if (A.ch && !A.ready && Date.now() - A.born > 20000) document.body.classList.remove("nq-askrt"); // realtime down: keep the old always-there button
+      var qr = !!(w && document.querySelector(".nq-ov #nq-qr"));
+      if (qr && (!A.qrOn || Date.now() - A.sent > 2500)) { send("ask"); A.sent = Date.now(); }
+      if (!qr && A.qrOn) send("end");
+      A.qrOn = qr;
+      paint();
+    }
+
+    /* ---------- (2) break / prayer lock ---------- */
+    var L = { el: null, inert: false, ph: false };
+    var scanSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>';
+    function lockOn(w) {
+      var cfg = (S.settings && S.settings.stuLogin) || {};
+      var mu = window.nfMediaUrl || function (z) { return z; };
+      var poster = mu(cfg.poster || "https://rekmppawmxerlqxqpqni.supabase.co/storage/v1/object/public/app/brand/stu/hero-poster.webp");
+      var logo = mu(cfg.logo || "https://rekmppawmxerlqxqpqni.supabase.co/storage/v1/object/public/app/brand/stu/wordmark-white.png");
+      var pic = null;
+      try { pic = (window.nfPhoto && nfPhoto(w.id)) || S.session.avatar || null; } catch (e) { }
+      var ph = phone();
+      var el = document.createElement("div");
+      el.id = "nqbrk"; el.className = "stulock nqbrk";
+      el.setAttribute("dir", en() ? "ltr" : "rtl");
+      el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true");
+      el.innerHTML = '<div class="slscene"><img class="slposter" src="' + H(poster) + '" alt=""></div><div class="slgrain"></div>' +
+        '<div class="box"><img class="slmark" src="' + H(logo) + '" alt="NINETY">' +
+        '<div class="av">' + (pic ? '<img src="' + H(pic) + '" alt="">' : (window.nfSil ? nfSil() : "")) + '</div>' +
+        '<h1 class="notr">' + H(S.session.name || w.name || "") + '</h1>' +
+        '<p class="why" id="nqb-why"></p>' +
+        '<div class="nqb-big" id="nqb-left"></div><div class="nqb-sub" id="nqb-used"></div>' +
+        (ph
+          ? '<button type="button" class="slbtn" data-nqb="scan">' + scanSvg + '<span>' + H(T("سكان كود الرجوع", "Scan the back code")) + '</span></button>' +
+            '<p class="nqb-hint" id="nqb-hint"></p>'
+          : '<button type="button" class="slbtn" data-nqb="e">' + H(T("رجعت", "I’m back")) + '</button>' +
+            '<p class="nqb-hint">' + H(T("هيظهر كود — سكانه من موبايلك والسيستم يفتح", "A code shows — scan it with your phone to unlock")) + '</p>' +
+            '<div class="lkalts"><button type="button" class="lkalt" data-nqb="o">' + H(T("ماشي؟ سجّل انصراف", "Leaving? Check out")) + '</button></div>') +
+        '</div>';
+      el.addEventListener("click", function (ev) {
+        var x = ev.target.closest && ev.target.closest("[data-nqb]");
+        if (!x) return;
+        var k = x.getAttribute("data-nqb");
+        if (k === "scan") { if (typeof window.nqScan === "function") window.nqScan(); }
+        else if (typeof window.nqShowQR === "function") window.nqShowQR(k);
+      });
+      document.body.appendChild(el);
+      document.body.classList.add("nq-brk");
+      var root = document.getElementById("root");
+      if (root && !root.hasAttribute("inert")) { try { root.setAttribute("inert", ""); L.inert = true; } catch (e) { } }
+      try { if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur(); } catch (e) { }
+      L.el = el; L.ph = ph;
+    }
+    function lockOff() {
+      try { L.el && L.el.remove(); } catch (e) { }
+      L.el = null;
+      document.body.classList.remove("nq-brk");
+      if (L.inert) { var root = document.getElementById("root"); if (root) root.removeAttribute("inert"); L.inert = false; }
+      try { if (window.nfLock && nfLock.state) nfLock.state.last = Date.now(); } catch (e) { }
+    }
+    function setText(sel, txt, cls) {
+      var n = L.el && L.el.querySelector(sel);
+      if (!n) return;
+      if (n.textContent !== txt) n.textContent = txt;
+      if (cls !== undefined && n.className !== cls) n.className = cls;
+    }
+    function lockTick() {
+      var w = me(), r = w ? recOf(w) : null, b = w && !exempt(w) ? openBreak(r) : null;
+      if (!b) { if (L.el) lockOff(); return; }
+      if (L.el && L.ph !== phone()) lockOff(); // turned / resized into the other layout
+      if (!L.el) lockOn(w);
+      var pr = b.k === "prayer";
+      setText("#nqb-why", (pr ? T("في الصلاة — تقبّل الله", "At prayer") : T("في بريك", "On a break")) + (b.s ? " · " + T("من ", "since ") + b.s : ""));
+      var left = allowed(w) - usedMin(r, w);
+      setText("#nqb-left", left >= 0 ? mins(left) : "-" + mins(-left), "nqb-big" + (left < 0 ? " over" : ""));
+      setText("#nqb-used", left >= 0 ? T("دقيقة متبقية من البريك", "break minutes left")
+        : T("عدّيت البريك المسموح بـ " + mins(-left) + " دقيقة — هيتحسب جزاء حسب اللائحة", "Over the allowed break by " + mins(-left) + " min — a deduction applies"));
+      setText("#nqb-hint", A.until > Date.now()
+        ? T("الكود ظاهر على الكمبيوتر — سكانه دلوقتي", "The code is on the computer — scan it now")
+        : T("على الكمبيوتر دوس «رجعت» وسكان الكود اللي هيظهر", "On the computer press «I’m back» and scan the code it shows"));
+      // the idle password lock stays away while the break screen is up
+      try { if (window.nfLock && nfLock.state) nfLock.state.last = Date.now(); } catch (e) { }
+      // the old break card could be closed with a click — this screen replaces it
+      try {
+        var ovs = document.querySelectorAll(".nq-ov");
+        for (var i = 0; i < ovs.length; i++) if (ovs[i].querySelector("[data-nq-back]")) ovs[i].click();
+      } catch (e) { }
+    }
+
+    var css = document.createElement("style");
+    css.id = "nq-asklock-css";
+    css.textContent = [
+      "body.nq-askrt:not(.nq-askon) #nq-fab{display:none!important}",
+      "body.nq-askon #nq-fab{animation:nqaskp 1.6s ease-out infinite}",
+      "#nq-askchip{position:fixed;z-index:61;white-space:nowrap;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;background:var(--surface,#fff);color:var(--ink,#16191b);border:1px solid var(--line,#dde1de);border-radius:12px;padding:7px 11px;font:500 13px/1.2 var(--font,system-ui);box-shadow:0 8px 22px rgba(0,0,0,.28);pointer-events:none}",
+      "#nq-askchip[hidden],body:not(.nq-askon) #nq-askchip,body.nq-brk #nq-askchip,html body:has(#overlay) #nq-askchip{display:none!important}",
+      "@media print{#nq-askchip{display:none!important}}",
+      "@keyframes nqaskp{0%{box-shadow:0 8px 24px rgba(0,0,0,.4),0 0 0 0 rgba(43,111,147,.55)}70%{box-shadow:0 8px 24px rgba(0,0,0,.4),0 0 0 16px rgba(43,111,147,0)}100%{box-shadow:0 8px 24px rgba(0,0,0,.4),0 0 0 0 rgba(43,111,147,0)}}",
+      "#nqbrk.stulock{position:fixed;inset:0;z-index:9500;background:#0b0d10;color:#eceff3;display:flex;align-items:center;justify-content:center;padding:24px 16px;overflow:auto}",
+      "#nqbrk .slscene{position:absolute;inset:0;overflow:hidden;background:#0b0d10}#nqbrk .slscene img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}",
+      "#nqbrk .slscene::after{content:'';position:absolute;inset:0;z-index:2;background:rgba(11,13,16,.84)}",
+      "#nqbrk .slgrain{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(rgba(255,255,255,.035) 1px,transparent 1.2px);background-size:26px 26px;opacity:.6;z-index:2}",
+      "#nqbrk .box{position:relative;z-index:3;width:min(360px,100%);text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}",
+      "#nqbrk .slmark{width:140px;margin-bottom:6px}",
+      "#nqbrk .av{width:88px;height:88px;border-radius:50%;overflow:hidden;background:#2b3138;border:3px solid #fff}#nqbrk .av img,#nqbrk .av svg{width:100%;height:100%;object-fit:cover;display:block}",
+      "#nqbrk h1{font-weight:400;font-size:22px;margin:0}#nqbrk .why{color:#c9d1d9;font-size:14px;margin:-4px 0 0}",
+      "#nqbrk .nqb-big{font-size:54px;font-weight:300;line-height:1;margin-top:6px;font-variant-numeric:tabular-nums}#nqbrk .nqb-big.over{color:#ff7a6b}",
+      "#nqbrk .nqb-sub{color:#9aa3ad;font-size:13px;margin-top:-4px;max-width:320px}",
+      "#nqbrk .slbtn{height:48px;border:0;border-radius:12px;background:#fff;color:#0b0d10;font:inherit;font-weight:500;font-size:15px;cursor:pointer;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}",
+      "#nqbrk .slbtn svg{width:20px;height:20px}",
+      "#nqbrk.nqb-ask .slbtn{animation:nqaskp 1.6s ease-out infinite}",
+      "#nqbrk .nqb-hint{color:#9aa3ad;font-size:12.5px;margin:0}",
+      "#nqbrk .lkalt{border:0;background:none;color:#9aa3ad;font:inherit;font-size:12.5px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.14);padding:0;margin-top:4px}",
+      "body.nq-brk #root{filter:blur(6px);pointer-events:none;user-select:none}",
+      "body.nq-brk .nq-ov{z-index:9600}",
+      "body.nq-brk .nq-dock,body.nq-brk #nq-fab{visibility:hidden}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(css);
+
+    var tick = function () { try { askTick(); } catch (e) { } try { lockTick(); } catch (e) { } };
+    setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "visible") return;
+      tick();
+      if (phone()) send("ping");
+    });
+    document.addEventListener("nf:ready", function () { setTimeout(tick, 800); });
+    window.nqAskLock = { state: A, lock: L, tick: tick };
+  } catch (e) { console.warn("stu-qr-ask-lock", e); }
+})();
