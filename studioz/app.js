@@ -1289,3 +1289,79 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     window.nfMoneyGuard = { run: run, allowed: allowed };
   } catch (e) { console.warn("stu-money-guard", e); }
 })();
+
+;/* stu-money-vis — v9.36b (2 Nov 2026, studio)
+   Mahmoud (task «سعيد اشرف طالب عهدة للمكتب — 5,000 ج.م», «Who sees this task» listing Mohamed Sabek): «هنا ليه سابق شايف
+   طلب العهد». The server now keeps money documents to the owner + accounts & HR + the person they are about
+   (policy docs_stu_money_sel, migration v936); the screens follow the same rule so «who sees» tells the truth and nothing
+   is listed that the server would refuse:
+   - taskVisible / requestVisible say no for a money task / request (custody, advances, funds, expenses, wage changes …)
+     unless the viewer is the owner, accounts & HR, or the person it is about / who wrote it;
+   - «who sees this task» no longer lists people the server keeps a money task from.
+   Money requests skipping the department head / manager is set in settings.policy.chains (chainFor reads it) and enforced
+   on the server (trigger stu_money_req_chain). */
+(function () {
+  try {
+    if (window.__NF_STUMONEYVIS__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_STUMONEYVIS__ = 1;
+    var REQ = { advance: 1, fund: 1, opex: 1, custody: 1, cuask: 1, wagechange: 1, mallow: 1, drvcash: 1, loan: 1 };
+    var SRC = { stucuask: 1, stucust: 1, custody: 1, money: 1, fund: 1, advance: 1, advpay: 1, advbatch: 1, wallet: 1, collect: 1, spurch: 1, subs: 1, opex: 1 };
+    var LINK = /^\/?#\/(custody|money|collect|expenses|quotes|invoices|payroll|advpay|subs|spurch)/;
+    var CUR = /(ج\.م|جنيه|EGP)/;
+    function money(col, d) {
+      if (!d) return false;
+      if (col === "requests") return !!REQ[d.type];
+      if (col === "tasks") return !!SRC[d.source] || LINK.test(String(d.link || "")) || CUR.test(String(d.title || ""));
+      return false;
+    }
+    function mine(d) {
+      var s = S.session || {}, wid = s.workerId || "", pid = s.id || "";
+      return (!!wid && d.workerId === wid) || (!!d.createdBy && (d.createdBy === pid || d.createdBy === "w:" + wid)) || (!!d.byId && (d.byId === pid || d.byId === wid));
+    }
+    function allowed(col, d) {
+      try {
+        if (!money(col, d)) return true;
+        if ((typeof isAdmin === "function" && isAdmin()) || (typeof role === "function" && role() === "hr")) return true;
+        return mine(d);
+      } catch (e) { return true; }
+    }
+    if (typeof taskVisible === "function") taskVisible = (function (o) { return function (t) { return allowed("tasks", t) && o.apply(this, arguments); }; })(taskVisible);
+    if (typeof requestVisible === "function") requestVisible = (function (o) { return function (r) { return allowed("requests", r) && o.apply(this, arguments); }; })(requestVisible);
+    /* «who sees this task»: taskIsParty (a constant) counts every manager / vice / hr as a party of every task, so the
+       panel listed the art director on money tasks the server no longer sends him — drop whoever cannot see it */
+    var nm = function (w) { return String(w && w.name || "").split(" — ")[0].split(" ").slice(0, 3).join(" "); };
+    var three = function (t) { return String(t || "").split(" — ")[0].trim().split(/\s+/).slice(0, 3).join(" ").toLowerCase(); };
+    var names = function (w) {
+      var a = nm(w), out = [a];
+      try { if (I18N.exact && I18N.exact.get) out.push(I18N.exact.get(a), I18N.exact.get(w.name)); } catch (e) { }
+      try { if (typeof nameEnOf === "function") out.push(nameEnOf(w), nameEnOf(w.name), nameEnOf(a)); } catch (e) { }
+      try { if (typeof nfTranslit === "function") out.push(nfTranslit(a)); } catch (e) { }
+      return out.filter(function (x) { return typeof x === "string" && x; }).map(three);
+    };
+    function fixWho() {
+      try {
+        var box = document.getElementById("whs");
+        if (!box || !S.route || S.route.view !== "tasks" || !S.route.id) return;
+        var t = byId("tasks", S.route.id);
+        if (!t || !money("tasks", t)) return;
+        var ws = list("workers"), gone = 0;
+        box.querySelectorAll(".whs-p").forEach(function (el) {
+          var b = el.querySelector("b"), name = b ? b.textContent.trim() : "";
+          var key = three(name);
+          var w = ws.find(function (x) { return names(x).indexOf(key) >= 0; });
+          if (!w || w.role === "hr" || w.role === "admin") return;
+          var wid = w.id;
+          var own = t.workerId === wid || t.createdBy === "w:" + wid || t.assigneeId === wid;
+          if (!own) { el.remove(); gone++; }
+        });
+        if (gone) {
+          var badge = box.querySelector(".whs-h .badge");
+          if (badge && /^\d+$/.test(badge.textContent.trim())) badge.textContent = String(Math.max(0, +badge.textContent - gone));
+          box.querySelectorAll(".whs-g, .whs-sec").forEach(function (g) { if (!g.querySelector(".whs-p")) g.remove(); });
+        }
+      } catch (e) { }
+    }
+    try { RENDER_HOOKS.push(function () { setTimeout(fixWho, 0); setTimeout(fixWho, 300); }); } catch (e) { }
+    window.nfMoneyVis = { money: money, allowed: allowed };
+  } catch (e) { console.warn("stu-money-vis", e); }
+})();
