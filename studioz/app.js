@@ -889,3 +889,108 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     window.nqAskLock = { state: A, lock: L, tick: tick };
   } catch (e) { console.warn("stu-qr-ask-lock", e); }
 })();
+
+;/* nf-devguard — v9.35 (2 Nov 2026, all 3 systems)
+   Mahmoud (photo of DevTools open on the studio): «مش عايز حد لما يدوس اف ١٢ يفتح الكود يعرف يعدل حاجه ويظهرله حاجه».
+   A web page can never fully stop the browser's developer tools, so this makes them hard to open and useless once open,
+   for everyone but the owner (and the owner's "view as"):
+   - F12, Ctrl+Shift+I / J / C / K / E, Ctrl+U, Cmd+Opt+I / J / C / U are swallowed; the right-click menu is off
+     (it still works inside text boxes, and the app's own right-click menus keep working).
+   - If the tools get opened anyway (from the browser menu), the page stops on a debugger break; once let go it locks
+     behind a full-screen notice until the page is reloaded with the tools closed. The attempt is reported to the
+     server (nf_sec_log, read by the owner only) when that table exists.
+   The real protection is the server deciding what each person can read and change. */
+(function () {
+  try {
+    if (window.__NF_DEVGUARD__) return;
+    window.__NF_DEVGUARD__ = 1;
+    var en = function () { try { return typeof I18N !== "undefined" && I18N.lang === "en"; } catch (e) { return false; } };
+    var T = function (a, b) { return en() ? b : a; };
+    var exempt = function () {
+      try {
+        if (typeof S === "undefined" || !S || !S.session) return true;      // sign-in screen: nothing to see yet
+        if (S.session.owner || S.viewOrig) return true;                        // the owner, also while viewing as someone
+        if (typeof isViewing === "function" && isViewing()) return true;
+        if (typeof isAdmin === "function" && isAdmin()) return true;
+        return false;
+      } catch (e) { return false; }
+    };
+    var sys = function () { try { return (window.NF_CONFIG && NF_CONFIG.company) || "factory"; } catch (e) { return ""; } };
+
+    function report(why) {
+      try {
+        var c = typeof S !== "undefined" && S && S.sb;
+        if (!c || typeof c.from !== "function") return;
+        c.from("nf_sec_log").insert({ kind: "devtools", detail: { why: why, page: String(location.hash || "").slice(0, 80), sys: sys() }, ua: String(navigator.userAgent || "").slice(0, 300) })
+          .then(function () { }, function () { });
+      } catch (e) { }
+    }
+
+    /* ---------- shortcuts ---------- */
+    var LETTERS = { KeyI: 1, KeyJ: 1, KeyC: 1, KeyK: 1, KeyE: 1 };
+    window.addEventListener("keydown", function (e) {
+      if (exempt()) return;
+      var code = e.code || "", key = String(e.key || "");
+      var bad = key === "F12" || code === "F12"
+        || ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && LETTERS[code])
+        || (e.metaKey && e.altKey && (LETTERS[code] || code === "KeyU"))
+        || ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && code === "KeyU" && !(e.target && e.target.isContentEditable));
+      if (!bad) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+    }, true);
+
+    /* ---------- right-click ---------- */
+    document.addEventListener("contextmenu", function (e) {
+      if (exempt()) return;
+      var t = e.target;
+      if (t && t.closest && t.closest("input,textarea,select,[contenteditable],[data-ctx-ok]")) return;
+      e.preventDefault();
+    }, true);
+
+    /* ---------- tools opened anyway ---------- */
+    var tripped = false;
+    function lock(why) {
+      if (tripped) return;
+      tripped = true;
+      report(why);
+      try {
+        var el = document.createElement("div");
+        el.id = "nf-devlock";
+        el.setAttribute("dir", en() ? "ltr" : "rtl");
+        el.setAttribute("role", "alertdialog");
+        el.innerHTML = '<div class="b"><div class="i">⚠</div><h2></h2><p></p><button type="button"></button></div>';
+        el.querySelector("h2").textContent = T("أدوات المطور مش مسموحة على سيستم Ninety", "Developer tools are not allowed on Ninety");
+        el.querySelector("p").textContent = T("اقفل أدوات المطور (F12) وبعدين دوس «حدّث» عشان ترجع للسيستم.", "Close the developer tools (F12), then press «Reload» to get back to the system.");
+        var btn = el.querySelector("button");
+        btn.textContent = T("حدّث", "Reload");
+        btn.addEventListener("click", function () { location.reload(); });
+        el.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+        var css = document.createElement("style");
+        css.id = "nf-devlock-css";
+        css.textContent = [
+          "#nf-devlock{position:fixed;inset:0;z-index:2147483646;background:#0b0d10;color:#eceff3;display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font,system-ui)}",
+          "#nf-devlock .b{width:min(420px,100%);text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}",
+          "#nf-devlock .i{font-size:44px;line-height:1;color:#ffb020}",
+          "#nf-devlock h2{margin:0;font-size:20px;font-weight:500}",
+          "#nf-devlock p{margin:0;color:#9aa3ad;font-size:14px;line-height:1.6}",
+          "#nf-devlock button{margin-top:8px;height:46px;min-width:160px;border:0;border-radius:12px;background:#fff;color:#0b0d10;font:inherit;font-weight:500;font-size:15px;cursor:pointer}",
+          "html.nf-devlocked body>*:not(#nf-devlock):not(#nf-devlock-css){visibility:hidden!important}"
+        ].join("\n");
+        (document.head || document.documentElement).appendChild(css);
+        document.body.appendChild(el);
+        document.documentElement.classList.add("nf-devlocked");
+        var root = document.getElementById("root");
+        if (root) { try { root.setAttribute("inert", ""); } catch (e) { } }
+        try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) { }
+      } catch (e) { }
+    }
+    function probe() {
+      if (tripped || document.hidden || exempt()) return;
+      var t0 = Date.now();
+      (function () { debugger; })(); // stops here only while the developer tools are open
+      if (Date.now() - t0 > 500) lock("pause");
+    }
+    setInterval(probe, 1500);
+    window.nfDevGuard = { exempt: exempt, locked: function () { return tripped; } };
+  } catch (e) { console.warn("nf-devguard", e); }
+})();
