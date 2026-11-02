@@ -1,10 +1,10 @@
 /* Ninety Fabrication — service worker (app shell cache). Data never lives here: it is on the server. */
-const BUILD = '20261102-1359-2b0008';
+const BUILD = '20261102-1428-c923ae';
 /* v4.17: several Ninety apps share one origin (/ = factory, /studioz/ = office) — each service worker keeps to its own scope and its own cache prefix */
 const SCOPE = new URL(self.registration.scope).pathname;
 const TAG = SCOPE.replace(/^\/|\/$/g, '').replace(/\//g, '-');
 const CACHE = 'nf-shell-' + (TAG ? TAG + '-' : '') + BUILD;
-const SHELL = ["./core.js?v=c001d66f40", "./app.js?v=20261102-1359-2b0008", "./index.html", "./config.js", "./manifest.json", "./vendor/supabase.js", "./vendor/three.bundle.js", "./vendor/pdf.min.js", "./vendor/pdf.worker.min.js", "./vendor/leaflet.js", "./icons/icon-192.png", "./icons/icon-512.png", "./en.json", "./laeha.pdf", "./lof-c01.pdf"];
+const SHELL = ["./core.js?v=c001d66f40", "./app.js?v=20261102-1428-c923ae", "./index.html", "./config.js", "./manifest.json", "./vendor/supabase.js", "./vendor/three.bundle.js", "./vendor/pdf.min.js", "./vendor/pdf.worker.min.js", "./vendor/leaflet.js", "./icons/icon-192.png", "./icons/icon-512.png", "./en.json", "./laeha.pdf", "./lof-c01.pdf"];
 self.addEventListener('install', e => {
   /* v8.87: a new worker no longer takes over an open app by itself (that was a second reload in front of the person) —
      it waits until the app is closed, or the page asks for it («حدّث» or the app going to the background with an update) */
@@ -82,7 +82,9 @@ self.addEventListener('fetch', e => {
   if (same && (req.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('/index.html'))) {
     // app page: network first (so updates arrive), cached copy when offline
     // (cache: 'no-cache' revalidates with the host even when it sends a max-age, e.g. GitHub Pages)
-    e.respondWith(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put('./index.html', copy)).catch(() => { }); return r; }).catch(() => caches.match('./index.html')));
+    /* v9.33: a code/data file opened as a page (an old notification link) goes to the app instead, and only real HTML is kept as the app page */
+    if (req.mode === 'navigate' && /\.(js|json|css|map|txt)$/i.test(url.pathname)) { e.respondWith(Response.redirect(SCOPE, 302)); return; }
+    e.respondWith(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then(r => { if (r.ok && /text\/html/i.test(r.headers.get('content-type') || '')) { const copy = r.clone(); caches.open(CACHE).then(c => c.put('./index.html', copy)).catch(() => { }); } return r; }).catch(() => caches.match('./index.html')));
     return;
   }
   if (same && url.pathname.endsWith('/config.js')) {
@@ -112,10 +114,25 @@ self.addEventListener('push', e => {
   e.waitUntil(Promise.all([show, badge]).catch(() => { }));
 });
 self.addEventListener('message', e => { const d = e.data || {}; if (d.nfBadge != null) { (async () => { try { const c = await caches.open('nf-badge'); await c.put('count', new Response(String(d.nfBadge))); if ('setAppBadge' in navigator) { if (d.nfBadge > 0) await navigator.setAppBadge(d.nfBadge); else await navigator.clearAppBadge(); } } catch (x) { /* ignore */ } })(); } });
+/* v9.33 (2 Nov 2026): a notification link always opens inside this app. «#/x» used to resolve against this file
+   (sw.js) — an iPhone with the app closed showed this code instead of the app (Aisha, studio) — and «/#/x» sent from
+   the studio opened the factory. */
+function nfAppUrl(u) {
+  try {
+    u = String(u || '');
+    if (!u || u === '/' || u === './') return SCOPE;
+    if (u.charAt(0) === '#') return SCOPE + u;
+    if (u.slice(0, 2) === '/#') return SCOPE + u.slice(1);
+    if (u.slice(0, 3) === './#') return SCOPE + u.slice(2);
+    const x = new URL(u, self.registration.scope);
+    if (x.origin === self.location.origin && /\.(js|json|css|map|txt)$/i.test(x.pathname)) return SCOPE + x.hash;
+    return x.href;
+  } catch (x) { return SCOPE; }
+}
 self.addEventListener('notificationclick', e => {
   /* v7.71: the owner's support notice opens the Claude chat itself (claude.ai links only), not the app */
   try { const u0 = String((e.notification.data && e.notification.data.url) || ''); const m0 = /#\/supgo\/([^?#]+)/.exec(u0); if (m0) { const t0 = decodeURIComponent(m0[1]); if (/^https:\/\/claude\.ai\/[A-Za-z0-9_.\/-]+$/.test(t0)) { e.notification.close(); e.waitUntil(self.clients.openWindow(t0)); return; } } } catch (x) { /* fall through to the app */ }
-  e.notification.close(); try { caches.open('nf-badge').then(c => c.put('count', new Response('0'))); if ('clearAppBadge' in navigator) navigator.clearAppBadge(); } catch (x) { /* ignore */ } let url = (e.notification.data && e.notification.data.url) || './'; if (e.notification.data && e.notification.data.call && (e.action === 'accept' || e.action === 'decline')) url = './#/calls/' + e.notification.data.call + '/' + e.action;
+  e.notification.close(); try { caches.open('nf-badge').then(c => c.put('count', new Response('0'))); if ('clearAppBadge' in navigator) navigator.clearAppBadge(); } catch (x) { /* ignore */ } let url = (e.notification.data && e.notification.data.url) || './'; if (e.notification.data && e.notification.data.call && (e.action === 'accept' || e.action === 'decline')) url = './#/calls/' + e.notification.data.call + '/' + e.action; url = nfAppUrl(url);
   /* v6.86: iOS rejects WindowClient.navigate() asynchronously (the old try/catch never caught it, so a tapped notification just
      brought the app forward without opening its page) — the page itself now sets the hash from the message; navigate is not used */
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => { for (const c of cs) { if ('focus' in c) { try { c.postMessage({ nfOpen: url }); } catch (x) { /* ignore */ } return c.focus().catch(() => { }); } } return self.clients.openWindow(url); }));

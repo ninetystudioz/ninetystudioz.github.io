@@ -3677,3 +3677,31 @@ html body #view .tablewrap table.wkfit td.wk-wage{white-space:normal!important}
     }, true);
   } catch (e) { console.warn("fs-menu-groups", e); }
 })();
+
+;/* nf-wide — v9.33w (2 Nov 2026, factory + construction; the studio has its own stu-wide)
+   Mahmoud: «عايز السيستم يبقى سمارت ويديتكت السايز بتاع السكرين… يظبط اليو اي على الفول سايز» — then «اه» to doing
+   the same in the factory and construction. Every page sat in a 1320px column (.view max-width), so big monitors
+   showed half a screen of nothing. From 1600px wide the page uses the whole width, and the dashboard grids
+   (KPI cards, late-work cards) spread their cards across it instead of stretching a fixed few. */
+(function () {
+  try {
+    if (window.__NF_WIDE__ || (typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_WIDE__ = 1;
+    var css = [
+      "@media (min-width:1600px){",
+      " html body .view{max-width:none}",
+      " html body .view .kpis{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}",
+      "}"
+    ].join("\n");
+    var add = function () {
+      try {
+        if (document.getElementById("nf-wide")) return;
+        var s = document.createElement("style");
+        s.id = "nf-wide";
+        s.textContent = css;
+        (document.body || document.documentElement).appendChild(s);
+      } catch (e) { }
+    };
+    if (document.body) add(); else document.addEventListener("DOMContentLoaded", add);
+  } catch (e) { console.warn("nf-wide", e); }
+})();
