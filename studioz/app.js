@@ -1542,7 +1542,13 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
      (server: nf_can_write 'prompts', v938). The art director and the owner mark the best ones «نموذج للمكتب».
    - «كل واحد» view (owner + art director): one row per person — his entries with before/after/prompt, and who has none yet.
    - «✦ نقد آرت دايركتور»: the office assistant (Opus) compares before/after with the prompt and writes what worked, what to fix
-     and an improved prompt — saved on the entry for everyone to learn from. */
+     and an improved prompt — saved on the entry for everyone to learn from.
+   v9.40 (2 Nov): Mahmoud chose «ChatGPT الحقيقي + ربطه بالسيستم» — entries also arrive from ChatGPT (Edge stu-mcp, src 'chatgpt').
+   - Cards without a stored thumbnail load the picture itself (signed link, cached 50 min).
+   - #/prompts/<id> opens that entry (the link ChatGPT gives back after «احفظها في المكتبة»).
+   - Add/edit window: paste a picture (Ctrl+V) — first paste → «بعد», next → «قبل»; small previews of the chosen pictures.
+   - Your own entry without the result picture shows «⬆ ضيف الصورة».
+   - When the ChatGPT app is live (settings.general.gptApp) the people who have ChatGPT see how to use it from ChatGPT. */
 (function () {
   try {
     if (window.__NF_PROMPTS__ || !(typeof isStuSys === "function" && isStuSys())) return;
@@ -1586,6 +1592,14 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
       } catch (e) { return []; }
     };
     var projName = function (id) { try { var p = id && byId("projects", id); return p ? p.name || "" : ""; } catch (e) { return ""; } };
+    var gptOn = function () {
+      try {
+        if (!(S.settings && S.settings.gptApp)) return false;
+        if (ADM()) return true;
+        var w = (S.session || {}).workerId ? byId("workers", S.session.workerId) : null;
+        return !!(w && w.aiTools && w.aiTools.chatgpt);
+      } catch (e) { return false; }
+    };
     var UI = function () { S.ui = S.ui || {}; return S.ui.prompts || (S.ui.prompts = { q: "", who: "", tool: "", kind: "", star: false, mode: "" }); };
 
     /* ---- the page ---- */
@@ -1602,11 +1616,14 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     }
     function card(p) {
       var b = thumb(p.beforeId), a = thumb(p.afterId), vid = (p.kind === "vid") || /^video\//.test((file(p.afterId) || {}).mime || "");
-      var half = function (src, lbl, isVid) {
-        return '<div class="prc-h">' + (src ? '<img src="' + H(src) + '" alt="" loading="lazy">' : '<div class="prc-none">' + (isVid ? "▶" : "—") + "</div>") + '<span class="prc-l">' + H(lbl) + "</span></div>";
+      var half = function (src, lbl, isVid, fid) {
+        var f = fid && file(fid), lazyImg = !src && f && /^image\//.test(f.mime || "");
+        return '<div class="prc-h">' + (src ? '<img src="' + H(src) + '" alt="" loading="lazy">' : lazyImg ? '<img data-prfull="' + H(fid) + '" alt="">' : '<div class="prc-none">' + (isVid ? "▶" : "—") + "</div>") + '<span class="prc-l">' + H(lbl) + "</span></div>";
       };
+      var needPic = mine(p) && !p.afterId;
       return '<div class="prc" data-action="prOpen" data-arg="' + H(p.id) + '">' +
-        '<div class="prc-img">' + half(b, T("قبل", "Before"), false) + half(a, T("بعد", "After"), vid) + "</div>" +
+        '<div class="prc-img">' + half(b, T("قبل", "Before"), false, p.beforeId) + half(a, T("بعد", "After"), vid, p.afterId) + "</div>" +
+        (needPic ? '<div class="prc-need">⬆ ' + H(T("ضيف الصورة — افتحه ودوس «عدّل»", "Add the picture — open it and press «Edit»")) + "</div>" : "") +
         '<div class="prc-b"><div class="prc-p notr" dir="auto">' + H(p.prompt || "") + "</div>" +
         '<div class="prc-m">' + (p.star ? '<span class="prc-star" title="' + H(T("نموذج للمكتب", "Office model")) + '">★</span>' : "") +
         '<span class="badge">' + H(p.tool || T("أداة", "Tool")) + '</span><span class="badge">' + H(kindName(p.kind)) + "</span>" +
@@ -1642,7 +1659,8 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
         (LEAD() ? '<div class="seg"><button type="button" class="btn sm ' + (u.mode === "who" ? "p" : "") + '" data-action="prMode" data-arg="who">' + H(T("كل واحد", "Per person")) + '</button><button type="button" class="btn sm ' + (u.mode === "all" ? "p" : "") + '" data-action="prMode" data-arg="all">' + H(T("الكل", "All")) + "</button></div>" : "") +
         '<button type="button" class="btn p" data-action="prAdd">+ ' + H(T("أضف برومبت", "Add a prompt")) + "</button></div>";
       var intro = '<p class="small muted" style="margin:0 0 12px">' + H(T("كل واحد يحفظ هنا أحسن شغله: الصورة قبل، والنتيجة بعد، والبرومبت اللي طلّعها — علشان الكل يتعلم منه. افتح أي كارت تشوف المقارنة وتنسخ البرومبت.", "Save your best work here: the image before, the result after, and the prompt that made it — so everyone learns from it. Open any card to compare and copy the prompt.")) + "</p>";
-      var body = !rows.length ? '<div class="empty"><b>' + H(T("لسه مفيش برومبتات هنا", "No prompts here yet")) + "</b>" + H(T("دوس «أضف برومبت» وارفع الصورة قبل وبعد والبرومبت.", "Press «Add a prompt» and upload the before/after images and the prompt.")) + "</div>"
+      if (gptOn()) intro += '<div class="pr-gpt"><b>' + H(T("من ChatGPT على طول:", "Straight from ChatGPT:")) + "</b> " + H(T("في أي شات اكتب «@Ninety Studioz» وقوله المشروع، ولما النتيجة تعجبك قول «احفظها في المكتبة» — تتحفظ هنا باسمك بالصورة قبل وبعد والبرومبت.", "In any chat type «@Ninety Studioz» and tell it the project; when you like the result say «save it to the library» — it lands here under your name with the before/after pictures and the prompt.")) + ' <button type="button" class="btn xs ghost" data-action="prGptHelp">' + H(T("أول مرة؟", "First time?")) + "</button></div>";
+      var body = !rows.length ?'<div class="empty"><b>' + H(T("لسه مفيش برومبتات هنا", "No prompts here yet")) + "</b>" + H(T("دوس «أضف برومبت» وارفع الصورة قبل وبعد والبرومبت.", "Press «Add a prompt» and upload the before/after images and the prompt.")) + "</div>"
         : (u.mode === "who" && LEAD() && !u.who ? byPerson(rows) : '<div class="pr-grid">' + rows.map(card).join("") + "</div>");
       return '<div class="pr-page">' + intro + bar + body + "</div>";
     }
@@ -1670,13 +1688,15 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     });
 
     /* ---- add / edit ---- */
+    function pv(fid) { var t = thumb(fid); return t ? '<img src="' + H(t) + '" alt="">' : (fid && file(fid) ? '<img data-prfull="' + H(fid) + '" alt="">' : ""); }
     function form(p) {
       p = p || {};
       var ps = projects();
       var toolOpts = TOOLS.map(function (t) { return '<option' + (p.tool === t ? " selected" : "") + ">" + H(t) + "</option>"; }).join("") + '<option value="__other"' + (p.tool && TOOLS.indexOf(p.tool) < 0 ? " selected" : "") + ">" + H(T("أداة تانية…", "Other tool…")) + "</option>";
-      return '<div class="form">' +
-        '<div class="field"><label>' + H(T("الصورة قبل (كلاي / ريندر أساسي / سكتش / ريفرنس)", "Before (clay / base render / sketch / reference)")) + "</label>" + (p.beforeId ? '<div class="tiny muted">' + H(T("فيه صورة — ارفع واحدة جديدة لو عايز تغيّرها", "There is one — upload a new one to replace it")) + "</div>" : "") + '<input type="file" name="before" accept="image/*"></div>' +
-        '<div class="field"><label>' + H(T("النتيجة بعد (صورة أو فيديو)", "After (image or video)")) + (p.afterId ? "" : " *") + "</label>" + (p.afterId ? '<div class="tiny muted">' + H(T("فيه نتيجة — ارفع جديدة لو عايز تغيّرها", "There is one — upload a new one to replace it")) + "</div>" : "") + '<input type="file" name="after" accept="image/*,video/*"></div>' +
+      return '<div class="form pr-form">' +
+        '<div class="field full pr-paste">📋 ' + H(T("الصق الصورة هنا على طول (Ctrl+V) — أول صورة تروح «بعد» واللي بعدها «قبل». أو اسحبها على الخانة.", "Paste a picture straight in (Ctrl+V) — the first one goes to «After», the next to «Before». Or drag it onto the box.")) + "</div>" +
+        '<div class="field"><label>' + H(T("الصورة قبل (كلاي / ريندر أساسي / سكتش / ريفرنس)", "Before (clay / base render / sketch / reference)")) + "</label>" + (p.beforeId ? '<div class="tiny muted">' + H(T("فيه صورة — ارفع واحدة جديدة لو عايز تغيّرها", "There is one — upload a new one to replace it")) + "</div>" : "") + '<input type="file" name="before" accept="image/*"><div class="pr-pv" data-pv="before">' + pv(p.beforeId) + "</div></div>" +
+        '<div class="field"><label>' + H(T("النتيجة بعد (صورة أو فيديو)", "After (image or video)")) + (p.afterId ? "" : " *") + "</label>" + (p.afterId ? '<div class="tiny muted">' + H(T("فيه نتيجة — ارفع جديدة لو عايز تغيّرها", "There is one — upload a new one to replace it")) + "</div>" : "") + '<input type="file" name="after" accept="image/*,video/*"><div class="pr-pv" data-pv="after">' + pv(p.afterId) + "</div></div>" +
         '<div class="field full"><label>' + H(T("البرومبت *", "Prompt *")) + '</label><textarea name="prompt" class="inp ltr" rows="5" dir="auto" required placeholder="' + H(T("الصق البرومبت زي ما استخدمته بالظبط", "Paste the prompt exactly as you used it")) + '">' + H(p.prompt || "") + "</textarea></div>" +
         '<div class="field full"><label>' + H(T("الإعدادات / ملاحظات (الموديل، الستايل، seed، اللي اتعدّل بعد كده…)", "Settings / notes (model, style, seed, what you fixed after…)")) + '</label><textarea name="settings" class="inp" rows="2" dir="auto">' + H(p.settings || "") + "</textarea></div>" +
         '<div class="field"><label>' + H(T("الأداة", "Tool")) + '</label><select name="tool" class="inp">' + toolOpts + '</select><input name="toolOther" class="inp" style="margin-top:6px" placeholder="' + H(T("اسم الأداة لو تانية", "Tool name if other")) + '" value="' + H(p.tool && TOOLS.indexOf(p.tool) < 0 ? p.tool : "") + '"></div>' +
@@ -1725,12 +1745,64 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     /* ---- the entry: compare, copy, review ---- */
     var urlCache = new Map();
     async function fullUrl(fid) {
-      if (!fid) return ""; if (urlCache.has(fid)) return urlCache.get(fid);
+      if (!fid) return ""; var c = urlCache.get(fid); if (c && Date.now() - c.at < 50 * 60e3) return c.u;
       var f = file(fid); if (!f) return "";
       var u = ""; try { u = (await Files.url(f)) || ""; } catch (e) { u = ""; }
       if (!u) u = f.thumb || "";
-      urlCache.set(fid, u); return u;
+      if (u) urlCache.set(fid, { u: u, at: Date.now() }); return u;
     }
+    /* v9.40: pictures without a stored thumbnail (e.g. saved from ChatGPT) load the picture itself */
+    function lazy() {
+      try {
+        document.querySelectorAll("img[data-prfull]:not([data-prgo])").forEach(function (img) {
+          img.setAttribute("data-prgo", "1");
+          fullUrl(img.getAttribute("data-prfull")).then(function (u) { if (u) img.src = u; });
+        });
+      } catch (e) { }
+    }
+    /* v9.40: #/prompts/<id> opens that entry once */
+    var deepDone = "";
+    function deep() {
+      try {
+        if (!S.route || S.route.view !== "prompts" || !S.route.id || S.route.id === deepDone) return;
+        if (!byId(COL, S.route.id)) return;   // not loaded yet — the next render tries again
+        deepDone = S.route.id; var id = S.route.id;
+        try { history.replaceState(null, "", "#/prompts"); S.route.id = null; } catch (e) { }
+        setTimeout(function () { show(id); }, 60);
+      } catch (e) { }
+    }
+    /* v9.40: the menu item in English too («Prompt library») */
+    var EN = { "مكتبة البرومبتات": "Prompt library", "البرومبتات": "Prompts" };
+    function en() { try { if (typeof I18N !== "undefined" && I18N.exact) Object.keys(EN).forEach(function (k) { if (I18N.exact.get(k) !== EN[k]) I18N.exact.set(k, EN[k]); }); } catch (e) { } }
+    try { RENDER_HOOKS.push(function () { en(); setTimeout(lazy, 0); deep(); }); } catch (e) { }
+    /* v9.40: paste a picture into the add / edit window; previews of the chosen pictures */
+    function setPv(inp) {
+      try {
+        var box = inp.parentNode && inp.parentNode.querySelector('.pr-pv[data-pv="' + inp.name + '"]'); if (!box) return;
+        var f = inp.files && inp.files[0]; if (!f) return;
+        box.innerHTML = /^image\//.test(f.type || "") ? '<img src="' + URL.createObjectURL(f) + '" alt="">' : '<span class="tiny">🎬 ' + H(f.name) + "</span>";
+      } catch (e) { }
+    }
+    document.addEventListener("change", function (ev) {
+      var t = ev.target; if (!t || t.type !== "file" || !(t.name === "before" || t.name === "after")) return;
+      if (t.closest && t.closest(".pr-form")) setPv(t);
+    });
+    document.addEventListener("paste", function (ev) {
+      try {
+        var fm = document.querySelector(".pr-form"); if (!fm) return;
+        var items = (ev.clipboardData && ev.clipboardData.items) || [], pic = null;
+        for (var i = 0; i < items.length; i++) if (items[i].kind === "file" && /^image\//.test(items[i].type)) { pic = items[i].getAsFile(); break; }
+        if (!pic) return;
+        ev.preventDefault();
+        var af = fm.querySelector("[name=after]"), bf = fm.querySelector("[name=before]");
+        var target = af && !(af.files && af.files.length) ? af : (bf && !(bf.files && bf.files.length) ? bf : af);
+        if (!target) return;
+        var ext = (pic.type.split("/")[1] || "png").replace("jpeg", "jpg");
+        var dt = new DataTransfer(); dt.items.add(new File([pic], (target.name === "after" ? "after-" : "before-") + Date.now() + "." + ext, { type: pic.type }));
+        target.files = dt.files; setPv(target);
+        toast(target.name === "after" ? T("اتلصقت في «بعد»", "Pasted into «After»") : T("اتلصقت في «قبل»", "Pasted into «Before»"));
+      } catch (e) { toast(T("اللصق مش شغال هنا — اسحب الصورة على الخانة", "Paste does not work here — drag the picture onto the box"), "err"); }
+    });
     function detail(p) {
       var vid = /^video\//.test((file(p.afterId) || {}).mime || "");
       var cmp = '<div class="pr-cmp" id="prcmp">' + (vid
@@ -1818,6 +1890,16 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
       ACTIONS.prReview = function (id) { review(id); };
       ACTIONS.prMode = function (m) { UI().mode = m; UI().who = ""; rerender(); };
       ACTIONS.prWho = function (w) { var u = UI(); u.who = w; u.mode = "all"; rerender(); };
+      ACTIONS.prGptHelp = function () {
+        var st = [
+          [T("افتح ChatGPT", "Open ChatGPT"), T("من أيقونة ChatGPT اللي فوق في السيستم، أو من تطبيق ChatGPT على الكمبيوتر — بحساب الشغل بتاعك.", "From the ChatGPT icon at the top of the system, or the ChatGPT desktop app — with your work account.")],
+          [T("اربط التطبيق مرة واحدة", "Connect the app once"), T("في الشات دوس «+» واختار التطبيق «Ninety Studioz» ودوس Connect.", "In a chat press «+», pick the «Ninety Studioz» app and press Connect.")],
+          [T("وافق من السيستم", "Approve in the system"), T("هتفتحلك صفحة السيستم «ChatGPT عايز يتربط بحسابك» — دوس «اسمح». لو مش داخل السيستم، ادخل الأول.", "The system opens «ChatGPT wants to connect to your account» — press «Allow». Sign in first if asked.")],
+          [T("اشتغل عادي", "Work as usual"), T("اكتب «@Ninety Studioz أنا شغال على مشروع …» — ChatGPT هيعرف بريف المشروع والبرومبتات النموذجية بتاعة المكتب. ولما النتيجة تعجبك قول «احفظها في المكتبة».", "Type «@Ninety Studioz I am working on project …» — ChatGPT reads the brief and the office's model prompts. When you like the result say «save it to the library».")]
+        ];
+        openModal({ title: T("إزاي تستخدم مكتبة البرومبتات من ChatGPT", "Using the prompt library from ChatGPT"), footer: null,
+          body: '<ol class="pr-steps">' + st.map(function (x) { return "<li><b>" + H(x[0]) + "</b><div class=\"small muted\">" + H(x[1]) + "</div></li>"; }).join("") + '</ol><p class="tiny muted">' + H(T("شاتاتك على ChatGPT بتفضل بتاعتك — السيستم بيشوف بس اللي إنت بتحفظه في المكتبة.", "Your ChatGPT chats stay yours — the system only sees what you save to the library.")) + "</p>" });
+      };
     }
 
     var css = document.createElement("style");
@@ -1850,9 +1932,156 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
       ".pr-ptxt pre{white-space:pre-wrap;word-break:break-word;margin:0;padding:10px 12px;border-radius:10px;background:var(--surface-2,rgba(127,127,127,.08));font-size:13px;line-height:1.55;font-family:ui-monospace,Menlo,Consolas,monospace}",
       ".pr-cr{margin-top:8px;padding:10px 12px;border-radius:12px;border:1px dashed var(--line,rgba(127,127,127,.3))}",
       ".pr-crt pre,.pr-crt code{white-space:pre-wrap;word-break:break-word}",
+      ".prc-need{font-size:12px;font-weight:600;padding:5px 12px;background:rgba(232,177,0,.14);color:#9a6b00}",
+      ".pr-gpt{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:var(--surface-2,rgba(127,127,127,.08));font-size:13px;line-height:1.6}",
+      ".pr-paste{padding:10px 12px;border:1px dashed var(--line,rgba(127,127,127,.35));border-radius:10px;font-size:12.5px;opacity:.85}",
+      ".pr-pv{margin-top:6px}.pr-pv img{max-height:90px;max-width:100%;border-radius:8px;display:block}",
+      ".pr-steps{margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:10px}",
       "@media (max-width:600px){.pr-bar .inp{flex:1 1 45%;min-width:0}.prw-row{grid-auto-columns:minmax(220px,80vw)}}"
     ].join("\n");
     (document.head || document.documentElement).appendChild(css);
     window.nfPrompts = { all: all, page: page, review: review };
   } catch (e) { console.warn("stu-prompts", e); }
+})();
+
+;/* stu-oauth — v9.40 (2 Nov 2026, studio only) — «اربط ChatGPT بحسابك»
+   Mahmoud chose «ChatGPT الحقيقي + ربطه بالسيستم»: the «Ninety Studioz» app inside ChatGPT Business (Edge stu-mcp) signs each person
+   in as himself with Supabase Auth's OAuth 2.1 server. Supabase sends the person here with ?authorization_id=… ; this page:
+   - keeps the id across the sign-in screen (sessionStorage) and opens #/oauth;
+   - only the owner and the people ticked «عنده ChatGPT» may connect; only requests that return to chatgpt.com / openai.com can be
+     approved (a request from any other site is refused here);
+   - shows what ChatGPT will be able to do (his projects without money or client, read the prompt library, save to it under his name)
+     and «اسمح» / «لا» → Supabase → back to ChatGPT. */
+(function () {
+  try {
+    if (window.__NF_OAUTH__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_OAUTH__ = 1;
+    var KEY = "nf.oauth.aid";
+    var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+    var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+    var ADM = function () { try { return isAdmin(); } catch (e) { return false; } };
+    var ss = {
+      get: function () { try { return sessionStorage.getItem(KEY) || ""; } catch (e) { return ""; } },
+      set: function (v) { try { if (v) { sessionStorage.setItem(KEY, v); sessionStorage.setItem(KEY + ".at", String(Date.now())); } else { sessionStorage.removeItem(KEY); sessionStorage.removeItem(KEY + ".at"); } } catch (e) { } },
+      fresh: function () { try { return Date.now() - Number(sessionStorage.getItem(KEY + ".at") || 0) < 10 * 60e3; } catch (e) { return false; } }
+    };
+    var bounced = false;
+
+    /* 1) catch ?authorization_id=… (query or hash), keep it, go to #/oauth */
+    function grab() {
+      try {
+        var m = /[?&]authorization_id=([^&#]+)/.exec(location.search) || /[?&]authorization_id=([^&#]+)/.exec(location.hash);
+        if (!m) return false;
+        ss.set(decodeURIComponent(m[1]));
+        history.replaceState(null, "", location.pathname + "#/oauth");
+        return true;
+      } catch (e) { return false; }
+    }
+    var st = { aid: "", det: null, err: "", busy: false, loading: false, done: false };
+    if (grab()) { try { if (typeof parseRoute === "function") parseRoute(); } catch (e) { } }
+
+    try { VIEW_TITLES.oauth = "ربط ChatGPT"; } catch (e) { }
+    try { Object.keys(ROLE_VIEWS).forEach(function (r) { if (Array.isArray(ROLE_VIEWS[r]) && r !== "kiosk" && ROLE_VIEWS[r].indexOf("oauth") < 0) ROLE_VIEWS[r] = ROLE_VIEWS[r].concat(["oauth"]); }); } catch (e) { }
+    try { if (typeof EXTRA_TITLES === "object" && EXTRA_TITLES) EXTRA_TITLES.oauth = function () { return { title: T("ربط ChatGPT", "Connect ChatGPT"), sub: T("تطبيق Ninety Studioz جوه ChatGPT", "The Ninety Studioz app inside ChatGPT") }; }; } catch (e) { }
+
+    var enabled = function () {
+      try { if (ADM()) return true; var w = (S.session || {}).workerId ? byId("workers", S.session.workerId) : null; return !!(w && w.aiTools && w.aiTools.chatgpt); } catch (e) { return false; }
+    };
+    var trusted = function (u) { try { var h = new URL(u).hostname.toLowerCase(); return /(^|\.)chatgpt\.com$/.test(h) || /(^|\.)openai\.com$/.test(h); } catch (e) { return false; } };
+
+    async function api(method, path, body) {
+      var sb = S.sb; if (!sb || !sb.auth) throw { msg: "offline" };
+      var base = String(sb.supabaseUrl || String(sb.restUrl || "").replace(/\/rest\/v1\/?$/, "")).replace(/\/$/, "");
+      var ses = await sb.auth.getSession(); var tok = ses && ses.data && ses.data.session && ses.data.session.access_token;
+      if (!tok) throw { msg: "signin" };
+      var r = await fetch(base + "/auth/v1" + path, { method: method, headers: { apikey: sb.supabaseKey, Authorization: "Bearer " + tok, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+      var j = {}; try { j = await r.json(); } catch (e) { j = {}; }
+      if (!r.ok) throw { status: r.status, msg: String(j.msg || j.message || j.error_description || j.error || ("HTTP " + r.status)) };
+      return j;
+    }
+    async function load() {
+      if (st.loading) return; st.loading = true; st.err = "";
+      try {
+        var d = await api("GET", "/oauth/authorizations/" + encodeURIComponent(st.aid));
+        if (d && d.redirect_url && !d.authorization_id) {   // he already approved this app before → straight back to ChatGPT
+          if (!trusted(d.redirect_url)) throw { msg: "untrusted" };
+          ss.set(""); st.done = true; location.href = d.redirect_url; return;
+        }
+        st.det = d || {};
+      } catch (e) { st.err = (e && e.msg) || String(e); }
+      st.loading = false; try { rerender(); } catch (e) { }
+    }
+    async function decide(ok) {
+      if (st.busy) return; st.busy = true; try { rerender(); } catch (e) { }
+      try {
+        if (ok && !trusted((st.det || {}).redirect_uri || "")) throw { msg: "untrusted" };
+        var r = await api("POST", "/oauth/authorizations/" + encodeURIComponent(st.aid) + "/consent", { action: ok ? "approve" : "deny" });
+        ss.set(""); st.done = true;
+        if (r && r.redirect_url && (trusted(r.redirect_url) || !ok)) { location.href = r.redirect_url; return; }
+        toast(ok ? T("اتربط ✓ — ارجع لـ ChatGPT", "Connected ✓ — go back to ChatGPT") : T("اترفض", "Refused"));
+      } catch (e) { st.err = (e && e.msg) || String(e); }
+      st.busy = false; try { rerender(); } catch (e) { }
+    }
+
+    function page() {
+      st.aid = st.aid || ss.get();
+      var card = function (inner) { return '<div class="oa-wrap"><div class="card oa-card">' + inner + "</div></div>"; };
+      var logo = '<div class="oa-logo"><span>N</span><i>⇄</i><span class="oa-g">G</span></div>';
+      if (st.done) return card(logo + "<h2>" + H(T("تمام — ارجع لـ ChatGPT", "Done — go back to ChatGPT")) + "</h2>");
+      if (!st.aid) return card(logo + "<h2>" + H(T("مفيش طلب ربط مفتوح", "No connection request open")) + '</h2><p class="small muted">' + H(T("الصفحة دي بتفتح لوحدها لما تدوس Connect على تطبيق «Ninety Studioz» جوه ChatGPT.", "This page opens by itself when you press Connect on the «Ninety Studioz» app inside ChatGPT.")) + "</p>");
+      if (!enabled()) return card(logo + "<h2>" + H(T("ChatGPT مش مفعّل لحسابك", "ChatGPT is not enabled for your account")) + '</h2><p class="small muted">' + H(T("اطلب من محمود يعلّم عليك «عنده ChatGPT» من الإعدادات، وبعدين جرّب تاني من ChatGPT.", "Ask Mahmoud to tick «Has ChatGPT» for you in Settings, then try again from ChatGPT.")) + '</p><div class="oa-btns"><button type="button" class="btn" data-action="oaDeny">' + H(T("رجوع لـ ChatGPT", "Back to ChatGPT")) + "</button></div>");
+      if (st.err) {
+        var m = st.err === "untrusted" ? T("الطلب ده مش جاي من ChatGPT — ماينفعش يتوافق عليه.", "This request does not come from ChatGPT — it cannot be approved.")
+          : /expired|not.?found|404|invalid/i.test(st.err) ? T("الطلب ده خلص وقته. ارجع لـ ChatGPT ودوس Connect تاني.", "This request expired. Go back to ChatGPT and press Connect again.")
+          : st.err === "signin" ? T("ادخل السيستم الأول.", "Sign in first.") : T("حصلت مشكلة: ", "Something went wrong: ") + st.err;
+        return card(logo + "<h2>" + H(T("ماينفعش نكمّل", "Cannot continue")) + '</h2><p class="small">' + H(m) + '</p><div class="oa-btns"><button type="button" class="btn" data-action="oaRetry">' + H(T("جرّب تاني", "Try again")) + "</button></div>");
+      }
+      if (!st.det) { setTimeout(load, 0); return card(logo + '<p class="muted">' + H(T("بيحمّل…", "Loading…")) + "</p>"); }
+      var d = st.det, cname = (d.client && (d.client.name || d.client.client_name)) || "ChatGPT";
+      var ok = trusted(d.redirect_uri || "");
+      var host = ""; try { host = new URL(d.redirect_uri || "").hostname; } catch (e) { host = ""; }
+      var can = [
+        T("يشوف المشاريع اللي إنت شغال عليها — من غير أي فلوس ولا اسم العميل.", "See the projects you work on — without any money or the client's name."),
+        T("يقرا بريف المشروع ومكتبة البرومبتات علشان يمشي على ستايل المكتب.", "Read the project brief and the prompt library to follow the office style."),
+        T("يحفظ البرومبت والصور قبل وبعد في مكتبة البرومبتات باسمك، لما إنت تطلب.", "Save the prompt and before/after pictures to the prompt library under your name, when you ask.")
+      ];
+      return card(logo +
+        "<h2>" + H(T(cname + " عايز يتربط بحسابك", cname + " wants to connect to your account")) + "</h2>" +
+        '<p class="small muted">' + H(T("الحساب: ", "Account: ")) + "<b>" + H(String((S.session || {}).name || "").split(" — ")[0]) + "</b> · Ninety Studioz</p>" +
+        '<ul class="oa-can">' + can.map(function (x) { return "<li>" + H(x) + "</li>"; }).join("") + "</ul>" +
+        '<p class="tiny muted">' + H(T("شاتاتك على ChatGPT بتفضل بتاعتك — السيستم مش بيشوفها. وتقدر تلغي الربط في أي وقت من ChatGPT.", "Your ChatGPT chats stay yours — the system does not see them. You can disconnect any time from ChatGPT.")) + "</p>" +
+        (ok ? "" : '<p class="small oa-warn">' + H(T("⚠ الطلب ده راجع لموقع تاني (" + host + ") مش ChatGPT — ماتوافقش.", "⚠ This request returns to another site (" + host + "), not ChatGPT — do not approve.")) + "</p>") +
+        '<div class="oa-btns">' + (ok ? '<button type="button" class="btn p" data-action="oaAllow" ' + (st.busy ? "disabled" : "") + ">" + H(st.busy ? T("لحظة…", "One moment…") : T("اسمح", "Allow")) + "</button>" : "") +
+        '<button type="button" class="btn ghost" data-action="oaDeny" ' + (st.busy ? "disabled" : "") + ">" + H(T("لا", "No")) + "</button></div>");
+    }
+    if (typeof EXTRA_VIEWS === "object" && EXTRA_VIEWS) EXTRA_VIEWS.oauth = function () { return page(); };
+    if (typeof ACTIONS === "object" && ACTIONS) {
+      ACTIONS.oaAllow = function () { decide(true); };
+      ACTIONS.oaDeny = function () { if (st.aid && !st.err) decide(false); else { ss.set(""); st.done = true; try { rerender(); } catch (e) { } } };
+      ACTIONS.oaRetry = function () { st.err = ""; st.det = null; try { rerender(); } catch (e) { } };
+    }
+    /* after signing in (or a reload), a pending request brings the person back here */
+    try {
+      RENDER_HOOKS.push(function () {
+        try { if (typeof I18N !== "undefined" && I18N.exact && I18N.exact.get("ربط ChatGPT") !== "Connect ChatGPT") I18N.exact.set("ربط ChatGPT", "Connect ChatGPT"); } catch (e) { }
+        try { if (!bounced && !st.done && ss.get() && ss.fresh() && S.session && S.route && S.route.view !== "oauth") { bounced = true; location.hash = "#/oauth"; } } catch (e) { }
+      });
+    } catch (e) { }
+
+    var css = document.createElement("style");
+    css.id = "nf-oauth";
+    css.textContent = [
+      ".oa-wrap{display:flex;justify-content:center;padding:24px 12px}",
+      ".oa-card{max-width:520px;width:100%;padding:24px 22px;text-align:start}",
+      ".oa-card h2{margin:8px 0 6px;font-size:20px;line-height:1.4}",
+      ".oa-logo{display:flex;align-items:center;gap:10px;direction:ltr;justify-content:center;margin-bottom:6px}",
+      ".oa-logo span{width:44px;height:44px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;background:#1e2a33;color:#fff}",
+      ".oa-logo .oa-g{background:#10a37f}.oa-logo i{font-style:normal;opacity:.6;font-size:18px}",
+      ".oa-can{margin:12px 0;padding-inline-start:20px;display:flex;flex-direction:column;gap:8px;font-size:14px;line-height:1.55}",
+      ".oa-warn{color:#b3261e;font-weight:600}",
+      ".oa-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.oa-btns .btn{min-width:120px;justify-content:center}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(css);
+    window.nfOauth = { page: page, st: st };
+  } catch (e) { console.warn("stu-oauth", e); }
 })();
