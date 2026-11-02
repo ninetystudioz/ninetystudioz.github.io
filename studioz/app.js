@@ -1532,3 +1532,327 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     window.nfAiTools = { bar: bar, csv: csv };
   } catch (e) { console.warn("stu-aitools", e); }
 })();
+
+;/* stu-prompts — v9.39 (2 Nov 2026, studio only) — «مكتبة البرومبتات»
+   Mahmoud: «ممكن نخلي السيستم يتعلم من الشاتس … الناس دي آرك فيز وكمان السيناريوهات علشان تساعد الناس وكمان مستوى المكتب يبقى
+   دايمًا في تطوير» → «ابدأ وتتعمل لكل الناس — وعايز أعرف كل واحد الصورة قبل وبعد والبرومبت».
+   - A page for the whole office (menu → Projects → «مكتبة البرومبتات»): every entry = the image BEFORE (clay / base render /
+     sketch / reference), the image or video AFTER, the PROMPT, the tool, the kind (image / video / scenario), the project, tags.
+   - Everyone reads everything (that is the point: learn from each other); each person adds and edits his own
+     (server: nf_can_write 'prompts', v938). The art director and the owner mark the best ones «نموذج للمكتب».
+   - «كل واحد» view (owner + art director): one row per person — his entries with before/after/prompt, and who has none yet.
+   - «✦ نقد آرت دايركتور»: the office assistant (Opus) compares before/after with the prompt and writes what worked, what to fix
+     and an improved prompt — saved on the entry for everyone to learn from. */
+(function () {
+  try {
+    if (window.__NF_PROMPTS__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_PROMPTS__ = 1;
+    var COL = "prompts";
+    var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+    var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+    var ADM = function () { try { return isAdmin(); } catch (e) { return false; } };
+    var LEAD = function () { try { return ADM() || role() === "manager"; } catch (e) { return false; } };
+    var TOOLS = ["ChatGPT", "Higgsfield", "Midjourney", "Krea", "Magnific", "Nano Banana", "Runway", "Kling", "Veo", "D5 AI", "V-Ray AI"];
+    var KINDS = { img: ["صورة", "Image"], vid: ["فيديو", "Video"], scn: ["سيناريو", "Scenario"] };
+    var kindName = function (k) { var x = KINDS[k] || KINDS.img; return T(x[0], x[1]); };
+
+    /* ---- the collection ---- */
+    try { if (typeof COLS !== "undefined" && Array.isArray(COLS) && COLS.indexOf(COL) < 0) COLS.push(COL); } catch (e) { }
+    S.data[COL] = S.data[COL] || new Map();
+    var subbed = false;
+    function sub() {
+      try {
+        var G = S.db; if (!G || subbed || !S.session) return;
+        subbed = true;
+        S.unsub.push(G.collection(COL).onSnapshot(function (N) { S.data[COL] = new Map(N.docs.map(function (R) { return [R.id, R.data()]; })); S.loaded[COL] = true; rerender(); }));
+      } catch (e) { subbed = false; }
+    }
+    try { Store.subscribeAll = (function (F) { return function () { var r = F.apply(this, arguments); subbed = false; sub(); return r; }; })(Store.subscribeAll); } catch (e) { }
+    setTimeout(sub, 0); setInterval(function () { if (!subbed) sub(); }, 3000);
+
+    var me = function () { var s = S.session || {}; return s.workerId || s.id || ""; };
+    var mine = function (p) { var s = S.session || {}; return !!p && !!p.byId && (p.byId === s.workerId || p.byId === s.id); };
+    var canEdit = function (p) { return LEAD() || mine(p); };
+    var all = function () { try { return list(COL).filter(function (p) { return p && !p.deleted; }); } catch (e) { return []; } };
+    var file = function (id) { try { return id ? byId("files", id) : null; } catch (e) { return null; } };
+    var thumb = function (id) { var f = file(id); return f && f.thumb ? f.thumb : ""; };
+    var people = function () { try { return list("workers").filter(function (w) { return w && w.status !== "inactive"; }); } catch (e) { return []; } };
+    var nm = function (s) { return String(s || "").split(" — ")[0]; };
+    var dd = function (iso) { try { return typeof fmtDate === "function" ? fmtDate(String(iso || "").slice(0, 10)) : String(iso || "").slice(0, 10); } catch (e) { return ""; } };
+    var projects = function () {
+      try {
+        return list("projects").filter(function (p) { return p && !p.deleted && (typeof stuProjectVisible !== "function" || stuProjectVisible(p)); })
+          .sort(function (a, b) { return String(a.name || "").localeCompare(String(b.name || ""), "ar"); });
+      } catch (e) { return []; }
+    };
+    var projName = function (id) { try { var p = id && byId("projects", id); return p ? p.name || "" : ""; } catch (e) { return ""; } };
+    var UI = function () { S.ui = S.ui || {}; return S.ui.prompts || (S.ui.prompts = { q: "", who: "", tool: "", kind: "", star: false, mode: "" }); };
+
+    /* ---- the page ---- */
+    function filtered() {
+      var u = UI(), q = String(u.q || "").trim().toLowerCase();
+      return all().filter(function (p) {
+        if (u.who && p.byId !== u.who) return false;
+        if (u.tool && p.tool !== u.tool) return false;
+        if (u.kind && (p.kind || "img") !== u.kind) return false;
+        if (u.star && !p.star) return false;
+        if (q && [p.prompt, p.settings, p.byName, p.tool, projName(p.projectId), (p.tags || []).join(" ")].join(" ").toLowerCase().indexOf(q) < 0) return false;
+        return true;
+      }).sort(function (a, b) { return String(b.createdAt || "").localeCompare(String(a.createdAt || "")); });
+    }
+    function card(p) {
+      var b = thumb(p.beforeId), a = thumb(p.afterId), vid = (p.kind === "vid") || /^video\//.test((file(p.afterId) || {}).mime || "");
+      var half = function (src, lbl, isVid) {
+        return '<div class="prc-h">' + (src ? '<img src="' + H(src) + '" alt="" loading="lazy">' : '<div class="prc-none">' + (isVid ? "▶" : "—") + "</div>") + '<span class="prc-l">' + H(lbl) + "</span></div>";
+      };
+      return '<div class="prc" data-action="prOpen" data-arg="' + H(p.id) + '">' +
+        '<div class="prc-img">' + half(b, T("قبل", "Before"), false) + half(a, T("بعد", "After"), vid) + "</div>" +
+        '<div class="prc-b"><div class="prc-p notr" dir="auto">' + H(p.prompt || "") + "</div>" +
+        '<div class="prc-m">' + (p.star ? '<span class="prc-star" title="' + H(T("نموذج للمكتب", "Office model")) + '">★</span>' : "") +
+        '<span class="badge">' + H(p.tool || T("أداة", "Tool")) + '</span><span class="badge">' + H(kindName(p.kind)) + "</span>" +
+        (p.critique ? '<span class="badge acc">✦ ' + H(T("اتنقد", "Reviewed")) + "</span>" : "") + "</div>" +
+        '<div class="prc-by">' + H(nm(p.byName)) + " · " + H(dd(p.createdAt)) + (projName(p.projectId) ? " · " + H(projName(p.projectId)) : "") + "</div></div></div>";
+    }
+    function byPerson(rows) {
+      var groups = {}, order = [];
+      rows.forEach(function (p) { var k = p.byId || "?"; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(p); });
+      order.sort(function (x, y) { return groups[y].length - groups[x].length; });
+      var html = order.map(function (k) {
+        var ps = groups[k], last = ps[0] && ps[0].createdAt;
+        return '<section class="prw"><div class="prw-h"><b>' + H(nm(ps[0].byName)) + '</b><span class="tiny muted">' + H(T(ps.length + " برومبت · آخر واحد " + dd(last), ps.length + " prompts · last " + dd(last))) + "</span>" +
+          '<button type="button" class="btn xs ghost" data-action="prWho" data-arg="' + H(k) + '">' + H(T("كله", "All")) + "</button></div>" +
+          '<div class="prw-row">' + ps.slice(0, 12).map(card).join("") + "</div></section>";
+      }).join("");
+      var u = UI();
+      if (!u.q && !u.tool && !u.kind && !u.star && !u.who) {
+        var none = people().filter(function (w) { return !groups[w.id] && w.role !== "kiosk"; });
+        if (none.length) html += '<div class="prw-none"><b>' + H(T("لسه ماضافوش:", "Nothing added yet:")) + "</b> " + none.map(function (w) { return H(nm(w.name)); }).join("، ") + "</div>";
+      }
+      return html;
+    }
+    function page() {
+      var u = UI(); if (!u.mode) u.mode = LEAD() ? "who" : "all";
+      var rows = filtered(), ps = people();
+      var who = '<select class="inp" data-pr-f="who"><option value="">' + H(T("كل الناس", "Everyone")) + "</option>" + ps.map(function (w) { return '<option value="' + H(w.id) + '"' + (u.who === w.id ? " selected" : "") + ">" + H(nm(w.name)) + "</option>"; }).join("") + "</select>";
+      var tools = TOOLS.concat(all().map(function (p) { return p.tool; }).filter(function (t, i, a) { return t && TOOLS.indexOf(t) < 0 && a.indexOf(t) === i; }));
+      var tool = '<select class="inp" data-pr-f="tool"><option value="">' + H(T("كل الأدوات", "All tools")) + "</option>" + tools.map(function (t) { return '<option' + (u.tool === t ? " selected" : "") + ">" + H(t) + "</option>"; }).join("") + "</select>";
+      var kind = '<select class="inp" data-pr-f="kind"><option value="">' + H(T("كل الأنواع", "All kinds")) + "</option>" + Object.keys(KINDS).map(function (k) { return '<option value="' + k + '"' + (u.kind === k ? " selected" : "") + ">" + H(kindName(k)) + "</option>"; }).join("") + "</select>";
+      var bar = '<div class="pr-bar"><input class="inp pr-q" id="prq" type="search" value="' + H(u.q) + '" placeholder="' + H(T("دوّر في البرومبتات، التاجات، المشاريع…", "Search prompts, tags, projects…")) + '">' + who + tool + kind +
+        '<label class="check ' + (u.star ? "on" : "") + '"><input type="checkbox" data-pr-f="star" ' + (u.star ? "checked" : "") + "> ★ " + H(T("نماذج المكتب", "Office models")) + "</label>" +
+        (LEAD() ? '<div class="seg"><button type="button" class="btn sm ' + (u.mode === "who" ? "p" : "") + '" data-action="prMode" data-arg="who">' + H(T("كل واحد", "Per person")) + '</button><button type="button" class="btn sm ' + (u.mode === "all" ? "p" : "") + '" data-action="prMode" data-arg="all">' + H(T("الكل", "All")) + "</button></div>" : "") +
+        '<button type="button" class="btn p" data-action="prAdd">+ ' + H(T("أضف برومبت", "Add a prompt")) + "</button></div>";
+      var intro = '<p class="small muted" style="margin:0 0 12px">' + H(T("كل واحد يحفظ هنا أحسن شغله: الصورة قبل، والنتيجة بعد، والبرومبت اللي طلّعها — علشان الكل يتعلم منه. افتح أي كارت تشوف المقارنة وتنسخ البرومبت.", "Save your best work here: the image before, the result after, and the prompt that made it — so everyone learns from it. Open any card to compare and copy the prompt.")) + "</p>";
+      var body = !rows.length ? '<div class="empty"><b>' + H(T("لسه مفيش برومبتات هنا", "No prompts here yet")) + "</b>" + H(T("دوس «أضف برومبت» وارفع الصورة قبل وبعد والبرومبت.", "Press «Add a prompt» and upload the before/after images and the prompt.")) + "</div>"
+        : (u.mode === "who" && LEAD() && !u.who ? byPerson(rows) : '<div class="pr-grid">' + rows.map(card).join("") + "</div>");
+      return '<div class="pr-page">' + intro + bar + body + "</div>";
+    }
+    if (typeof EXTRA_VIEWS === "object" && EXTRA_VIEWS) EXTRA_VIEWS.prompts = function () { return page(); };
+    try { if (typeof EXTRA_TITLES === "object" && EXTRA_TITLES) EXTRA_TITLES.prompts = function () { return { title: T("مكتبة البرومبتات", "Prompt library"), sub: T("قبل وبعد والبرومبت — نتعلم من بعض", "Before, after and the prompt — learn from each other") }; }; } catch (e) { }
+    try { VIEW_TITLES.prompts = "مكتبة البرومبتات"; } catch (e) { }
+    try { Object.keys(ROLE_VIEWS).forEach(function (r) { if (Array.isArray(ROLE_VIEWS[r]) && r !== "kiosk" && ROLE_VIEWS[r].indexOf("prompts") < 0) ROLE_VIEWS[r] = ROLE_VIEWS[r].concat(["prompts"]); }); } catch (e) { }
+    try {
+      if (typeof NAV !== "undefined" && !NAV.some(function (n) { return n.id === "prompts"; })) {
+        var at = NAV.findIndex(function (n) { return n.id === "portfolio"; });
+        if (at < 0) at = NAV.findIndex(function (n) { return n.id === "dashboard"; });
+        NAV.splice(at >= 0 ? at + 1 : NAV.length, 0, { id: "prompts", label: "مكتبة البرومبتات", short: "البرومبتات", icon: "spark" });
+      }
+    } catch (e) { }
+
+    /* filters (typing keeps focus: the list re-renders a moment later) */
+    var qt = 0;
+    document.addEventListener("input", function (ev) {
+      var t = ev.target; if (!t || t.id !== "prq") return;
+      UI().q = t.value; clearTimeout(qt); qt = setTimeout(function () { try { render(false); var el = document.getElementById("prq"); if (el) { el.focus(); var n = el.value.length; el.setSelectionRange(n, n); } } catch (e) { } }, 250);
+    });
+    document.addEventListener("change", function (ev) {
+      var t = ev.target, f = t && t.getAttribute && t.getAttribute("data-pr-f"); if (!f) return;
+      UI()[f] = f === "star" ? !!t.checked : t.value; rerender();
+    });
+
+    /* ---- add / edit ---- */
+    function form(p) {
+      p = p || {};
+      var ps = projects();
+      var toolOpts = TOOLS.map(function (t) { return '<option' + (p.tool === t ? " selected" : "") + ">" + H(t) + "</option>"; }).join("") + '<option value="__other"' + (p.tool && TOOLS.indexOf(p.tool) < 0 ? " selected" : "") + ">" + H(T("أداة تانية…", "Other tool…")) + "</option>";
+      return '<div class="form">' +
+        '<div class="field"><label>' + H(T("الصورة قبل (كلاي / ريندر أساسي / سكتش / ريفرنس)", "Before (clay / base render / sketch / reference)")) + "</label>" + (p.beforeId ? '<div class="tiny muted">' + H(T("فيه صورة — ارفع واحدة جديدة لو عايز تغيّرها", "There is one — upload a new one to replace it")) + "</div>" : "") + '<input type="file" name="before" accept="image/*"></div>' +
+        '<div class="field"><label>' + H(T("النتيجة بعد (صورة أو فيديو)", "After (image or video)")) + (p.afterId ? "" : " *") + "</label>" + (p.afterId ? '<div class="tiny muted">' + H(T("فيه نتيجة — ارفع جديدة لو عايز تغيّرها", "There is one — upload a new one to replace it")) + "</div>" : "") + '<input type="file" name="after" accept="image/*,video/*"></div>' +
+        '<div class="field full"><label>' + H(T("البرومبت *", "Prompt *")) + '</label><textarea name="prompt" class="inp ltr" rows="5" dir="auto" required placeholder="' + H(T("الصق البرومبت زي ما استخدمته بالظبط", "Paste the prompt exactly as you used it")) + '">' + H(p.prompt || "") + "</textarea></div>" +
+        '<div class="field full"><label>' + H(T("الإعدادات / ملاحظات (الموديل، الستايل، seed، اللي اتعدّل بعد كده…)", "Settings / notes (model, style, seed, what you fixed after…)")) + '</label><textarea name="settings" class="inp" rows="2" dir="auto">' + H(p.settings || "") + "</textarea></div>" +
+        '<div class="field"><label>' + H(T("الأداة", "Tool")) + '</label><select name="tool" class="inp">' + toolOpts + '</select><input name="toolOther" class="inp" style="margin-top:6px" placeholder="' + H(T("اسم الأداة لو تانية", "Tool name if other")) + '" value="' + H(p.tool && TOOLS.indexOf(p.tool) < 0 ? p.tool : "") + '"></div>' +
+        '<div class="field"><label>' + H(T("النوع", "Kind")) + '</label><select name="kind" class="inp">' + Object.keys(KINDS).map(function (k) { return '<option value="' + k + '"' + ((p.kind || "img") === k ? " selected" : "") + ">" + H(kindName(k)) + "</option>"; }).join("") + "</select></div>" +
+        '<div class="field"><label>' + H(T("المشروع", "Project")) + '</label><select name="projectId" class="inp"><option value="">' + H(T("— من غير مشروع —", "— no project —")) + "</option>" + ps.map(function (x) { return '<option value="' + H(x.id) + '"' + (p.projectId === x.id ? " selected" : "") + ">" + H(x.name || "") + "</option>"; }).join("") + "</select></div>" +
+        '<div class="field"><label>' + H(T("تاجات (افصل بفاصلة)", "Tags (comma separated)")) + '</label><input name="tags" class="inp" dir="auto" value="' + H((p.tags || []).join("، ")) + '" placeholder="' + H(T("انتريور، ليلي، مطبخ، رخام…", "interior, night, kitchen, marble…")) + '"></div>' +
+        "</div>";
+    }
+    async function upload(f, entryId, note) {
+      if (!f) return null;
+      if (/^video\//.test(f.type || "") && f.size > 200 * 1024 * 1024) throw new Error(T("الفيديو أكبر من 200 ميجا", "The video is over 200 MB"));
+      var d = await attachFile(f, { kind: /^video\//.test(f.type || "") ? "video" : "photo", ownerKind: "prompt", ownerId: entryId, note: note });
+      return d && d.id;
+    }
+    function open(p) {
+      var isNew = !p; var id = p ? p.id : uid();
+      openModal({
+        title: isNew ? T("أضف برومبت للمكتبة", "Add a prompt to the library") : T("عدّل البرومبت", "Edit the prompt"), wide: true, submitLabel: T("حفظ", "Save"),
+        body: form(p),
+        onSubmit: async function (fm) {
+          var d = formData(fm), bf = fm.querySelector("[name=before]").files[0], af = fm.querySelector("[name=after]").files[0];
+          var prompt = String(d.prompt || "").trim();
+          if (!prompt) { toast(T("اكتب البرومبت", "Write the prompt"), "err"); return false; }
+          if (isNew && !af) { toast(T("ارفع النتيجة (بعد)", "Upload the result (after)"), "err"); return false; }
+          var tool = d.tool === "__other" ? String(d.toolOther || "").trim() : d.tool;
+          var s = S.session || {};
+          try {
+            toast(T("بيترفع…", "Uploading…"));
+            var beforeId = bf ? await upload(bf, id, T("قبل", "Before")) : (p && p.beforeId) || null;
+            var afterId = af ? await upload(af, id, T("بعد", "After")) : (p && p.afterId) || null;
+            var tags = String(d.tags || "").split(/[,،]/).map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 12);
+            var doc = Object.assign({}, p || {}, {
+              id: id, prompt: prompt, settings: String(d.settings || "").trim(), tool: tool || "", kind: d.kind || "img",
+              projectId: d.projectId || null, tags: tags, beforeId: beforeId, afterId: afterId, updatedAt: nowISO()
+            });
+            if (isNew) Object.assign(doc, { byId: me(), byName: s.name || "", createdAt: nowISO(), star: false });
+            if (!isNew && (bf || af)) delete doc.critique;   // new images → the old review no longer fits
+            await Store.save(COL, doc);
+            toast(T("اتحفظ في المكتبة ✓", "Saved to the library ✓"));
+            rerender();
+          } catch (e) { toast(T("ماتحفظش: ", "Not saved: ") + (e && e.message || e), "err"); return false; }
+        }
+      });
+    }
+
+    /* ---- the entry: compare, copy, review ---- */
+    var urlCache = new Map();
+    async function fullUrl(fid) {
+      if (!fid) return ""; if (urlCache.has(fid)) return urlCache.get(fid);
+      var f = file(fid); if (!f) return "";
+      var u = ""; try { u = (await Files.url(f)) || ""; } catch (e) { u = ""; }
+      if (!u) u = f.thumb || "";
+      urlCache.set(fid, u); return u;
+    }
+    function detail(p) {
+      var vid = /^video\//.test((file(p.afterId) || {}).mime || "");
+      var cmp = '<div class="pr-cmp" id="prcmp">' + (vid
+        ? '<div class="pr-pair">' + (p.beforeId ? '<figure><img id="prb" alt=""><figcaption>' + H(T("قبل", "Before")) + "</figcaption></figure>" : "") + '<figure><video id="pra" controls playsinline></video><figcaption>' + H(T("بعد", "After")) + "</figcaption></figure></div>"
+        : (p.beforeId ? '<div class="pr-slide"><img id="pra" alt=""><div class="pr-clip" id="prclip"><img id="prb" alt=""></div><div class="pr-line" id="prline" style="left:50%"></div><input type="range" min="0" max="100" value="50" id="prrange" aria-label="' + H(T("قارن", "Compare")) + '"><span class="pr-tag" style="left:8px">' + H(T("قبل", "Before")) + '</span><span class="pr-tag" style="right:8px">' + H(T("بعد", "After")) + "</span></div>"
+          : '<div class="pr-pair"><figure><img id="pra" alt=""><figcaption>' + H(T("بعد", "After")) + "</figcaption></figure></div>")) + "</div>";
+      var meta = '<div class="prc-m" style="margin:10px 0">' + (p.star ? '<span class="prc-star">★ ' + H(T("نموذج للمكتب", "Office model")) + "</span>" : "") + '<span class="badge">' + H(p.tool || "") + '</span><span class="badge">' + H(kindName(p.kind)) + "</span>" + (projName(p.projectId) ? '<span class="badge">' + H(projName(p.projectId)) + "</span>" : "") + (p.tags || []).map(function (t) { return '<span class="badge ghost notr" dir="auto">#' + H(t) + "</span>"; }).join("") + "</div>";
+      var pr = '<div class="pr-ptxt"><div class="pr-ph"><b>' + H(T("البرومبت", "Prompt")) + '</b><button type="button" class="btn xs" data-action="prCopy" data-arg="' + H(p.id) + '">' + H(T("انسخ", "Copy")) + '</button></div><pre class="notr" dir="auto">' + H(p.prompt || "") + "</pre>" +
+        (p.settings ? '<div class="pr-ph"><b>' + H(T("الإعدادات والملاحظات", "Settings & notes")) + '</b></div><pre class="notr" dir="auto">' + H(p.settings) + "</pre>" : "") + "</div>";
+      var cr = '<div class="pr-cr"><div class="pr-ph"><b>✦ ' + H(T("نقد آرت دايركتور", "Art-director review")) + "</b>" +
+        (canEdit(p) ? '<button type="button" class="btn xs ' + (p.critique ? "ghost" : "p") + '" data-action="prReview" data-arg="' + H(p.id) + '">' + H(p.critique ? T("نقد جديد", "Review again") : T("اعمل نقد", "Review it")) + "</button>" : "") + "</div>" +
+        (p.critique ? '<div class="pr-crt small notr" dir="auto">' + (typeof mdLite === "function" ? mdLite(p.critique.text || "") : H(p.critique.text || "")) + '</div><div class="tiny muted">' + H(dd(p.critique.at)) + "</div>" : '<div class="tiny muted">' + H(T("المساعد بيقارن قبل وبعد والبرومبت ويقولك إيه اللي نجح، وإيه يتصلّح، وبرومبت أحسن.", "The assistant compares before/after with the prompt: what worked, what to fix, and a better prompt.")) + "</div>") + "</div>";
+      var acts = '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">' +
+        (LEAD() ? '<button type="button" class="btn sm" data-action="prStar" data-arg="' + H(p.id) + '">' + (p.star ? H(T("شيل من النماذج", "Remove from models")) : "★ " + H(T("نموذج للمكتب", "Make an office model"))) + "</button>" : "") +
+        (canEdit(p) ? '<button type="button" class="btn sm" data-action="prEdit" data-arg="' + H(p.id) + '">' + H(T("عدّل", "Edit")) + '</button><button type="button" class="btn sm ghost" data-action="prDel" data-arg="' + H(p.id) + '">' + H(T("امسح", "Delete")) + "</button>" : "") + "</div>";
+      return '<div class="pr-det"><div class="tiny muted" style="margin-bottom:8px">' + H(nm(p.byName)) + " · " + H(dd(p.createdAt)) + "</div>" + cmp + meta + pr + cr + acts + "</div>";
+    }
+    async function wire(p) {
+      try {
+        var a = document.getElementById("pra"), b = document.getElementById("prb");
+        if (b) { b.src = thumb(p.beforeId) || ""; fullUrl(p.beforeId).then(function (u) { if (u && document.getElementById("prb") === b) b.src = u; }); }
+        if (a) { if (a.tagName === "IMG") a.src = thumb(p.afterId) || ""; fullUrl(p.afterId).then(function (u) { if (u && document.getElementById("pra") === a) a.src = u; }); }
+        var rg = document.getElementById("prrange"), clip = document.getElementById("prclip"), line = document.getElementById("prline");
+        if (rg && clip) {
+          var set = function () { var v = +rg.value; clip.style.clipPath = "inset(0 " + (100 - v) + "% 0 0)"; if (line) line.style.left = v + "%"; };
+          rg.addEventListener("input", set); set();
+        }
+      } catch (e) { }
+    }
+    function show(id) {
+      var p = byId(COL, id); if (!p) return;
+      openModal({ title: T("برومبت — ", "Prompt — ") + nm(p.byName), wide: true, footer: null, body: detail(p), cls: "pr-modal" });
+      setTimeout(function () { wire(p); }, 30);
+    }
+    async function jpegB64(fid, max) {
+      var f = file(fid); if (!f || !/^image\//.test(f.mime || "")) return "";
+      var u = await fullUrl(fid); if (!u) return "";
+      var blob = await (await fetch(u)).blob();
+      var bmp = await createImageBitmap(blob);
+      var k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      var c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.85).split(",")[1] || "";
+    }
+    async function review(id) {
+      var p = byId(COL, id); if (!p || !canEdit(p)) return;
+      if (typeof sampleEdge !== "function") { toast(T("المساعد مش متاح هنا", "The assistant is not available here"), "err"); return; }
+      toast(T("✦ المساعد بيراجع… (دقيقة تقريبًا)", "✦ Reviewing… (about a minute)"));
+      try {
+        var content = [];
+        var bb = p.beforeId ? await jpegB64(p.beforeId, 1280) : "", ab = p.afterId ? await jpegB64(p.afterId, 1280) : "";
+        if (bb) { content.push({ type: "text", text: "الصورة «قبل» (الأساس اللي المصمم بدأ منه):" }); content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: bb } }); }
+        if (ab) { content.push({ type: "text", text: "الصورة «بعد» (النتيجة):" }); content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: ab } }); }
+        if (!ab && !bb) { toast(T("مفيش صور ينفع تتراجع (الفيديو بيتراجع من البرومبت بس)", "No images to review (videos are reviewed from the prompt only)")); }
+        content.push({ type: "text", text: [
+          "إنت آرت دايركتور في مكتب Ninety Studioz للآرك فيز (ريندرات انتريور وإكستريور وأفلام معمارية).",
+          "الأداة: " + (p.tool || "غير محدد") + " · النوع: " + kindName(p.kind) + (projName(p.projectId) ? " · المشروع: " + projName(p.projectId) : ""),
+          "البرومبت اللي اتستخدم:\n" + (p.prompt || "") + (p.settings ? "\nإعدادات/ملاحظات المصمم:\n" + p.settings : ""),
+          "اكتب نقد مختصر وعملي بالمصري، في نقاط، تحت العناوين دي:",
+          "**اللي نجح** — **محتاج يتصلّح** (الإضاءة، الخامات، المنظور والخطوط المستقيمة، الواقعية والمقاييس، تشوهات الـAI والتكرار، والالتزام بالتصميم الأصلي في «قبل») — **البرومبت** (إيه الناقص فيه)",
+          "وفي الآخر **برومبت محسّن** كامل بالإنجليزي جوه بلوك كود، جاهز يتنسخ.",
+          "قيّم الصورة والبرومبت بس — ماتقيّمش الشخص."].join("\n") });
+        var r = await sampleEdge([{ role: "user", content: content }], { maxTokens: 1800 });
+        var text = String(r && r.text || "").trim(); if (!text) throw new Error("empty");
+        await Store.update(COL, id, { critique: { text: text, at: nowISO(), by: (S.session || {}).name || "" } });
+        toast(T("✦ النقد جاهز", "✦ Review ready"));
+        if (document.getElementById("prcmp")) show(id); else rerender();
+      } catch (e) {
+        var m = e && (e.code || e.message) || String(e);
+        toast(/no_key/.test(m) ? T("مفتاح المساعد مش متسجّل", "The assistant key is not set") : T("النقد ماخلصش: ", "Review failed: ") + String(m).slice(0, 80), "err");
+      }
+    }
+
+    if (typeof ACTIONS === "object" && ACTIONS) {
+      ACTIONS.prAdd = function () { if (!writable()) return; open(null); };
+      ACTIONS.prOpen = function (id) { show(id); };
+      ACTIONS.prEdit = function (id) { var p = byId(COL, id); if (p && canEdit(p)) open(p); };
+      ACTIONS.prDel = async function (id) {
+        var p = byId(COL, id); if (!p || !canEdit(p)) return;
+        if (!(await confirmDlg(T("تمسح البرومبت ده من المكتبة؟", "Delete this prompt from the library?"), T("امسح", "Delete")))) return;
+        await Store.update(COL, id, { deleted: true, deletedAt: nowISO() }); closeModal(); rerender();
+      };
+      ACTIONS.prStar = async function (id) { var p = byId(COL, id); if (!p || !LEAD()) return; await Store.update(COL, id, { star: !p.star, starBy: (S.session || {}).name || "" }); show(id); rerender(); };
+      ACTIONS.prCopy = async function (id) { var p = byId(COL, id); if (!p) return; try { await navigator.clipboard.writeText(p.prompt || ""); toast(T("البرومبت اتنسخ", "Prompt copied")); } catch (e) { prompt(T("انسخ البرومبت:", "Copy the prompt:"), p.prompt || ""); } };
+      ACTIONS.prReview = function (id) { review(id); };
+      ACTIONS.prMode = function (m) { UI().mode = m; UI().who = ""; rerender(); };
+      ACTIONS.prWho = function (w) { var u = UI(); u.who = w; u.mode = "all"; rerender(); };
+    }
+
+    var css = document.createElement("style");
+    css.id = "nf-prompts";
+    css.textContent = [
+      ".pr-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}.pr-bar .inp{width:auto;min-width:130px}.pr-bar .pr-q{flex:1 1 240px}.pr-bar .seg{display:inline-flex;gap:4px}",
+      ".pr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}",
+      ".prc{border:1px solid var(--line,rgba(127,127,127,.2));border-radius:14px;overflow:hidden;background:var(--card,rgba(127,127,127,.05));cursor:pointer;display:flex;flex-direction:column;min-width:0}",
+      ".prc:hover{border-color:var(--acc,#4f7cff)}",
+      ".prc-img{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:#000;aspect-ratio:16/7}",
+      ".prc-h{position:relative;overflow:hidden}.prc-h img{width:100%;height:100%;object-fit:cover;display:block}",
+      ".prc-none{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);font-size:22px}",
+      ".prc-l{position:absolute;bottom:6px;inset-inline-start:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 7px;border-radius:8px}",
+      ".prc-b{padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}",
+      ".prc-p{font-size:12.5px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace}",
+      ".prc-m{display:flex;flex-wrap:wrap;gap:5px;align-items:center}.prc-star{color:#e8b100;font-weight:700}",
+      ".prc-by{font-size:12px;opacity:.7}",
+      ".prw{margin-bottom:18px}.prw-h{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}",
+      ".prw-row{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(240px,260px);gap:12px;overflow-x:auto;padding-bottom:6px}",
+      ".prw-none{margin-top:6px;padding:10px 12px;border-radius:12px;background:var(--surface-2,rgba(127,127,127,.08));font-size:13px}",
+      ".pr-cmp{border-radius:12px;overflow:hidden;background:#000}",
+      ".pr-slide{position:relative;user-select:none}.pr-slide>img{display:block;width:100%;height:auto;max-height:70vh;object-fit:contain}",
+      ".pr-clip{position:absolute;inset:0;clip-path:inset(0 50% 0 0)}.pr-clip img{width:100%;height:100%;object-fit:contain;display:block}",
+      ".pr-line{position:absolute;top:0;bottom:0;width:2px;background:#fff;pointer-events:none;box-shadow:0 0 6px rgba(0,0,0,.6)}",
+      ".pr-slide input[type=range]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:ew-resize;margin:0;direction:ltr}",
+      ".pr-tag{position:absolute;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:2px 8px;border-radius:8px;pointer-events:none}",
+      ".pr-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:2px}.pr-pair figure{margin:0;position:relative}.pr-pair img,.pr-pair video{width:100%;display:block;max-height:60vh;object-fit:contain;background:#000}",
+      ".pr-pair figcaption{position:absolute;top:8px;inset-inline-start:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:2px 8px;border-radius:8px}",
+      ".pr-ph{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0 6px}",
+      ".pr-ptxt pre{white-space:pre-wrap;word-break:break-word;margin:0;padding:10px 12px;border-radius:10px;background:var(--surface-2,rgba(127,127,127,.08));font-size:13px;line-height:1.55;font-family:ui-monospace,Menlo,Consolas,monospace}",
+      ".pr-cr{margin-top:8px;padding:10px 12px;border-radius:12px;border:1px dashed var(--line,rgba(127,127,127,.3))}",
+      ".pr-crt pre,.pr-crt code{white-space:pre-wrap;word-break:break-word}",
+      "@media (max-width:600px){.pr-bar .inp{flex:1 1 45%;min-width:0}.prw-row{grid-auto-columns:minmax(220px,80vw)}}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(css);
+    window.nfPrompts = { all: all, page: page, review: review };
+  } catch (e) { console.warn("stu-prompts", e); }
+})();
