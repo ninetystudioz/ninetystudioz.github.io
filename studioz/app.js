@@ -593,3 +593,43 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     }, true);
   } catch (e) { console.warn("fs-menu-groups", e); }
 })();
+
+;/* stu-wide — v9.33s (2 Nov 2026, studio)
+   Mahmoud (photo of the office's 2560-wide monitor): «عايز السيستم يبقى سمارت ويديتكت السايز بتاع السكرين…
+   في حتت فاضيه… يظبط اليو اي على الفول سايز الكبير».
+   Every page sat in a 1320px column (.view max-width), so on big monitors half the screen stayed empty.
+   From 1600px wide the page now uses the whole width, and the home lays its blocks out for the space:
+   the stills become one strip across, the studio's work and the stills sit side by side, the hero gets taller. */
+(function () {
+  try {
+    if (window.__NF_STUWIDE__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_STUWIDE__ = 1;
+    var css = [
+      "@media (min-width:1600px){",
+      " html body .view{max-width:none}",
+      " .stuhome .smgrid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}",
+      "}",
+      "@media (min-width:1900px){",
+      " .stuhome{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);grid-auto-flow:row dense;column-gap:20px;row-gap:16px;align-items:start}",
+      " .stuhome>*{grid-column:1/-1;min-width:0}",
+      " .stuhome>.pfsec,.stuhome>.pfsec+.shhero{grid-column:1}",
+      " .stuhome>.smgal{grid-column:2;grid-row:span 2}",
+      " .stuhome>.smgal .smgrid{grid-template-columns:repeat(4,minmax(0,1fr))}",
+      " .stuhome .smhero{height:min(60vh,640px)}",
+      " .stuhome>.pfsec+.shhero{height:min(52vh,500px);min-height:300px}",
+      " .stuhome .shgrid{grid-template-columns:repeat(auto-fit,minmax(460px,1fr))}",
+      " .stuhome .shspotimg{aspect-ratio:21/9}",
+      "}"
+    ].join("\n");
+    var add = function () {
+      try {
+        if (document.getElementById("nf-stuwide")) return;
+        var s = document.createElement("style");
+        s.id = "nf-stuwide";
+        s.textContent = css;
+        (document.body || document.documentElement).appendChild(s);
+      } catch (e) { }
+    };
+    if (document.body) add(); else document.addEventListener("DOMContentLoaded", add);
+  } catch (e) { console.warn("stu-wide", e); }
+})();
