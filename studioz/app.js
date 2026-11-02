@@ -1365,3 +1365,170 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     window.nfMoneyVis = { money: money, allowed: allowed };
   } catch (e) { console.warn("stu-money-vis", e); }
 })();
+
+;/* stu-aitools — v9.38 (2 Nov 2026, studio only)
+   Mahmoud: «عامل شات جي بي تي بيزنس … عايز كل واحد يبقى عنده الشات جي بي تي بتاعه ويبقى عنده أيقونة لشات جي بي تي» and
+   «عايز اربط كل واحد بهيجس فيلد». Answers: the office only; only the people he picks.
+   (1) The person's form (owner only): «عنده ChatGPT» · «عنده Higgsfield» · the e-mail his accounts use (aiEmail; empty = his e-mail).
+   (2) An icon in the top bar for whoever has the tool (and the owner): opens chatgpt.com / higgsfield.ai in a new tab — on a phone
+       the app opens when it is installed. Each person signs in there with his own account.
+   (3) Settings → المساعد الذكي → «ChatGPT و Higgsfield» (owner): everyone in the office with the two switches and the e-mail,
+       the seat counts, «انسخ الإيميلات» and «نزّل ملف الدعوات» for ChatGPT Business (Members → Invite → Import CSV:
+       email,role,seat type). */
+(function () {
+  try {
+    if (window.__NF_AITOOLS__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_AITOOLS__ = 1;
+    var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+    var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+    var ADM = function () { try { return typeof isAdmin === "function" && isAdmin(); } catch (e) { return false; } };
+    var SVG = function (p) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>'; };
+    var TOOLS = [
+      { k: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com/", svg: '<path d="M4 5h16v11H9.5L4 20z"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/>' },
+      { k: "higgsfield", name: "Higgsfield", url: "https://higgsfield.ai/", svg: '<rect x="3.5" y="5.5" width="17" height="13.5" rx="2"/><path d="M3.5 15.5l4.5-4 4 3.5 3-2.5 5.5 4.5"/><path d="M16.5 2.8l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z"/>' }
+    ];
+    var active = function () { try { return list("workers").filter(function (w) { return w && w.status !== "inactive"; }); } catch (e) { return []; } };
+    var me = function () { try { var s = S.session || {}; return s.workerId ? byId("workers", s.workerId) : null; } catch (e) { return null; } };
+    var has = function (w, k) { return !!(w && w.aiTools && w.aiTools[k]); };
+    var mailOf = function (w) { return String((w && (w.aiEmail || w.email)) || "").trim(); };
+    var mine = function (k) { return ADM() || has(me(), k); };
+
+    /* (2) the icons in the top bar */
+    function bar() {
+      try {
+        var row = document.querySelector("header.topbar .tb-actions");
+        if (!row) return;
+        var on = !!(typeof S !== "undefined" && S.session);
+        TOOLS.forEach(function (t) {
+          var el = row.querySelector(".nfai-" + t.k), want = on && mine(t.k);
+          if (!want) { if (el) el.remove(); return; }
+          if (el) return;
+          var a = document.createElement("a");
+          a.className = "nfai-btn nfai-" + t.k; a.href = t.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+          a.title = T("افتح ", "Open ") + t.name; a.setAttribute("aria-label", a.title); a.setAttribute("data-ctx-ok", "1");
+          a.innerHTML = SVG(t.svg) + '<span class="nfai-l">' + t.name + "</span>";
+          row.insertBefore(a, row.querySelector(".bellbtn") || row.firstChild);
+        });
+      } catch (e) { }
+    }
+    try { RENDER_HOOKS.push(function () { bar(); setTimeout(bar, 150); }); } catch (e) { }
+    setInterval(bar, 1500);
+
+    /* (1) the person's form */
+    if (typeof workerForm === "function") {
+      workerForm = (function (orig) {
+        return function (w) {
+          var h = orig.apply(this, arguments);
+          try {
+            if (!ADM()) return h;
+            w = w || {}; var t = w.aiTools || {};
+            var box = function (name, on, txt) { return '<label class="check ' + (on ? "on" : "") + '"><input type="checkbox" name="' + name + '" ' + (on ? "checked" : "") + "> " + H(txt) + "</label>"; };
+            return h + '<div class="field full" id="nfaiflags" style="border-top:1px dashed var(--line);padding-top:8px"><label>' + H(T("أدوات الذكاء الاصطناعي", "AI tools")) + "</label>" +
+              box("aiChatgpt", !!t.chatgpt, T("عنده ChatGPT (مقعد في ChatGPT Business) — تظهرله أيقونة ChatGPT", "Has ChatGPT (a ChatGPT Business seat) — sees the ChatGPT icon")) +
+              box("aiHiggs", !!t.higgsfield, T("عنده Higgsfield — تظهرله أيقونة Higgsfield", "Has Higgsfield — sees the Higgsfield icon")) +
+              '<input name="aiEmail" type="email" class="inp ltr" style="margin-top:6px" value="' + H(w.aiEmail || "") + '" placeholder="' + H(T("إيميل الحسابات (لو فاضي: إيميله) — ", "Accounts e-mail (empty: his e-mail) — ") + (w.email || "name@ninetystudioz.com")) + '">' +
+              "</div>";
+          } catch (e) { return h; }
+        };
+      })(workerForm);
+    }
+    if (typeof workerFromForm === "function") {
+      workerFromForm = (function (orig) {
+        return async function (form, old) {
+          var u = await orig.apply(this, arguments);
+          try {
+            if (!u) return u;
+            if (ADM() && form && form.querySelector && form.querySelector("#nfaiflags")) {
+              u.aiTools = { chatgpt: !!form.querySelector("[name=aiChatgpt]:checked"), higgsfield: !!form.querySelector("[name=aiHiggs]:checked") };
+              var em = String((form.querySelector("[name=aiEmail]") || {}).value || "").trim();
+              if (em) u.aiEmail = em; else delete u.aiEmail;
+            } else {
+              delete u.aiTools; delete u.aiEmail;
+              if (old) { if (old.aiTools !== undefined) u.aiTools = old.aiTools; if (old.aiEmail !== undefined) u.aiEmail = old.aiEmail; }
+            }
+          } catch (e) { }
+          return u;
+        };
+      })(workerFromForm);
+    }
+
+    /* (3) the owner's page: who has what, and the invite list */
+    function csv() {
+      var rows = active().filter(function (w) { return has(w, "chatgpt") && mailOf(w); });
+      return ["email,role,seat type"].concat(rows.map(function (w) { return mailOf(w) + ",member,ChatGPT"; })).join("\n") + "\n";
+    }
+    if (typeof EXTRA_SETTINGS === "object" && EXTRA_SETTINGS) {
+      EXTRA_SETTINGS.aitools = {
+        label: "ChatGPT و Higgsfield", group: "ai",
+        render: function () {
+          if (!ADM()) return '<div class="card"><p class="small muted">' + H(T("للمالك فقط", "Owner only")) + "</p></div>";
+          var ws = active().slice().sort(function (a, b) { return String(a.name || "").localeCompare(String(b.name || ""), "ar"); });
+          var nG = ws.filter(function (w) { return has(w, "chatgpt"); }).length, nH = ws.filter(function (w) { return has(w, "higgsfield"); }).length;
+          var noMail = ws.filter(function (w) { return (has(w, "chatgpt") || has(w, "higgsfield")) && !mailOf(w); }).length;
+          var sw = function (w, k) { return '<label class="nfai-sw"><input type="checkbox" data-nfai-k="' + k + '" data-nfai-w="' + H(w.id) + '" ' + (has(w, k) ? "checked" : "") + "><span></span></label>"; };
+          var rows = ws.map(function (w) {
+            return "<tr><td>" + H(String(w.name || "").split(" — ")[0]) + '</td><td><input type="email" class="inp ltr nfai-mail" data-nfai-mail="' + H(w.id) + '" value="' + H(mailOf(w)) + '" placeholder="name@ninetystudioz.com"></td><td class="c">' + sw(w, "chatgpt") + '</td><td class="c">' + sw(w, "higgsfield") + "</td></tr>";
+          }).join("");
+          return '<div class="card" id="nfaitools"><h3>' + H(T("ChatGPT و Higgsfield لكل واحد", "ChatGPT and Higgsfield per person")) + "</h3>" +
+            '<p class="small muted" style="margin:6px 0 12px">' + H(T("علّم مين عنده ChatGPT ومين عنده Higgsfield — اللي متعلّم له بتظهرله أيقونة فوق تفتحله الأداة، وبيدخل بحسابه هو. الإيميل هو اللي حسابه عليه (الأفضل إيميل الشركة).", "Tick who has ChatGPT and who has Higgsfield — they get an icon at the top that opens the tool, where they sign in with their own account. The e-mail is the one the account uses (a company address is best).")) + "</p>" +
+            '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><span class="badge">ChatGPT: ' + nG + '</span><span class="badge">Higgsfield: ' + nH + "</span>" + (noMail ? '<span class="badge warn">' + H(T(noMail + " من غير إيميل", noMail + " without an e-mail")) + "</span>" : "") + "</div>" +
+            '<div class="tablewrap"><table class="tbl nfai-tbl"><thead><tr><th>' + H(T("الاسم", "Name")) + "</th><th>" + H(T("الإيميل", "E-mail")) + '</th><th class="c">ChatGPT</th><th class="c">Higgsfield</th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
+            '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn p" data-action="nfaiCsv">' + H(T("نزّل ملف دعوات ChatGPT", "Download the ChatGPT invite file")) + '</button><button type="button" class="btn" data-action="nfaiCopy" data-arg="chatgpt">' + H(T("انسخ إيميلات ChatGPT", "Copy ChatGPT e-mails")) + '</button><button type="button" class="btn" data-action="nfaiCopy" data-arg="higgsfield">' + H(T("انسخ إيميلات Higgsfield", "Copy Higgsfield e-mails")) + "</button></div>" +
+            '<p class="tiny muted" style="margin-top:8px">' + H(T("في ChatGPT: Workspace settings ← Members ← Invite member ← Import a CSV file، وارفع الملف.", "In ChatGPT: Workspace settings → Members → Invite member → Import a CSV file, and upload the file.")) + "</p></div>";
+        }
+      };
+    }
+    var save = async function (id, patch) {
+      try { await Store.update("workers", id, patch); return true; } catch (e) { try { toast(T("ماتحفظش: ", "Not saved: ") + (e && e.message || e), "err"); } catch (x) { } return false; }
+    };
+    document.addEventListener("change", async function (ev) {
+      var t = ev.target; if (!t || !ADM()) return;
+      var k = t.getAttribute && t.getAttribute("data-nfai-k");
+      if (k) {
+        var w = byId("workers", t.getAttribute("data-nfai-w")); if (!w) return;
+        var cur = Object.assign({}, w.aiTools || {}); cur[k] = !!t.checked;
+        if (await save(w.id, { aiTools: cur })) { try { toast(T("اتحفظ", "Saved")); } catch (e) { } try { rerender(); } catch (e) { } }
+        return;
+      }
+      var mid = t.getAttribute && t.getAttribute("data-nfai-mail");
+      if (mid) {
+        var v = String(t.value || "").trim();
+        if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { try { toast(T("الإيميل مش مظبوط", "That e-mail is not valid"), "err"); } catch (e) { } return; }
+        if (await save(mid, { aiEmail: v || null })) { try { toast(T("اتحفظ", "Saved")); } catch (e) { } }
+      }
+    }, true);
+    if (typeof ACTIONS === "object" && ACTIONS) {
+      ACTIONS.nfaiCopy = async function (k) {
+        var ms = active().filter(function (w) { return has(w, k) && mailOf(w); }).map(mailOf);
+        if (!ms.length) { toast(T("مفيش حد متعلّم وليه إيميل", "Nobody ticked with an e-mail"), "err"); return; }
+        try { await navigator.clipboard.writeText(ms.join(", ")); toast(T("اتنسخ " + ms.length + " إيميل", ms.length + " e-mails copied")); } catch (e) { prompt(T("انسخ الإيميلات:", "Copy the e-mails:"), ms.join(", ")); }
+      };
+      ACTIONS.nfaiCsv = function () {
+        var body = csv();
+        if (body.split("\n").filter(Boolean).length < 2) { toast(T("مفيش حد متعلّم ChatGPT وليه إيميل", "Nobody ticked for ChatGPT with an e-mail"), "err"); return; }
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8" }));
+        a.download = "chatgpt-invites-ninety-studioz.csv"; document.body.appendChild(a); a.click();
+        setTimeout(function () { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) { } }, 1500);
+      };
+    }
+
+    var css = document.createElement("style");
+    css.id = "nf-aitools";
+    css.textContent = [
+      ".nfai-btn{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 11px;border-radius:12px;text-decoration:none;color:inherit;border:1px solid var(--line,rgba(127,127,127,.25));background:var(--surface-2,rgba(127,127,127,.08));font-weight:600;font-size:13px;white-space:nowrap}",
+      ".nfai-btn:hover{background:var(--surface-3,rgba(127,127,127,.16))}",
+      ".nfai-btn svg{width:18px;height:18px;flex:none}",
+      "@media (max-width:900px){.nfai-btn{padding:0;width:38px;justify-content:center}.nfai-btn .nfai-l{display:none}}",
+      "@media (max-width:480px){.nfai-btn{width:34px;height:34px;border-radius:10px}.nfai-btn svg{width:17px;height:17px}}",
+      ".nfai-tbl td,.nfai-tbl th{vertical-align:middle}.nfai-tbl .c{text-align:center}.nfai-tbl .nfai-mail{min-width:220px;max-width:100%}",
+      ".nfai-sw{position:relative;display:inline-block;width:40px;height:22px}.nfai-sw input{opacity:0;width:0;height:0;position:absolute}",
+      ".nfai-sw span{position:absolute;inset:0;border-radius:22px;background:rgba(127,127,127,.35);transition:.15s;cursor:pointer}",
+      ".nfai-sw span:before{content:'';position:absolute;width:16px;height:16px;top:3px;inset-inline-start:3px;border-radius:50%;background:#fff;transition:.15s}",
+      ".nfai-sw input:checked+span{background:var(--acc,#4f7cff)}.nfai-sw input:checked+span:before{transform:translateX(18px)}",
+      "[dir=rtl] .nfai-sw input:checked+span:before{transform:translateX(-18px)}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(css);
+    window.nfAiTools = { bar: bar, csv: csv };
+  } catch (e) { console.warn("stu-aitools", e); }
+})();
