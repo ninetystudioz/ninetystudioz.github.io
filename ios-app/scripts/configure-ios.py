@@ -25,6 +25,11 @@ d.update({
     'UIRequiresFullScreen': False,
     'UIRequiresFullScreen~ipad': False,
 })
+# v9.71: the app's own link app.ninety.fabrication:// — the «Share» extension's «افتح في Ninety» opens the app with it
+# (app.ninety.fabrication://share; the NinetyShare plugin then hands the shared files to the page, #/share)
+_ut = [u for u in d.get('CFBundleURLTypes', []) if 'app.ninety.fabrication' not in u.get('CFBundleURLSchemes', [])]
+_ut.append({'CFBundleURLName': 'app.ninety.fabrication', 'CFBundleTypeRole': 'Viewer', 'CFBundleURLSchemes': ['app.ninety.fabrication']})
+d['CFBundleURLTypes'] = _ut
 plistlib.dump(d, open(INFO, 'wb'))
 open('ios/App/App/App.entitlements', 'w').write('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

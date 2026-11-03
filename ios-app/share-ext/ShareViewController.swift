@@ -1,6 +1,10 @@
 // Ninety — iPhone share extension (v7.57): «Share» → Ninety → pick the task → the photo / PDF lands in the task chat.
 // The list of tasks, the server address and a device token come from the Ninety app (shared keychain item written by the
 // NinetyShare plugin every time a task is opened and when the app goes to the background). Nothing secret is in this file.
+// v9.71 (Mahmoud 3 Nov: bank app → screenshot → Share → Ninety → «فلوس مستنياك» + the order with the same amount): a button
+// «افتح في Ninety» on top — the shared files are left in the same shared keychain group (items «inbox» + «inbox.N»), the Ninety
+// app is opened (app.ninety.fabrication://share) and its NinetyShare plugin hands them to the web page (#/share, same as Android).
+// If iOS does not open the app, the files still wait there: opening Ninety by hand shows them. «ابعت لـ: مهمة» stays as it was.
 import UIKit
 import Security
 import UniformTypeIdentifiers
@@ -21,6 +25,27 @@ private func readCtx() -> ShareCtx? {
     return try? JSONDecoder().decode(ShareCtx.self, from: d)
 }
 
+// v9.71 «افتح في Ninety»: the files for the app, in the shared keychain group (the app and the extension already share it —
+// no App Group needed). The manifest «inbox» is written last, so the app never sees half a set.
+private let kAppURL = "app.ninety.fabrication://share"
+private let kInboxMaxFile = 8 * 1024 * 1024
+private let kInboxMaxTotal = 16 * 1024 * 1024
+private func kcQuery(_ account: String) -> [String: Any] {
+    return [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: kService, kSecAttrAccount as String: account, kSecAttrAccessGroup as String: kGroup]
+}
+private func kcPut(_ account: String, _ data: Data) -> Bool {
+    let q = kcQuery(account)
+    SecItemDelete(q as CFDictionary)
+    var add = q
+    add[kSecValueData as String] = data
+    add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+    return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+}
+private func clearInbox() {
+    SecItemDelete(kcQuery("inbox") as CFDictionary)
+    for i in 0..<10 { SecItemDelete(kcQuery("inbox.\(i)") as CFDictionary) }
+}
+
 class ShareViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     private var ctx: ShareCtx?
     private var tasks: [ShareTask] = []
@@ -33,6 +58,7 @@ class ShareViewController: UIViewController, UITableViewDataSource, UITableViewD
 
     private let bar = UINavigationBar()
     private let navItem = UINavigationItem()
+    private let openBtn = UIButton(type: .system)
     private let thumbs = UIStackView()
     private let thumbsScroll = UIScrollView()
     private let caption = UITextField()
@@ -54,9 +80,9 @@ class ShareViewController: UIViewController, UITableViewDataSource, UITableViewD
         view.semanticContentAttribute = ar ? .forceRightToLeft : .forceLeftToRight
         buildUI()
         if ctx == nil {
+            // v9.71: not signed in here yet — «افتح في Ninety» still works (the app shows the files after the sign-in)
             note.text = t("افتح أبلكيشن Ninety وسجّل دخولك مرة، وبعدين جرّب المشاركة تاني.", "Open the Ninety app and sign in once, then share again.")
             note.isHidden = false; table.isHidden = true; caption.isHidden = true; toLabel.isHidden = true
-            loading = false; refreshSend(); return
         }
         loadAttachments()
     }
@@ -68,6 +94,21 @@ class ShareViewController: UIViewController, UITableViewDataSource, UITableViewD
         navItem.rightBarButtonItem = UIBarButtonItem(title: t("ابعت", "Send"), style: .done, target: self, action: #selector(send))
         bar.setItems([navItem], animated: false)
         view.addSubview(bar)
+
+        // v9.71: «افتح في Ninety» — the transfers path (the web page «حوّلت إيه؟» lists the money waiting and the matching order)
+        openBtn.translatesAutoresizingMaskIntoConstraints = false
+        var oc = UIButton.Configuration.filled()
+        oc.title = t("افتح في Ninety", "Open in Ninety")
+        oc.subtitle = t("للتحويلات: تشوف «فلوس مستنياك» وتختار الأمر", "For transfers: see the money waiting and pick the order")
+        oc.image = UIImage(systemName: "arrow.up.forward.app")
+        oc.imagePadding = 8
+        oc.titleAlignment = .leading
+        oc.cornerStyle = .large
+        openBtn.configuration = oc
+        openBtn.contentHorizontalAlignment = .leading
+        openBtn.semanticContentAttribute = ar ? .forceRightToLeft : .forceLeftToRight
+        openBtn.addTarget(self, action: #selector(openInApp), for: .touchUpInside)
+        view.addSubview(openBtn)
 
         thumbsScroll.translatesAutoresizingMaskIntoConstraints = false
         thumbsScroll.showsHorizontalScrollIndicator = false
@@ -118,7 +159,8 @@ class ShareViewController: UIViewController, UITableViewDataSource, UITableViewD
             bar.topAnchor.constraint(equalTo: g.topAnchor), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor), bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             thumbsScroll.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 10), thumbsScroll.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14), thumbsScroll.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14), thumbsScroll.heightAnchor.constraint(equalToConstant: 76),
             thumbs.topAnchor.constraint(equalTo: thumbsScroll.topAnchor), thumbs.bottomAnchor.constraint(equalTo: thumbsScroll.bottomAnchor), thumbs.leadingAnchor.constraint(equalTo: thumbsScroll.leadingAnchor), thumbs.trailingAnchor.constraint(equalTo: thumbsScroll.trailingAnchor), thumbs.heightAnchor.constraint(equalTo: thumbsScroll.heightAnchor),
-            caption.topAnchor.constraint(equalTo: thumbsScroll.bottomAnchor, constant: 10), caption.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14), caption.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14), caption.heightAnchor.constraint(equalToConstant: 40),
+            openBtn.topAnchor.constraint(equalTo: thumbsScroll.bottomAnchor, constant: 10), openBtn.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14), openBtn.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14), openBtn.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
+            caption.topAnchor.constraint(equalTo: openBtn.bottomAnchor, constant: 10), caption.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14), caption.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14), caption.heightAnchor.constraint(equalToConstant: 40),
             proofRow.topAnchor.constraint(equalTo: caption.bottomAnchor, constant: 8), proofRow.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14), proofRow.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14),
             toLabel.topAnchor.constraint(equalTo: proofRow.bottomAnchor, constant: 10), toLabel.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14), toLabel.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14),
             table.topAnchor.constraint(equalTo: toLabel.bottomAnchor, constant: 6), table.leadingAnchor.constraint(equalTo: g.leadingAnchor), table.trailingAnchor.constraint(equalTo: g.trailingAnchor), table.bottomAnchor.constraint(equalTo: g.bottomAnchor),
@@ -136,6 +178,7 @@ class ShareViewController: UIViewController, UITableViewDataSource, UITableViewD
     }
     private func refreshSend() {
         navItem.rightBarButtonItem?.isEnabled = ctx != nil && !loading && !sending && selected != nil && (!picked.isEmpty || !(caption.text ?? "").isEmpty)
+        openBtn.isEnabled = !loading && !sending && !picked.isEmpty
     }
 
     // MARK: attachments
@@ -178,7 +221,8 @@ class ShareViewController: UIViewController, UITableViewDataSource, UITableViewD
             self.spinner.stopAnimating()
             for p in self.picked { self.thumbs.addArrangedSubview(self.thumbView(p)) }
             if self.picked.isEmpty { self.note.text = self.t("مقدرتش أقرا الملف ده — ابعت صورة أو PDF.", "Could not read this — share a photo or a PDF."); self.note.isHidden = false }
-            if self.tasks.isEmpty { self.note.text = self.t("مفيش مهام مفتوحة — افتح المهمة في Ninety الأول.", "No open tasks — open the task in Ninety first."); self.note.isHidden = false }
+            else if self.ctx == nil { /* keep «sign in once» */ }
+            else if self.tasks.isEmpty { self.note.text = self.t("مفيش مهام مفتوحة — افتح المهمة في Ninety الأول.", "No open tasks — open the task in Ninety first."); self.note.isHidden = false }
             self.refreshProof(); self.refreshSend()
         }
     }
@@ -227,6 +271,71 @@ class ShareViewController: UIViewController, UITableViewDataSource, UITableViewD
 
     // MARK: actions
     @objc private func cancel() { extensionContext?.completeRequest(returningItems: nil, completionHandler: nil) }
+
+    // MARK: v9.71 «افتح في Ninety»
+    private func stashInbox() -> Int {   // 0 = ok · 1 = too large · 2 = keychain error
+        let files = picked
+        if files.contains(where: { $0.data.count > kInboxMaxFile }) || files.reduce(0, { $0 + $1.data.count }) > kInboxMaxTotal { return 1 }
+        clearInbox()
+        var list: [[String: Any]] = []
+        for (i, p) in files.prefix(10).enumerated() {
+            guard kcPut("inbox.\(i)", p.data) else { clearInbox(); return 2 }
+            list.append(["name": p.name, "mime": p.mime, "key": "inbox.\(i)"])
+        }
+        let man: [String: Any] = ["v": 1, "at": Date().timeIntervalSince1970 * 1000, "text": caption.text ?? "", "files": list]
+        guard let d = try? JSONSerialization.data(withJSONObject: man), kcPut("inbox", d) else { clearInbox(); return 2 }
+        return 0
+    }
+
+    // Opening the containing app from a share extension: UIApplication.open is not available to extension code, so it is
+    // looked up at run time on the responder chain (iOS 18 dropped the old one-argument openURL:, the three-argument one
+    // still works). NSExtensionContext.open is the fallback (iOS officially honours it for widgets only).
+    private func openContainingApp(_ url: URL, done: @escaping (Bool) -> Void) {
+        let sel = NSSelectorFromString("openURL:options:completionHandler:")
+        var r: UIResponder? = self
+        while let cur = r {
+            if cur is UIApplication, cur.responds(to: sel), let imp = cur.method(for: sel) {   // not UIWindowScene (same selector, other options type)
+                typealias OpenFn = @convention(c) (AnyObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?) -> Void
+                let fn = unsafeBitCast(imp, to: OpenFn.self)
+                let cb: @convention(block) (Bool) -> Void = { ok in DispatchQueue.main.async { done(ok) } }
+                fn(cur, sel, url as NSURL, NSDictionary(), cb)
+                return
+            }
+            r = cur.next
+        }
+        if let ec = extensionContext { ec.open(url) { ok in DispatchQueue.main.async { done(ok) } } } else { done(false) }
+    }
+
+    @objc private func openInApp() {
+        guard !picked.isEmpty, !sending, let url = URL(string: kAppURL) else { return }
+        sending = true; refreshSend(); spinner.startAnimating(); caption.resignFirstResponder()
+        let res = stashInbox()
+        if res != 0 {
+            sending = false; spinner.stopAnimating(); refreshSend()
+            let msg = res == 1 ? t("الملف كبير أوي يتفتح في Ninety — ابعته لمهمة من تحت.", "The file is too large to open in Ninety — send it to a task below.")
+                               : t("مقدرتش أحضّر الصورة — جرّب تاني أو ابعتها لمهمة.", "Could not prepare the picture — try again or send it to a task.")
+            let a = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: t("تمام", "OK"), style: .default))
+            present(a, animated: true)
+            return
+        }
+        var finished = false
+        let finish: (Bool) -> Void = { [weak self] opened in
+            guard let self = self, !finished else { return }
+            finished = true
+            self.spinner.stopAnimating()
+            if opened {
+                self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+                return
+            }
+            // iOS did not open the app: the files are kept — Ninety shows them the next time it is opened
+            self.note.text = self.t("اتحفظت ✓ — افتح أبلكيشن Ninety وهتلاقيها قدامك على طول.", "Saved ✓ — open the Ninety app and it is right there.")
+            self.note.isHidden = false; self.table.isHidden = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil) }
+        }
+        openContainingApp(url, done: finish)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { finish(false) }
+    }
 
     @objc private func send() {
         guard let c = ctx, let taskId = selected, let url = URL(string: c.endpoint), !sending else { return }

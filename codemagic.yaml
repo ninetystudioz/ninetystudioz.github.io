@@ -112,6 +112,8 @@ workflows:
           - 'ios-app/share-ext/'
           - 'ios-app/scripts/add-share-ext.rb'
           - 'ios-app/scripts/share-signing.py'
+          # v9.71: the iPhone side of the share plugin («افتح في Ninety» inbox)
+          - 'ios-app/plugins/ninety-share/ios/'
     scripts:
       - name: Install
         script: |
