@@ -4144,3 +4144,158 @@ ${o("\u0627\u0644\u0623\u0645\u0631 \u0627\u0644\u0645\u0648\u0642\u0648\u0641 \
     .nfat-in .nfat-send{min-height:42px;flex:none}
     .aifab .nfat-n{position:absolute;top:-3px;inset-inline-end:-3px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:var(--crit,#b5655b);color:#fff;font-size:11px;line-height:18px;text-align:center;font-style:normal}
     </style>`)}catch{}})();
+
+;/* a962-ahmed-sf (v9.62, PIN 4 Nov 2026) — factory only.
+   1) Service factories move permanently to the accounts officer (Ahmed, role acc); purchasing (Bahaa) is out of them.
+   2) The service-factory payment chain: factory manager -> the management transfers (no accounts step: Ahmed writes the quote).
+   3) A PO Ahmed makes on behalf of Bahaa is approved by the management (was Saeed), then goes back to Ahmed to send to the supplier.
+   4) Service-factory reminders are not created before the phone clock is synced with the server. */
+;(function(){
+  if (window.__NF_A962__ || (typeof isStuSys == "function" && isStuSys()) || (typeof isConstruction == "function" && isConstruction())) return;
+  window.__NF_A962__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => EN() ? b : a;
+  const R = () => { try { return role(); } catch (e) { return ""; } };
+  const SF_ID = /^(ext_|sfc_|sf_new_|sfpay_)/;
+  const isSf = (id, f) => SF_ID.test(String(id || "")) || !!(f && f.extId);
+  const uniq = a => a.filter((x, i) => a.indexOf(x) === i);
+  const delegOf = p => !!p && p.onBehalfOf === "bahaa" && !!p.delegatedTo && !!p.delegStarted;
+  const pidOf = o => {
+    try {
+      const f = (o && o.fields) || {};
+      if (f.purchaseId && byId("purchases", f.purchaseId)) return f.purchaseId;
+      const id = String((o && o.id) || "");
+      let i = id.indexOf("_");
+      while (i >= 0) { const s = id.slice(i + 1); if (s && byId("purchases", s)) return s; i = id.indexOf("_", i + 1); }
+    } catch (e) {}
+    return null;
+  };
+
+  /* 1) who handles service factories */
+  if (typeof canDo == "function") {
+    canDo = (o => function (e) {
+      if (e === "external") {
+        const r = R();
+        if (r === "acc") return typeof writable == "function" ? writable() : true;
+        if (r === "purch") return false;
+      }
+      return o.apply(this, arguments);
+    })(canDo);
+  }
+  try { if (typeof ROLE_VIEWS !== "undefined" && Array.isArray(ROLE_VIEWS.purch)) ROLE_VIEWS.purch = ROLE_VIEWS.purch.filter(v => v !== "external"); } catch (e) {}
+  if (typeof extNeedsMe == "function") {
+    extNeedsMe = (o => function () {
+      const r = R();
+      if (r === "purch") return [];
+      if (r === "acc") {
+        const t = list("extorders").filter(a => a.status !== "cancelled" && a.status !== "received");
+        return t.filter(a => (typeof extAlarmDue == "function" && extAlarmDue(a)) || a.status === "ready" || (a.status === "approved" && !a.deposit));
+      }
+      return o.apply(this, arguments);
+    })(extNeedsMe);
+  }
+
+  /* tasks: route service-factory tasks to accounts; no reminders before the clock sync */
+  if (typeof Store !== "undefined" && Store) {
+    const save0 = Store.save;
+    Store.save = function (c, d) {
+      try {
+        if (c === "tasks" && d && d.id) {
+          const id = String(d.id);
+          if (/^ext_(alarm|d2|d1|late)_/.test(id) && typeof NFCLK !== "undefined" && !NFCLK.at) {
+            try { typeof nfClockSync == "function" && nfClockSync(); } catch (e) {}
+            return Promise.resolve(null);
+          }
+          if (d.toRole === "purch" && isSf(id, d)) {
+            if (/^ext_(d2|d1|late)_.*_purch$/.test(id)) return Promise.resolve(null);
+            const a = [].slice.call(arguments); a[1] = Object.assign({}, d, { toRole: "acc" });
+            return save0.apply(this, a);
+          }
+        }
+        if (c === "requests" && d && ["po", "itemconfirm"].includes(d.type) && d.status === "pending" && Array.isArray(d.chain) && d.chain.some(x => x === "acc" || x === "hr")) {
+          const p = byId("purchases", d.purchaseId);
+          if (delegOf(p)) {
+            const a = [].slice.call(arguments);
+            a[1] = Object.assign({}, d, { chain: uniq(d.chain.map(x => x === "acc" || x === "hr" ? "admin" : x)) });
+            return save0.apply(this, a);
+          }
+        }
+      } catch (e) {}
+      return save0.apply(this, arguments);
+    };
+  }
+  if (typeof notifyRole == "function") {
+    notifyRole = (o => async function (r, title, body, opts) {
+      try {
+        if (r === "purch") {
+          if (isSf(opts && opts.id, opts && opts.fields)) r = "acc";
+          else {
+            const pid = pidOf(opts), p = pid && byId("purchases", pid);
+            if (delegOf(p)) {
+              const fx = s => String(s || "").split("لمسؤول الحسابات").join("للإدارة (الاعتماد)");
+              title = fx(title); body = fx(body);
+            }
+          }
+        }
+      } catch (e) {}
+      return o.call(this, r, title, body, opts);
+    })(notifyRole);
+  }
+
+  /* 3) PO on behalf of Bahaa -> the management approves */
+  if (typeof poChainFor == "function") {
+    poChainFor = (o => function (p) {
+      const out = o.apply(this, arguments);
+      try { if (delegOf(p) && Array.isArray(out)) return uniq(out.map(x => x === "acc" || x === "hr" ? "admin" : x)); } catch (e) {}
+      return out;
+    })(poChainFor);
+  }
+  if (typeof vPurchaseDetail == "function") {
+    vPurchaseDetail = (o => function () {
+      const h = o.apply(this, arguments);
+      return typeof h == "string"
+        ? h.split("اعتماد الحسابات عند سعيد").join("الاعتماد عند الإدارة").split("the accounts approval goes to Saeed").join("the approval goes to the management")
+        : h;
+    })(vPurchaseDetail);
+  }
+
+  /* 2) service-factory quote: factory manager -> the management transfers */
+  if (typeof ACTIONS !== "undefined" && ACTIONS.sfcOk) {
+    const ok0 = ACTIONS.sfcOk;
+    ACTIONS.sfcOk = async function (id) {
+      const P = window.nfSfPay, t = byId("extorders", id);
+      try {
+        if (!P || !t || P.stageOf(t) !== "mgr" || !P.canAct(t)) return ok0.apply(this, arguments);
+        const price = +((t.offer && t.offer.price) || 0);
+        if (!(price > 0)) return ok0.apply(this, arguments);
+        const ch = P.chainOf(t) || {}, ses = S.session || {}, at = nowISO();
+        const amt = ch.kind === "rest" ? +(ch.amount || 0) : r2(price * (+((t.offer && t.offer.depositPct) || 0)) / 100);
+        try { closeModal(); } catch (e) {}
+        const nc = Object.assign({}, ch); delete nc.legacy;
+        nc.steps = (ch.steps || []).concat([{ stage: "mgr", ok: true, by: ses.id || null, byName: ses.name || "", at }]);
+        Object.assign(nc, { stage: amt > 0 ? "owner" : "paid", amount: amt, noAcc: true });
+        const upd = { chain: nc };
+        if (ch.kind !== "rest") Object.assign(upd, { status: "approved", approval: { status: "approved", by: ses.id || null, byName: ses.name || "", at, chain: true } });
+        await Store.update("extorders", id, upd);
+        for (const k of ["sfc_mgr_", "ext_off_", "sfc_acc_"]) {
+          try { const x = byId("tasks", k + id); x && x.status !== "done" && await Store.update("tasks", x.id, { status: "done", doneAt: nowISO(), doneByName: ses.name || "" }, { silent: true }); } catch (e) {}
+        }
+        if (amt > 0) {
+          const what = ch.kind === "rest" ? T("باقي المصنع", "The rest to the factory") : T("الدفعة المقدمة", "The deposit");
+          const fac = String((typeof sfName == "function" && sfName(t.servFactoryId, t.branchId)) || "").split(" — ")[0];
+          try {
+            typeof pushSend == "function" && pushSend(["role:admin"],
+              `${what} — ${fac} — ${fmtMoney(amt)} ${CUR()}`.slice(0, 100),
+              T(`${t.number} · وافق عليها مدير المصنع — حوّل من «فلوس مستنياك»`, `${t.number} · approved by the factory manager — pay from «money waiting for you»`).slice(0, 300),
+              "/#/money", "sfpay-" + id);
+          } catch (e) {}
+        }
+        toast(amt > 0 ? T("اتوافق ✓ — راحت للإدارة تحوّل", "Approved ✓ — sent to the management to transfer") : T("اتوافق ✓", "Approved ✓"));
+        typeof rerender == "function" && rerender();
+        return;
+      } catch (e) { console.warn("a962 sfcOk", e); }
+      return ok0.apply(this, arguments);
+    };
+  }
+  window.nfA962 = { isSf, delegOf };
+})();
