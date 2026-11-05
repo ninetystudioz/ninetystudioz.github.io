@@ -4963,3 +4963,4 @@ table.nfpr-pay .pos{color:var(--good,#2a9d5c)}table.nfpr-pay .neg{color:var(--cr
 .pp-pcday{margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}.pp-pcday .field{margin:0}
 .pp-pcshow{margin-top:8px}.pp-pcshow div{padding:3px 0;overflow-wrap:anywhere}
 </style>`)}catch{}window.nfProjPick={projList:v,allocFrom:D,resplit:Z,needOf:R,outsideOf:U,lateOut:Q,fetchRemote:J,pickModal:et,state:I,remote:_}})();
+;(function(){if(window.__NF_A995__||(window.__NF_A995__=1,typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction())||typeof taskVisible!="function")return;const o=n=>!!n&&(n.source==="payrun"||/^pcs_/.test(String(n.id||""))),e=taskVisible;taskVisible=function(n){try{if(o(n)){const t=typeof role=="function"?role():"";if(t==="admin"||t==="hr")return!0;const s=typeof myIds=="function"?myIds():[],i=String(n.assigneeId||"");return!!i&&(s.includes(i)||s.includes("w:"+i))}}catch{}return e.apply(this,arguments)}})();
