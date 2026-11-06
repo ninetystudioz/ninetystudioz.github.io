@@ -5012,3 +5012,4 @@ ${y} ← ${r.to&&r.to.address||""}`,{id:`smf_${n}_${Date.now()}`})}else u&&u.sta
 .nfv-live .nfv-t{min-width:0}
 @keyframes nfvp{0%,100%{opacity:1}50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){.nfv-live .nfv-dot{animation:none}.nfv-live{transition:none}}`,t=document.createElement("style");t.id="nf-a1016",t.textContent=e,(document.body||document.head).appendChild(t)}catch{}})();
+;(function(){if(window.__NF_A1017__)return;try{if(typeof isStuSys=="function"&&isStuSys()||typeof isStudioz=="function"&&isStudioz()||typeof isConstruction=="function"&&isConstruction())return}catch{return}if(typeof nfGpsGap!="function")return;window.__NF_A1017__=1;const i=15e3,o=()=>{try{return document.documentElement.classList.contains("nf-lite")}catch{return!1}},r=nfGpsGap;nfGpsGap=function(n){const t=r.apply(this,arguments);try{return o()||!(+n>0)?t:+t>+n?Math.min(+t,i):t}catch{return t}},window.nfGpsGap=nfGpsGap})();
