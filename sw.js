@@ -1,10 +1,10 @@
 /* Ninety Fabrication — service worker (app shell cache). Data never lives here: it is on the server. */
-const BUILD = '20261108-1023-3df6af';
+const BUILD = '20261108-1259-7114e1';
 /* v4.17: several Ninety apps share one origin (/ = factory, /studioz/ = office) — each service worker keeps to its own scope and its own cache prefix */
 const SCOPE = new URL(self.registration.scope).pathname;
 const TAG = SCOPE.replace(/^\/|\/$/g, '').replace(/\//g, '-');
 const CACHE = 'nf-shell-' + (TAG ? TAG + '-' : '') + BUILD;
-const SHELL = ["./core.js?v=c9a6d0ce76", "./app.js?v=20261108-1023-3df6af", "./index.html", "./config.js", "./manifest.json", "./vendor/supabase.js", "./vendor/three.bundle.js", "./vendor/pdf.min.js", "./vendor/pdf.worker.min.js", "./vendor/leaflet.js", "./icons/icon-192.png", "./icons/icon-512.png", "./en.json", "./laeha.pdf", "./lof-c01.pdf"];
+const SHELL = ["./core.js?v=c9a6d0ce76", "./app.js?v=20261108-1259-7114e1", "./index.html", "./config.js", "./manifest.json", "./vendor/supabase.js", "./vendor/three.bundle.js", "./vendor/pdf.min.js", "./vendor/pdf.worker.min.js", "./vendor/leaflet.js", "./icons/icon-192.png", "./icons/icon-512.png", "./en.json", "./laeha.pdf", "./lof-c01.pdf"];
 self.addEventListener('install', e => {
   /* v8.87: a new worker no longer takes over an open app by itself (that was a second reload in front of the person) —
      it waits until the app is closed, or the page asks for it («حدّث» or the app going to the background with an update) */

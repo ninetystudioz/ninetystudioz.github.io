@@ -5247,4 +5247,5 @@ ${h||"اللائحة مش متسجلة في السيستم."}
 .nfpb-x{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
 .nfpb-x .tiny{margin-inline-end:auto}
 .nfpb-x .btn.xs{min-height:34px;padding:4px 12px;font-size:13px}
-</style>`),window.nfA1046={whyNot:d,decorate:u}})();
+</style>`),window.nfA1046={whyNot:d,decorate:u}})();;
+(function(){if(window.__NF_A1047__)return;window.__NF_A1047__=1;try{if(typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction())return}catch{return}const s=(n,t)=>{try{return!!(typeof isOffDay=="function"&&isOffDay(n,t)||typeof isHoliday=="function"&&isHoliday(t))}catch{return!1}};function f(){typeof setAtt!="function"||setAtt.__a1047||(setAtt=(n=>function(t,e,i){try{i&&e&&t&&+i.late>0&&s(e,t)&&(arguments[2]=Object.assign({},i,{late:0,lateOff:!0}))}catch{}return n.apply(this,arguments)})(setAtt),setAtt.__a1047=1)}f();let r=0;const o=setInterval(()=>{f(),++r>20&&clearInterval(o)},1500)})();
