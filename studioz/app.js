@@ -2229,4 +2229,5 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
 #topbar .nfrfb.spin svg,.nw-tg .nfrfb.spin svg{animation:nfrfbspin .8s linear infinite}
 @keyframes nfrfbspin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){#topbar .nfrfb.spin svg,.nw-tg .nfrfb.spin svg{animation:none}}
-</style>`)})();
+</style>`)})();;
+(function(){if(window.__NF_A1055__)return;window.__NF_A1055__=1;try{if(!(typeof I18N_STU!="undefined"&&I18N_STU))return}catch{return}let c="";function i(){try{const e=S.session;if(!e||!e.workerId||typeof byId!="function")return;const t=byId("workers",e.workerId),n=t&&t.langLock;if(n!=="ar"&&n!=="en")return;const r=e.workerId+":"+n;if(c===r)return;c=r,I18N.lang!==n&&typeof i18nSet=="function"&&i18nSet(n,{noSave:!0})}catch{}}function o(){try{const e=S.session;if(!e||!e.workerId)return;const t=byId("workers",e.workerId);if(!t||t.mobilePunch!==!0)return;["nq-card","nq-fab","nq-askchip"].forEach(n=>{const r=document.getElementById(n);r&&r.remove()})}catch{}}const s=()=>{i(),o()};try{RENDER_HOOKS.push(s)}catch{}setInterval(s,1e3);try{let e=0;new MutationObserver(()=>{e||(e=1,requestAnimationFrame(()=>{e=0,o()}))}).observe(document.body,{childList:!0,subtree:!0})}catch{}window.nfLangLock=i,window.nfMobileOnly=o})();
