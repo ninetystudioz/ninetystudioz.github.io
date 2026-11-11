@@ -5560,4 +5560,90 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .dnk-n{margin-top:6px;font-size:13px;padding:6px 10px;border-radius:8px;background:var(--warn-soft);color:var(--warn-ink)}
 .dnk-q{font-size:13px;color:var(--ink-2)}.dnk-hd{display:flex;flex-direction:column;gap:2px;font-size:13px}.dnk-hd span{color:var(--muted)}
 .sdoc .sdsigns span small{font-size:9px;opacity:.75;direction:ltr;unicode-bidi:isolate}
-</style>`)}catch{}})();
+</style>`)}catch{}})();;
+(function(){if(window.__NF_A1109__)return;try{if(typeof isStuSys=="function"&&isStuSys()||typeof isStudioz=="function"&&isStudioz()||typeof isConstruction=="function"&&isConstruction())return}catch{return}if(typeof ACTIONS>"u"||typeof ACTIONS.dnxView!="function")return;window.__NF_A1109__=1;const d=t=>{try{return esc(String(t??""))}catch{return""}},c=t=>{const e=Math.round((+t||0)*100)/100;return String(e)},w=t=>{const e=/^(\d{4})-(\d\d)-(\d\d)/.exec(String(t||""));return e?`${e[3]}/${e[2]}/${e[1]}`:""},S=t=>{try{const e=new Date(t);return isNaN(e)?"":String(e.getHours()).padStart(2,"0")+":"+String(e.getMinutes()).padStart(2,"0")}catch{return""}},C=t=>{try{if(!t)return!1;if(t.brandId)return t.brandId==="lof";const e=t.orderId?byId("orders",t.orderId):null;return!!e&&e.brandId==="lof"}catch{return!1}},q=t=>{try{const e=t&&t.tripId?byId("trips",t.tripId):null;return e&&!["cancelled","rejected"].includes(e.status)?e:list("trips").find(l=>l&&l.dnId===t.id&&!["cancelled","rejected"].includes(l.status))||null}catch{return null}},N=t=>t.line||(t.productId?"p:"+t.productId:"d:"+(t.desc||t.variant||"")),A=t=>{try{return(typeof fgDns=="function"?fgDns():list("fgs").filter(e=>e&&e.type==="dn")).filter(e=>e&&e.orderId===t&&e.status!=="cancelled"&&!e.deleted)}catch{return[]}};function _(t,e){const l=t.orderId?A(t.orderId).filter(i=>i.id!==t.id&&String(i.createdAt||"")<=String(t.createdAt||"")):[];let f=[];try{f=e&&window.nfSupply&&typeof nfSupply.contract=="function"?nfSupply.contract(e)||[]:[]}catch{f=[]}const s=new Map;return(t.items||[]).forEach(i=>{const a=N(i);let g=s.get(a);if(!g){let o=null;try{o=i.productId?byId("products",i.productId):null}catch{}const m=f.find($=>$.k===a);let y="";try{y=i.productId&&typeof fgThumb=="function"?fgThumb(i.productId):i.thumb||""}catch{}g={k:a,code:o&&o.code||"",ar:o&&o.name||i.desc||i.variant||i.name||"",en:o&&o.nameEn||"",unit:i.unit||o&&o.unit||"قطعة",of:+i.of||m&&+m.qty||0,qty:0,thumb:y},s.set(a,g)}g.qty+=+i.qty||0}),[...s.values()].filter(i=>i.qty>0).map(i=>{const a=l.reduce((g,o)=>g+(o.items||[]).filter(m=>N(m)===i.k).reduce((m,y)=>m+(+y.qty||0),0),0);return Object.assign(i,{prev:a,after:a+i.qty,left:i.of?Math.max(0,i.of-a-i.qty):null})})}function R(t,e){if(t.clientRef)return String(t.clientRef);const l=e&&e.contract;return l?l.kind==="po"?l.no?String(l.no):"":l.kind==="contract"?["عقد",l.no||"",l.date?w(l.date):""].filter(Boolean).join(" — "):l.no?String(l.no):"":""}const O=`
+.lfdn{width:794px;min-height:1090px;box-sizing:border-box;padding:26px 34px 20px;background:#fff;color:#141414;font:12.5px/1.5 'IBM Plex Sans Arabic','Segoe UI',Tahoma,system-ui,sans-serif;direction:rtl;display:flex;flex-direction:column}
+.lfdn *{box-sizing:border-box}
+.lfdn table{border-collapse:collapse;border:0;background:none;box-shadow:none;border-radius:0;margin:0;width:auto}
+.lfdn th,.lfdn td{background:none!important;box-shadow:none!important;border:0;color:inherit;font:inherit;line-height:1.5;padding:0;position:static!important;text-transform:none;letter-spacing:0;white-space:normal;height:auto}
+.lfdn h1,.lfdn h3,.lfdn p,.lfdn dl,.lfdn dt,.lfdn dd{margin:0;padding:0;border:0;background:none;font:inherit;line-height:1.5;color:inherit;letter-spacing:0;height:auto;min-height:0}
+.lfdn span,.lfdn b,.lfdn i,.lfdn div{box-shadow:none}
+.lfdn .lf-e{direction:ltr;unicode-bidi:isolate;font-size:10px;color:#7a8086;font-weight:500}
+.lfdn .lf-l{direction:ltr;unicode-bidi:isolate}
+.lfdn .lf-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:2px solid #141414}
+.lfdn .lf-lg{direction:ltr;color:#141414}.lfdn .lf-lg svg,.lfdn .lf-lg img{height:74px;width:auto;display:block}
+.lfdn .lf-tt{text-align:center;flex:1}.lfdn .lf-tt h1{margin:2px 0 0;font-size:25px;font-weight:700;line-height:1.3}
+.lfdn .lf-tt .lf-e{font-size:12px;letter-spacing:2px;text-transform:uppercase;display:block}
+.lfdn .lf-tt .lf-cp{display:inline-block;margin-top:6px;padding:1px 10px;border:1px solid #141414;border-radius:20px;font-size:10.5px;white-space:nowrap}.lfdn .lf-tt .lf-cp .lf-e{display:inline;letter-spacing:.5px}
+.lfdn .lf-no{flex:0 0 auto;min-width:190px}.lfdn .lf-no table{border-collapse:collapse;width:100%}
+.lfdn .lf-no td.lf-k{font-weight:500;color:#4a4f54;text-align:start;padding:2px 0 2px 14px;font-size:11px;white-space:nowrap}
+.lfdn .lf-no td{font-weight:700;text-align:end;padding:2px 0 2px 0;white-space:nowrap}.lfdn .lf-no td.lf-b{font-size:16px}
+.lfdn .lf-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.lfdn .lf-bx{border:1px solid #d9dcdf;border-radius:8px;padding:9px 12px}
+.lfdn .lf-bx h3{margin:0 0 6px;font-size:11px;font-weight:600;color:#4a4f54;display:flex;justify-content:space-between;align-items:baseline;gap:8px}.lfdn .lf-bx h3 span{white-space:nowrap}
+.lfdn dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:12px;margin:0;align-items:center}
+.lfdn dt{color:#4a4f54;white-space:nowrap;line-height:1.25}.lfdn dt .lf-e{display:block;font-size:9px}.lfdn dd{margin:0;font-weight:600;min-height:17px;overflow-wrap:anywhere}
+.lfdn dd.lf-z{border-bottom:1px dotted #9aa0a6;font-weight:400}
+.lfdn .lf-sc{display:flex;gap:6px 18px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:7px 12px;background:#f3f4f5;border-radius:8px;font-size:12px}
+.lfdn .lf-ck{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}.lfdn .lf-sc b{white-space:nowrap}.lfdn .lf-ck i{flex:0 0 12px;width:12px;height:12px;border:1.3px solid #141414;border-radius:2px;display:inline-block;background:#fff}
+.lfdn table.lf-it{width:100%;border-collapse:collapse;margin-top:12px;table-layout:fixed}
+.lfdn .lf-it thead th{background:#141414!important;color:#fff!important;font-weight:600;font-size:11px;padding:6px 3px;text-align:center;vertical-align:middle;line-height:1.25;white-space:nowrap}
+.lfdn .lf-it thead th .lf-e{color:#c9cdd1;display:block;font-size:8.5px}.lfdn .lf-it thead th.lf-nw{background:#000!important}
+.lfdn .lf-it td{border-bottom:1px solid #d9dcdf;padding:6px;text-align:center;vertical-align:middle}
+.lfdn .lf-it td.lf-d{text-align:start;white-space:normal;overflow-wrap:anywhere}.lfdn .lf-it td.lf-d b{display:block;font-size:12.5px;white-space:normal}.lfdn .lf-it td.lf-d .lf-e{display:block}
+.lfdn .lf-it td.lf-cd{font-size:10px;color:#4a4f54;white-space:nowrap}
+.lfdn .lf-it td.lf-nw{font-size:17px;font-weight:700;background:#f3f4f5!important}.lfdn .lf-it td.lf-rm{font-weight:700}
+.lfdn .lf-ph{width:44px;height:34px;border:1px dashed #b9bec3;border-radius:4px;display:inline-block;vertical-align:middle}
+.lfdn img.lf-ph{border:0;object-fit:cover}
+.lfdn .lf-it tfoot td{border-bottom:0;padding:7px 6px;font-weight:700;background:#fafafa!important;border-top:1.5px solid #141414;text-align:center}
+.lfdn .lf-two{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;margin-top:12px}
+.lfdn .lf-rk{border:1px solid #d9dcdf;border-radius:8px;padding:7px 12px 9px}
+.lfdn .lf-rk h3{margin:0 0 4px;font-size:11px;font-weight:600;color:#4a4f54}
+.lfdn .lf-ln{border-bottom:1px dotted #9aa0a6;height:19px}
+.lfdn .lf-rk .lf-ck{display:block;white-space:normal;margin:4px 0;line-height:1.3}.lfdn .lf-rk .lf-ck .lf-e{display:block;padding-inline-start:19px;font-size:9px;direction:rtl;text-align:start}.lfdn .lf-rk .lf-ck i{vertical-align:-2px;margin-inline-end:5px}
+.lfdn .lf-nt{margin-top:10px;font-size:12px;padding:6px 12px;border:1px solid #d9dcdf;border-radius:8px}
+.lfdn .lf-dc{margin:12px 0 0;font-size:12px}.lfdn .lf-dc .lf-e{display:block}
+.lfdn .lf-sg{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:12px;margin-top:12px}
+.lfdn .lf-s{border:1px solid #d9dcdf;border-radius:8px;padding:8px 12px 10px}.lfdn .lf-s.lf-rc{border:1.5px solid #141414}
+.lfdn .lf-s h3{margin:0 0 6px;font-size:11.5px;font-weight:700;display:block}.lfdn .lf-s h3 span{display:block}
+.lfdn .lf-f{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 6px;font-size:11px;color:#4a4f54;align-items:end}.lfdn .lf-f>span:nth-child(odd){white-space:nowrap}
+.lfdn .lf-f span.lf-v{border-bottom:1px dotted #9aa0a6;min-height:19px;color:#141414;font-weight:600;overflow-wrap:anywhere}
+.lfdn .lf-f span.lf-v.lf-t{min-height:28px}.lfdn .lf-f img{height:28px;width:auto;max-width:100%;object-fit:contain;display:block}
+.lfdn .lf-okk{margin-top:6px;font-size:10px;color:#4a4f54}
+.lfdn .lf-st{margin-top:7px;height:38px;border:1px dashed #b9bec3;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#7a8086;font-size:10px}
+.lfdn .lf-ft{margin-top:auto;padding-top:8px;border-top:1px solid #d9dcdf;font-size:10px;color:#4a4f54;display:flex;justify-content:space-between;gap:12px;align-items:flex-end}.lfdn .lf-ft .lf-e{white-space:nowrap}.lfdn .lf-ft>div:first-child{flex:1 1 auto;white-space:nowrap}
+.sdprev .lfdn{margin:0 auto;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+@media (max-width:860px){.sdprev .lfdn{zoom:.45}}`;function T(t){const e=t.orderId?byId("orders",t.orderId):null,l=q(t),f=_(t,e),s=n=>f.reduce((p,b)=>p+(+b[n]||0),0);let i={};try{i=(typeof brandKit=="function"?brandKit("lof"):{})||{}}catch{}const a=i.legal||{};let g="";try{g=typeof BRAND_SVG=="object"&&BRAND_SVG&&BRAND_SVG.lof?BRAND_SVG.lof:typeof brandLogoHTML=="function"?brandLogoHTML("lof",74):""}catch{g=""}const o=(()=>{try{return t.clientId?byId("clients",t.clientId)||{}:{}}catch{return{}}})(),m=t.contactName||e&&e.contactName||"",y=t.contactPhone||e&&e.contactPhone||"",$=t.orderId?A(t.orderId).filter(n=>n.id!==t.id&&String(n.createdAt||"")<=String(t.createdAt||"")).length+1:1;let I="",D="";try{I=l&&l.driverId&&typeof assigneeName=="function"?assigneeName(l.driverId):"",D=l&&l.vehicleId&&typeof vehicleName=="function"?vehicleName(l.vehicleId):""}catch{}const j=l&&l.startedAt?`${w(String(l.startedAt).slice(0,10))} ${S(l.startedAt)}`:"",r=t.signed||l&&l.dnSigned||(t.sign?{receiverName:t.sign.name,receiverTitle:t.sign.title||"",img:t.sign.img||null,at:t.sign.at}:null),z=l&&l.dnOk,h=(n,p,b,k)=>`<dt>${n} <span class="lf-e">${p}</span></dt><dd${b?"":k?' class="lf-z"':""}>${b||"&nbsp;"}</dd>`,v=(n,p)=>`<span class="lf-ck"><i></i> ${n} <span class="lf-e">${p}</span></span>`,x=(n,p,b,k)=>`<th${b?` style="width:${b}px"`:""}${k?` class="lf-${k}"`:""}>${n}<span class="lf-e">${p}</span></th>`,u=(n,p,b)=>`<span>${n}</span><span class="lf-v${b?" lf-"+b:""}">${p||""}</span>`;return`<div class="sdoc lfdn notr" dir="rtl" lang="ar"><style>${O}</style>
+  <div class="lf-hd">
+    <div class="lf-no"><table>
+      <tr><td class="lf-k">رقم الإذن <span class="lf-e">DN No.</span></td><td class="lf-b lf-l">${d(t.number)}</td></tr>
+      <tr><td class="lf-k">التاريخ <span class="lf-e">Date</span></td><td class="lf-l">${d(w(t.date||t.createdAt))}</td></tr>
+      <tr><td class="lf-k">أمر التشغيل <span class="lf-e">Job code</span></td><td class="lf-l">${d(e&&e.code)}</td></tr></table></div>
+    <div class="lf-tt"><h1>إذن تسليم</h1><span class="lf-e">Delivery Note</span><div class="lf-cp">أصل للعميل · <span class="lf-e" style="font-size:9.5px;color:inherit">Client's original</span></div></div>
+    <div class="lf-lg">${g}</div>
+  </div>
+  <div class="lf-cols">
+    <div class="lf-bx"><h3><span>المستلم</span><span class="lf-e">Delivered to</span></h3><dl>
+      ${h("السادة","To",d(t.clientName||o.name))}${h("المشروع","Project",d(e&&e.title))}${h("موقع التسليم","Site",d(t.address))}
+      ${h("المنطقة / الشارع","Zone","",1)}${h("مسؤول الموقع","Site contact",m||y?`${d(m)}${y?` <span class="lf-l">${d(y)}</span>`:""}`:"",1)}</dl></div>
+    <div class="lf-bx"><h3><span>بيانات التعاقد والنقل</span><span class="lf-e">Contract &amp; transport</span></h3><dl>
+      ${h("العقد / أمر التوريد","Contract / PO",d(R(t,e)),1)}${h("رقم التسليمة","Delivery",`التسليمة ${$} من المشروع`)}
+      ${h("السواق","Driver",d(I),1)}${h("العربية / اللوحة","Vehicle",d(D),1)}${h("خرج من المصنع","Left factory",j?`<span class="lf-l">${d(j)}</span>`:"",1)}</dl></div>
+  </div>
+  <div class="lf-sc"><b>نطاق التسليمة <span class="lf-e">Scope</span></b>${v("توريد فقط","Supply only")}${v("توريد وتركيب","Supply &amp; install")}${v("التركيب تم","Installed")}</div>
+  <table class="lf-it"><thead><tr>${x("#","",24)}${x("صورة","Photo",52)}${x("الكود","Code",74)}${x("الصنف","Description")}${x("الوحدة","Unit",44)}${x("المتعاقد","Contract",56)}${x("سبق تسليمه","Previous",60)}${x("التسليمة دي","This delivery",70,"nw")}${x("الإجمالي","To date",60)}${x("الباقي","Balance",52)}</tr></thead>
+    <tbody>${f.map((n,p)=>`<tr><td>${p+1}</td><td>${n.thumb?`<img class="lf-ph" src="${d(n.thumb)}" alt="">`:'<span class="lf-ph"></span>'}</td><td class="lf-cd lf-l">${d(n.code)}</td><td class="lf-d"><b>${d(n.ar)}</b>${n.en?`<span class="lf-e">${d(n.en)}</span>`:""}</td><td>${d(n.unit)}</td><td>${n.of?c(n.of):"—"}</td><td>${c(n.prev)}</td><td class="lf-nw">${c(n.qty)}</td><td>${c(n.after)}</td><td class="lf-rm">${n.left==null?"—":n.left?c(n.left):"—"}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td colspan="5" style="text-align:start">إجمالي القطع في التسليمة دي <span class="lf-e">Total pieces in this delivery</span></td><td>${c(s("of"))}</td><td>${c(s("prev"))}</td><td style="font-size:15px">${c(s("qty"))}</td><td>${c(s("after"))}</td><td>${c(s("left"))}</td></tr></tfoot></table>
+  ${t.note?`<div class="lf-nt">ملاحظات <span class="lf-e">Notes</span>: ${d(String(t.note).slice(0,400))}</div>`:""}
+  <div class="lf-two">
+    <div class="lf-rk"><h3>ملاحظات المستلم (نواقص / تلفيات / تعديلات مطلوبة) <span class="lf-e">Receiver's remarks</span></h3><div class="lf-ln"></div><div class="lf-ln"></div><div class="lf-ln"></div></div>
+    <div class="lf-rk"><h3>حالة الأصناف عند الاستلام <span class="lf-e">Condition on receipt</span></h3>${v("سليمة ومطابقة للعيّنة المعتمدة","Good, as approved sample")}${v("مقبولة بملاحظات (مكتوبة جنبها)","Accepted with remarks")}${v("مرفوض جزء (العدد: ____)","Partly rejected")}</div>
+  </div>
+  <p class="lf-dc">نقر نحن الموقعين أدناه باستلام الأصناف والكميات الموضّحة بعاليه.<span class="lf-e">We, the undersigned, confirm receipt of the items and quantities listed above.</span></p>
+  <div class="lf-sg">
+    <div class="lf-s"><h3><span>١ · أمين المخزن — سلّم للسواق</span><span class="lf-e">Store</span></h3><div class="lf-f">${u("الاسم","")}${u("التوقيع","","t")}${u("التاريخ والساعة","")}</div></div>
+    <div class="lf-s"><h3><span>٢ · السواق — استلم من المخزن</span><span class="lf-e">Driver</span></h3><div class="lf-f">${u("الاسم",d(I))}${u("التوقيع","","t")}${u("الموبايل","")}</div>${z?`<div class="lf-okk">✓ أكّد على السيستم <span class="lf-l">${d(w(String(z.at).slice(0,10)))} ${d(S(z.at))}</span></div>`:""}</div>
+    <div class="lf-s lf-rc"><h3><span>٣ · المستلم — مهندس الموقع / المخزن</span><span class="lf-e">Received by</span></h3><div class="lf-f">${u("الاسم",r?d(r.receiverName):"")}${u("الوظيفة",r?d(r.receiverTitle):"")}${u("التوقيع",r&&r.img?`<img src="${d(r.img)}" alt="">`:"",r&&r.img?"t":"")}${u("التاريخ والساعة",r&&r.at?`<span class="lf-l">${d(w(String(r.at).slice(0,10)))} ${d(S(r.at))}</span>`:"")}</div><div class="lf-st">ختم الشركة · Company stamp</div></div>
+  </div>
+  <div class="lf-ft"><div><b class="lf-l">lōf outdoor furniture</b>${a.email||a.phone?` · <span class="lf-l">${d([a.email,a.phone].filter(Boolean).join(" · "))}</span>`:""}<br>النسخ: أصل للعميل · صورة ممضية ترجع للمصنع</div><div class="lf-e">This note carries no prices.</div></div>
+</div>`}ACTIONS.dnxView=(t=>function(e){const l=t.apply(this,arguments);try{const f=window.__dnxCur,s=byId("fgs",e);if(f&&f.id===e&&s&&s.dn2&&C(s)){const i=T(s);f.html=i;const a=document.querySelector("#modalroot .sdprev");a&&(a.innerHTML=i)}}catch(f){console.warn("lof dn paper",f)}return l})(ACTIONS.dnxView),window.nfLofDn={sheet:T,rows:_}})();
