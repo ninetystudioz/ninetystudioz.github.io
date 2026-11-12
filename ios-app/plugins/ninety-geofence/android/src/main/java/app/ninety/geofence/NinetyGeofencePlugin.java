@@ -1,7 +1,11 @@
 package app.ninety.geofence;
 
 import android.Manifest;
+import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
+
+import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -73,6 +77,48 @@ public class NinetyGeofencePlugin extends Plugin {
         int n = GeoStore.register(getContext());
         JSObject o = st(); o.put("registered", n);
         call.resolve(o);
+    }
+
+    /* v11.24 — the route of a trip the driver started, recorded by the phone itself (TripTrackService). */
+    @PluginMethod
+    public void tripStart(PluginCall call) {
+        String url = call.getString("url"), token = call.getString("token"), tripId = call.getString("tripId");
+        if (url == null || token == null || tripId == null) { call.reject("url / token / tripId missing"); return; }
+        Context c = getContext();
+        if (!TripTrackService.hasLocation(c)) { call.reject("no-location"); return; }
+        android.content.SharedPreferences p = TripTrackService.prefs(c);
+        boolean same = TripTrackService.running && tripId.equals(p.getString("tripId", null));
+        p.edit().putString("url", url).putString("token", token).putString("tripId", tripId)
+                .putLong("since", same ? p.getLong("since", System.currentTimeMillis()) : System.currentTimeMillis()).apply();
+        try {
+            ContextCompat.startForegroundService(c, new Intent(c, TripTrackService.class));
+        } catch (Exception e) { call.reject("start: " + e.getMessage()); return; }
+        JSObject o = new JSObject(); o.put("running", true); o.put("tripId", tripId); call.resolve(o);
+    }
+
+    @PluginMethod
+    public void tripStop(PluginCall call) {
+        Context c = getContext();
+        if (TripTrackService.running) {
+            try {
+                Intent i = new Intent(c, TripTrackService.class); i.setAction(TripTrackService.ACTION_STOP);
+                c.startService(i);
+            } catch (Exception e) {
+                try { c.stopService(new Intent(c, TripTrackService.class)); } catch (Exception ignored) { }
+                TripTrackService.prefs(c).edit().remove("tripId").remove("since").apply();
+            }
+        } else {
+            TripTrackService.prefs(c).edit().remove("tripId").remove("since").apply();
+        }
+        JSObject o = new JSObject(); o.put("running", false); call.resolve(o);
+    }
+
+    @PluginMethod
+    public void tripStatus(PluginCall call) {
+        android.content.SharedPreferences p = TripTrackService.prefs(getContext());
+        JSObject o = new JSObject(); o.put("running", TripTrackService.running); o.put("tripId", p.getString("tripId", null));
+        int n = 0; try { n = new org.json.JSONArray(p.getString("pending", "[]")).length(); } catch (Exception ignored) { }
+        o.put("pending", n); o.put("platform", "android"); call.resolve(o);
     }
 
     @PluginMethod

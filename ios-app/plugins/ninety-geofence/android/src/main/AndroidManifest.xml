@@ -5,7 +5,10 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <application>
+        <service android:name="app.ninety.geofence.TripTrackService" android:exported="false" android:foregroundServiceType="location" />
         <receiver android:name="app.ninety.geofence.GeofenceReceiver" android:exported="false" />
         <receiver android:name="app.ninety.geofence.GeoBootReceiver" android:exported="true">
             <intent-filter>
