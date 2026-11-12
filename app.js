@@ -6006,3 +6006,93 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   shortFor("cams", () => T("الكاميرات", "Cameras"));
   shortFor("fleetmap", () => T("أماكن العربيات", "Vehicles"));
 })();
+/* v11.29 (المصنع بس) — «مين اتشاف فين» #/faces (المالك بس): كل وش الكاميرات التقطته (public.hik_events — Edge hik-hook من webhook هيك فيجن)
+   بصورته (bucket hikfaces الخاص، روابط مؤقتة) + الكاميرا + الوقت + الاسم لو اتعرف. فلتر باليوم والكاميرا، وبيتحدّث كل 30 ثانية وانت فاتح الصفحة. */
+;(function(){
+  if (window.__NF_FACES__ || typeof EXTRA_VIEWS === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_FACES__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s));
+  const can = () => !!(S && S.sb && S.sb.from) && typeof isAdmin === "function" && isAdmin() && !S.viewOrig && !S.demoOrig;
+  const st = { day: "", cam: "", rows: null, urls: {}, busy: false, err: "", timer: null, at: 0 };
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const hm = (iso) => { try { return new Date(iso).toLocaleTimeString(EN() ? "en-GB" : "ar-EG", { hour: "numeric", minute: "2-digit" }); } catch (e) { return ""; } };
+
+  if (typeof canSee === "function") canSee = ((f) => function (v) { return v === "faces" ? can() : f.apply(this, arguments); })(canSee);
+  try {
+    if (typeof NAV !== "undefined" && Array.isArray(NAV) && !NAV.some((n) => n.id === "faces")) {
+      const item = { id: "faces", label: () => T("مين اتشاف فين", "Who was seen where"), icon: "camera" };
+      const i = NAV.findIndex((n) => n.id === "cams");
+      const j = i >= 0 ? i + 1 : NAV.findIndex((n) => n.id === "settings");
+      if (j >= 0) NAV.splice(j, 0, item); else NAV.push(item);
+    }
+  } catch (e) { console.warn("faces nav", e); }
+  if (!document.getElementById("nffaces-css")) {
+    const s = document.createElement("style"); s.id = "nffaces-css";
+    s.textContent = `.nffaces{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+.nfface{padding:8px;display:flex;flex-direction:column;gap:6px}.nfface .ph{aspect-ratio:3/4;border-radius:8px;background:#111 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:12px;text-align:center}
+.nfface .who{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nfface .meta{font-size:12px;color:var(--ink2,#666);display:flex;justify-content:space-between;gap:6px}
+.nffbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.nffbar .chip{border:1px solid var(--line,#ddd);border-radius:999px;padding:4px 10px;font-size:13px;background:transparent;cursor:pointer}.nffbar .chip.on{background:var(--acc,#2a6);color:#fff;border-color:transparent}`;
+    document.head.appendChild(s);
+  }
+  async function load(quiet) {
+    if (!can() || st.busy) return; st.busy = true;
+    const day = st.day || today();
+    const a = new Date(day + "T00:00:00"), b = new Date(a.getTime() + 86400000);
+    try {
+      const { data, error } = await S.sb.from("hik_events").select("id,happened_at,event_type,cam_name,human_name,similarity,pic_path,pic_state,worker_id").gte("happened_at", a.toISOString()).lt("happened_at", b.toISOString()).order("happened_at", { ascending: false }).limit(300);
+      if (error) throw error;
+      st.rows = data || []; st.err = ""; st.at = Date.now();
+      const need = st.rows.map((r) => r.pic_path).filter((p) => p && !st.urls[p]);
+      if (need.length) {
+        const { data: su } = await S.sb.storage.from("hikfaces").createSignedUrls(need.slice(0, 300), 3600);
+        (su || []).forEach((x) => { if (x && x.signedUrl && x.path) st.urls[x.path] = x.signedUrl; });
+      }
+    } catch (e) { st.err = String((e && e.message) || e || "").slice(0, 120); if (!st.rows) st.rows = []; }
+    finally { st.busy = false; }
+    paint();
+  }
+  const wname = (r) => {
+    if (r.worker_id && typeof byId === "function") { const w = byId("workers", r.worker_id); if (w && w.name) return w.name; }
+    return r.human_name || "";
+  };
+  function listHtml() {
+    if (!st.rows) return `<div class="muted small">${H(T("بنجيب الوشوش…", "Loading faces…"))}</div>`;
+    if (st.err) return `<div class="banner warn"><span>${H(T("تعذّر التحميل: ", "Could not load: ") + st.err)}</span></div>`;
+    const rows = st.cam ? st.rows.filter((r) => (r.cam_name || "") === st.cam) : st.rows;
+    if (!rows.length) return `<div class="banner info"><span>${H(T("لسه مفيش وشوش اتسجلت في اليوم ده. الكاميرا اللي بتلتقط الوشوش دلوقتي: المدخل (main entranc login).", "No faces recorded on this day yet. The camera capturing faces right now: the entrance (main entranc login)."))}</span></div>`;
+    return `<div class="small muted" style="margin:2px 0 8px">${H(T(`${rows.length} وش`, `${rows.length} faces`))}</div><div class="nffaces">${rows.map((r) => {
+      const u = r.pic_path && st.urls[r.pic_path]; const n = wname(r);
+      const ph = u ? `<div class="ph" style="background-image:url('${H(u)}')"></div>` : `<div class="ph">${H(r.pic_state === "pending" ? T("الصورة جاية…", "Picture coming…") : T("مفيش صورة", "No picture"))}</div>`;
+      return `<div class="card nfface">${ph}<div class="who notr" dir="auto">${n ? H(n) + (r.similarity ? ` <span class="muted small">${H(Math.round(Number(r.similarity) * (Number(r.similarity) <= 1 ? 100 : 1)))}%</span>` : "") : `<span class="muted">${H(T("مش معروف لسه", "Not known yet"))}</span>`}</div><div class="meta"><span class="notr" dir="auto">${H(r.cam_name || "")}</span><span>${H(hm(r.happened_at))}</span></div></div>`;
+    }).join("")}</div>`;
+  }
+  function barHtml() {
+    const cams = st.rows ? [...new Set(st.rows.map((r) => r.cam_name || "").filter(Boolean))] : [];
+    return `<div class="nffbar"><input type="date" class="input" data-ffday value="${H(st.day || today())}" max="${H(today())}" style="max-width:170px">
+      <button type="button" class="chip ${!st.cam ? "on" : ""}" data-ffcam="">${H(T("كل الكاميرات", "All cameras"))}</button>${cams.map((c) => `<button type="button" class="chip notr ${st.cam === c ? "on" : ""}" data-ffcam="${H(c)}">${H(c)}</button>`).join("")}
+      <button type="button" class="btn sm" data-ffrefresh>${typeof icon === "function" ? icon("refresh") : ""}<span>${H(T("تحديث", "Refresh"))}</span></button></div>`;
+  }
+  function paint() {
+    const b = document.getElementById("nffbarbox"), l = document.getElementById("nfflist");
+    if (b) b.innerHTML = barHtml(); if (l) l.innerHTML = listHtml();
+  }
+  if (typeof EXTRA_TITLES !== "undefined") EXTRA_TITLES.faces = () => ({ title: T("مين اتشاف فين", "Who was seen where"), sub: T("الوشوش اللي الكاميرات التقطتها — للمالك بس", "Faces the cameras captured — owner only") });
+  EXTRA_VIEWS.faces = () => {
+    if (!can()) return `<div class="card"><p class="small ink2">${H(T("الصفحة دي للمالك بس.", "This page is for the owner only."))}</p></div>`;
+    setTimeout(() => { if (!st.rows || Date.now() - st.at > 20000) load(true); else paint(); }, 30);
+    clearInterval(st.timer); st.timer = setInterval(() => { if (!/^#\/faces(\/|$)/.test(location.hash) || document.hidden) return; if ((st.day || today()) === today()) load(true); }, 30000);
+    return `<div class="stack"><div class="small ink2">${H(T("كل وش الكاميرا التقطته بيظهر هنا بصورته ووقته. لما نسمّي الناس، الاسم هيظهر تحت الصورة.", "Every face a camera captures shows here with its picture and time. Once people are named, the name shows under the picture."))}</div><div id="nffbarbox">${barHtml()}</div><div id="nfflist">${listHtml()}</div></div>`;
+  };
+  document.addEventListener("click", (ev) => {
+    const t = ev.target && ev.target.closest ? ev.target : null; if (!t) return;
+    const c = t.closest("[data-ffcam]"); if (c) { ev.preventDefault(); st.cam = c.getAttribute("data-ffcam") || ""; paint(); return; }
+    if (t.closest("[data-ffrefresh]")) { ev.preventDefault(); load(false); }
+  });
+  document.addEventListener("change", (ev) => {
+    const t = ev.target; if (!t || !t.matches || !t.matches("[data-ffday]")) return;
+    st.day = t.value || today(); st.rows = null; st.cam = ""; paint(); load(false);
+  });
+})();
