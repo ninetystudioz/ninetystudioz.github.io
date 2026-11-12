@@ -5975,3 +5975,34 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     }
   } catch (e) { console.warn("cams link", e); }
 })();
+/* v11.28 (المصنع بس) — شريط الموبايل اللي تحت للمالك بس (محمود 12/11 23:31):
+   «لوحات الأقسام» ← «الكاميرات» (#/cams)، و«CRM» ← «أماكن العربيات» (#/fleetmap). نفس المكان، والباقي زي ما هو.
+   الصفحات القديمة لسه موجودة في «المزيد». باقي الناس الشريط بتاعهم زي ما هو. */
+;(function(){
+  if (window.__NF_OWNTAB__ || typeof tabbarItems !== "function") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_OWNTAB__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const own = () => { try { return typeof isAdmin === "function" && isAdmin() && !(S && (S.viewOrig || S.demoOrig)); } catch (e) { return false; } };
+  const SWAP = { boards: "cams", crm: "fleetmap" };
+  tabbarItems = ((f) => function () {
+    const a = f.apply(this, arguments);
+    if (!own() || !Array.isArray(a)) return a;
+    try {
+      const out = a.map((x) => (SWAP[x] && canSee(SWAP[x]) ? SWAP[x] : x));
+      return out.filter((x, i) => out.indexOf(x) === i);
+    } catch (e) { return a; }
+  })(tabbarItems);
+  const shortFor = (id, fn) => {
+    try {
+      const n = (typeof NAV !== "undefined" && Array.isArray(NAV)) ? NAV.find((x) => x.id === id) : null; if (!n) return;
+      const d = Object.getOwnPropertyDescriptor(n, "short"); if (d && d.get && d.get.__nfOwn) return;
+      const old = n.short;
+      const g = () => (own() ? fn() : (typeof old === "function" ? old() : old)); g.__nfOwn = 1;
+      Object.defineProperty(n, "short", { configurable: true, enumerable: true, get: g });
+    } catch (e) { console.warn("owner tab", id, e); }
+  };
+  shortFor("cams", () => T("الكاميرات", "Cameras"));
+  shortFor("fleetmap", () => T("أماكن العربيات", "Vehicles"));
+})();
