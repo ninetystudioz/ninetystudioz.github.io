@@ -5823,3 +5823,155 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     }
   });
 })();
+/* v11.27 (المصنع بس) — «الكاميرات لايف»: صفحة #/cams للمالك بس. قايمة كاميرات الـ Team (Edge hik action cameras)
+   + بث لايف HLS بالجودة الصغيرة (Edge hik action live، protocol 2، quality 2) بـ hls.js (أو HLS المدمج في آيفون).
+   بث واحد في نفس الوقت، بيقف لوحده بعد 5 دقايق أو لما تسيب الصفحة — عشان باقة شريحة المصنع. */
+;(function(){
+  if (window.__NF_HIKLIVE__ || typeof EXTRA_VIEWS === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_HIKLIVE__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s));
+  const can = () => !!(S && S.sb && S.sb.functions) && typeof isAdmin === "function" && isAdmin() && !S.viewOrig && !S.demoOrig;
+  const HLS_SRC = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
+  const MAX_MS = 5 * 60 * 1000;
+  let cams = null, camsAt = 0, loading = false, cur = null; // cur = { id, hls, timer, v }
+
+  /* ---- who sees it: the owner only ---- */
+  if (typeof canSee === "function") canSee = ((f) => function (v) { return v === "cams" ? can() : f.apply(this, arguments); })(canSee);
+  try {
+    if (typeof NAV !== "undefined" && Array.isArray(NAV) && !NAV.some((n) => n.id === "cams")) {
+      const item = { id: "cams", label: () => T("الكاميرات لايف", "Live cameras"), icon: "camera" };
+      const i = NAV.findIndex((n) => n.id === "settings");
+      if (i >= 0) NAV.splice(i, 0, item); else NAV.push(item);
+    }
+  } catch (e) { console.warn("cams nav", e); }
+
+  /* ---- styles ---- */
+  if (!document.getElementById("nfcams-css")) {
+    const st = document.createElement("style"); st.id = "nfcams-css";
+    st.textContent = `.nfcams{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.nfcam{padding:12px}.nfcam .nfcam-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.nfcam .nfcam-h b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nfcam-box{position:relative;aspect-ratio:16/9;background:#111;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.nfcam-box video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+.nfcam-box .nfcam-msg{position:relative;z-index:2;color:#eee;text-align:center;padding:12px;font-size:13px;line-height:1.6}
+.nfcam-play{position:relative;z-index:2;width:64px;height:64px;border-radius:50%;border:0;background:rgba(255,255,255,.92);color:#111;font-size:26px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding-inline-start:4px}
+.nfcam-play:disabled{opacity:.5;cursor:default}.nfcam-foot{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:8px;min-height:30px}`;
+    document.head.appendChild(st);
+  }
+
+  /* ---- player ---- */
+  let hlsP = null;
+  const loadHls = () => window.Hls ? Promise.resolve(window.Hls) : (hlsP = hlsP || new Promise((ok, no) => {
+    const s = document.createElement("script"); s.src = HLS_SRC; s.async = true;
+    s.onload = () => (window.Hls ? ok(window.Hls) : no(new Error("hls"))); s.onerror = () => { hlsP = null; no(new Error("hls")); };
+    document.head.appendChild(s);
+  }));
+  const boxOf = (id) => document.querySelector(`.nfcam[data-cam="${CSS.escape(id)}"] .nfcam-box`);
+  const footOf = (id) => document.querySelector(`.nfcam[data-cam="${CSS.escape(id)}"] .nfcam-foot`);
+  const idleBox = (msg) => `${msg ? `<div class="nfcam-msg">${H(msg)}</div>` : ""}<button type="button" class="nfcam-play" data-camplay aria-label="${H(T("شغّل", "Play"))}">▶</button>`;
+  function stop(msg) {
+    if (!cur) return; const c = cur; cur = null;
+    clearTimeout(c.timer);
+    try { if (c.hls) c.hls.destroy(); } catch (e) {}
+    const b = boxOf(c.id); if (b) { const v = b.querySelector("video"); if (v) { try { v.pause(); v.removeAttribute("src"); v.load(); } catch (e) {} } b.innerHTML = idleBox(msg || ""); }
+    const f = footOf(c.id); if (f) f.innerHTML = footHtml(false);
+  }
+  const footHtml = (on) => on
+    ? `<span class="small muted">${H(T("بيستهلك حوالي 2–3 ميجا في الدقيقة من شريحة المصنع", "Uses about 2–3 MB a minute of the factory SIM"))}</span><button type="button" class="btn sm" data-camstop>${H(T("وقّف", "Stop"))}</button>`
+    : `<span class="small muted">${H(T("جودة البث الصغيرة — بيقف لوحده بعد 5 دقايق", "Low-quality stream — stops by itself after 5 minutes"))}</span>`;
+  const errText = (r) => {
+    const e = String((r && (r.err || r.error)) || "");
+    if (/EVZ60019|Encryption/i.test(e)) return T("تشفير الفيديو لسه شغال على الريكوردر — اقفله من أبليكيشن Hik-Connect (Device ← الريكوردر ← Video and Image Encryption).", "Video encryption is still on for the recorder — turn it off in the Hik-Connect app (Device → recorder → Video and Image Encryption).");
+    if (/no_token|no_keys/.test(e)) return T("ربط هيك فيجن مش شغال — افتح الإعدادات ← ربط هيك فيجن.", "The Hikvision link is not working — open Settings → Hikvision link.");
+    if (/offline|EVZ2000[37]|EVZ60001/i.test(e)) return T("الكاميرا أو الريكوردر مش أونلاين دلوقتي.", "The camera or the recorder is offline right now.");
+    return T("البث مش راضي يشتغل", "The stream would not start") + (e ? ` (${e.slice(0, 80)})` : "");
+  };
+  async function play(id) {
+    if (!can()) return;
+    if (cur && cur.id === id) return;
+    stop();
+    const cam = (cams || []).find((c) => c.id === id); if (!cam) return;
+    const b = boxOf(id); if (!b) return;
+    cur = { id, hls: null, timer: null };
+    b.innerHTML = `<div class="nfcam-msg">${H(T("بنفتح البث…", "Opening the stream…"))}</div>`;
+    let r = null;
+    try { const x = await S.sb.functions.invoke("hik", { body: { action: "live", id: cam.id, serial: cam.serial, protocol: 2, quality: 2 } }); r = x && x.data; } catch (e) { r = null; }
+    if (!cur || cur.id !== id) return;
+    if (!r || !r.ok || !r.url) { const m = errText(r || { err: "network" }); cur = null; const bb = boxOf(id); if (bb) bb.innerHTML = idleBox(m); return; }
+    const url = String(r.url).replace(/^http:\/\//i, "https://");
+    const bb = boxOf(id); if (!bb) { cur = null; return; }
+    bb.innerHTML = `<video muted playsinline autoplay controls></video>`;
+    const v = bb.querySelector("video"); cur.v = v;
+    const fail = (why) => { if (cur && cur.id === id) stop(T("البث وقف", "The stream stopped") + (why ? ` (${why})` : "") + " — " + T("دوس ▶ تاني", "press ▶ again")); };
+    try {
+      if (v.canPlayType("application/vnd.apple.mpegurl") && !(window.Hls && window.Hls.isSupported && window.Hls.isSupported() && !/iPhone|iPad|iPod/.test(navigator.userAgent))) {
+        v.src = url; v.addEventListener("error", () => fail("video"), { once: true });
+      } else {
+        const Hls = await loadHls();
+        if (!cur || cur.id !== id) return;
+        if (!Hls.isSupported()) { fail(T("المتصفح ده مش بيشغّل البث", "this browser can't play it")); return; }
+        const h = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 10 }); cur.hls = h;
+        h.on(Hls.Events.ERROR, (_, d) => { if (d && d.fatal) fail(d.details || d.type); });
+        h.loadSource(url); h.attachMedia(v);
+      }
+      v.play && v.play().catch(() => {});
+    } catch (e) { fail(T("المشغّل ماحمّلش", "player did not load")); return; }
+    cur.timer = setTimeout(() => stop(T("وقفنا البث بعد 5 دقايق عشان باقة الشريحة — دوس ▶ تاني", "Stopped after 5 minutes to save the SIM data — press ▶ again")), MAX_MS);
+    const f = footOf(id); if (f) f.innerHTML = footHtml(true);
+  }
+
+  /* ---- page ---- */
+  function gridHtml() {
+    if (!cams) return `<div class="muted small">${H(T("بنجيب الكاميرات…", "Loading cameras…"))}</div>`;
+    if (!cams.length) return `<div class="banner info"><span>${H(T("مفيش كاميرات في الـ Team لسه.", "No cameras in the Team yet."))}</span></div>`;
+    const on = (c) => !!(cur && cur.id === c.id && cur.v);
+    return `<div class="nfcams">${cams.map((c) => `<div class="card nfcam" data-cam="${H(c.id)}"><div class="nfcam-h"><b class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</b>${c.online ? `<span class="badge good">${H(T("أونلاين", "Online"))}</span>` : `<span class="badge crit">${H(T("أوفلاين", "Offline"))}</span>`}</div><div class="nfcam-box">${on(c) ? "" : c.online ? idleBox("") : `<div class="nfcam-msg">${H(T("الكاميرا مش أونلاين", "Camera offline"))}</div>`}</div><div class="nfcam-foot">${footHtml(on(c))}</div></div>`).join("")}</div>`;
+  }
+  async function loadCams(force) {
+    const host = document.getElementById("nfcamsgrid"); if (!host || !can()) return;
+    if (!force && cams && Date.now() - camsAt < 60000) return;
+    if (loading) return; loading = true;
+    try {
+      const x = await S.sb.functions.invoke("hik", { body: { action: "cameras" } }); const r = x && x.data;
+      if (r && r.ok) { cams = (r.cameras || []).filter((c) => c && c.id && c.serial); camsAt = Date.now(); }
+      else { const h2 = document.getElementById("nfcamsgrid"); if (h2) h2.innerHTML = `<div class="banner warn"><span>${H(errText(r || { err: "network" }))}</span></div>`; return; }
+    } catch (e) { const h2 = document.getElementById("nfcamsgrid"); if (h2) h2.innerHTML = `<div class="banner warn"><span>${H(T("تعذّر الوصول للسيرفر", "Could not reach the server"))}</span></div>`; return; }
+    finally { loading = false; }
+    const h3 = document.getElementById("nfcamsgrid"); if (h3) { stop(); h3.innerHTML = gridHtml(); }
+  }
+  // the app re-renders pages on data updates — move the playing <video> into the new box instead of losing the stream
+  function reattach() {
+    if (!cur || !cur.v) return; const b = boxOf(cur.id);
+    if (!b) { stop(); return; }
+    if (b.contains(cur.v)) return;
+    b.innerHTML = ""; b.appendChild(cur.v); try { const p = cur.v.play(); p && p.catch(() => {}); } catch (e) {}
+  }
+  if (typeof EXTRA_TITLES !== "undefined") EXTRA_TITLES.cams = () => ({ title: T("الكاميرات لايف", "Live cameras"), sub: T("من سحابة هيك فيجن — للمالك بس", "Through the Hikvision cloud — owner only") });
+  EXTRA_VIEWS.cams = () => {
+    if (!can()) return `<div class="card"><p class="small ink2">${H(T("الصفحة دي للمالك بس.", "This page is for the owner only."))}</p></div>`;
+    setTimeout(() => { reattach(); loadCams(false); }, 30);
+    return `<div class="stack"><div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between"><span class="small ink2">${H(T("دوس ▶ على الكاميرا اللي عايز تشوفها. بث واحد بس في نفس الوقت.", "Press ▶ on the camera you want to watch. One stream at a time."))}</span><button type="button" class="btn sm" data-camsrefresh>${typeof icon === "function" ? icon("refresh") : ""}<span>${H(T("تحديث", "Refresh"))}</span></button></div><div id="nfcamsgrid">${gridHtml()}</div></div>`;
+  };
+
+  /* ---- events ---- */
+  document.addEventListener("click", (ev) => {
+    const t = ev.target && ev.target.closest ? ev.target : null; if (!t) return;
+    if (t.closest("[data-camplay]")) { ev.preventDefault(); const c = t.closest(".nfcam"); if (c) play(c.getAttribute("data-cam")); return; }
+    if (t.closest("[data-camstop]")) { ev.preventDefault(); stop(); return; }
+    if (t.closest("[data-camsrefresh]")) { ev.preventDefault(); loadCams(true); }
+  });
+  window.addEventListener("hashchange", () => { if (!/^#\/cams(\/|$)/.test(location.hash)) stop(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
+
+  /* ---- link from the Hikvision settings card ---- */
+  try {
+    if (typeof EXTRA_SETTINGS !== "undefined" && EXTRA_SETTINGS.hik && typeof EXTRA_SETTINGS.hik.render === "function" && !EXTRA_SETTINGS.hik.__cams) {
+      const r0 = EXTRA_SETTINGS.hik.render;
+      EXTRA_SETTINGS.hik.render = function () { const h = r0.apply(this, arguments); return can() ? h.replace(/<\/form>\s*$/, `<div class="row" style="margin-top:10px"><a class="btn" href="#/cams">${typeof icon === "function" ? icon("camera") : ""}<span>${H(T("افتح الكاميرات لايف", "Open live cameras"))}</span></a></div></form>`) : h; };
+      EXTRA_SETTINGS.hik.__cams = 1;
+    }
+  } catch (e) { console.warn("cams link", e); }
+})();
