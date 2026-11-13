@@ -6333,6 +6333,10 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.41 (المصنع بس) — «الكاميرات» نسخة 9 (محمود 13/11 10:09: «لما أفتح كاميرا تفتح على نفس الوضع… تقلب لاندسكيب لو قلبت الموبايل أو دوست زرار بالعرض»):
+   - دوسة على الكاميرا على الموبايل وهو واقف مابقتش تقلب العرض لوحدها (كانت بتفتح ملء الشاشة بالعرض). بالعرض = لفّ الموبايل أو زرار «بالعرض» بس.
+   - الدبل تاب (تكبير) زي ما هو، وعلى الكمبيوتر الدوسة لسه بتفتح ملء الشاشة.
+   الباقي زي v11.39: */
 /* v11.39 (المصنع بس) — «الكاميرات» نسخة 8 (محمود 13/11 09:31: التسجيل يفضل H.265 عشان الهارد يشيل الضعف):
    - لما الكاميرا بتسجّل H.265 زرار «عادي / أعلى جودة» مش بيظهر خالص (المتصفح مابيعرضش H.265)، وملحوظة «أوضح مع أعلى جودة» وقت الزوم مابتظهرش.
    - معلومة الكوديك بتتحدّث كل 30 دقيقة (كانت 12 ساعة) عشان أي تغيير في التسجيل يبان بسرعة.
@@ -6701,7 +6705,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   document.addEventListener("mousedown", (e) => { if (!onPage() || e.button !== 0) return; const b = one(); if (!b || Z.s <= 1 || !b.el.contains(e.target) || (e.target.closest && e.target.closest(CTRL))) return; zStop(); const a = local(b.el, e.clientX, e.clientY); M = { b, R: b.el.getBoundingClientRect(), W: b.el.offsetWidth, H: b.el.offsetHeight, px: a.x, py: a.y, x: Z.x, y: Z.y, moved: false }; e.preventDefault(); });
   document.addEventListener("mousemove", (e) => { if (!M) return; const a = loc(M.R, e.clientX, e.clientY); if (Math.abs(a.x - M.px) + Math.abs(a.y - M.py) > 4) M.moved = true; const B = zBounds(M.W, M.H, Z.s); Z.x = clampv(M.x + (a.x - M.px), B.x0, B.x1); Z.y = clampv(M.y + (a.y - M.py), B.y0, B.y1); zSoon(); });
   document.addEventListener("mouseup", () => { if (M && M.moved) Z.end = Date.now(); M = null; });
-  function tapLive(ev) { // one camera, live: one tap → full screen (portrait) / show-hide the buttons (landscape); two taps → zoom in there / back out
+  function tapLive(ev) { // one camera, live: one tap → (computer) full screen / (landscape) show-hide the buttons — on a phone held upright it stays upright (v11.41); two taps → zoom in there / back out
     if (Date.now() - Z.end < 350) return;
     const now = Date.now();
     if (tapT && now - tapAt < 330) {
@@ -6711,7 +6715,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     }
     tapAt = now; clearTimeout(tapT);
     const was = st.uiWas;
-    tapT = setTimeout(() => { tapT = null; if (!full()) { if (Z.s <= 1) enterFull(); } else if (was) hideUi(); else showUi(); }, 330);
+    tapT = setTimeout(() => { tapT = null; if (!full()) { if (Z.s <= 1 && !phone()) enterFull(); } else if (was) hideUi(); else showUi(); }, 330); // phone: landscape only by turning it or «بالعرض» (محمود 13/11 10:09)
   }
 
   /* ---- landscape: buttons over the picture that hide by themselves ---- */
