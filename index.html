@@ -1402,12 +1402,30 @@ svg.leaflet-image-layer.leaflet-interactive path {
 	}
 </style>
 <div id="root"></div>
+<div id="nf-boot" style="position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;background:var(--bg,#f3f4f2);color:var(--ink,#16191b);font:16px/1.7 system-ui,-apple-system,'Segoe UI',Tahoma,sans-serif;text-align:center;opacity:0;animation:nfboot .25s .5s forwards"><style>@keyframes nfboot{to{opacity:1}}@keyframes nfbootsp{to{transform:rotate(360deg)}}</style><div style="font-weight:800;font-size:26px;letter-spacing:.16em">NINETY</div><div style="width:26px;height:26px;border-radius:50%;border:3px solid var(--line,#dde1de);border-top-color:var(--accent,#2b6f93);animation:nfbootsp .9s linear infinite"></div><div id="nf-boot-m"></div><button id="nf-boot-b" type="button" style="display:none;font:inherit;padding:10px 24px;border-radius:999px;border:0;background:var(--ink,#16191b);color:var(--bg,#f3f4f2);cursor:pointer"></button></div>
+<script>/* boot splash + watchdog (v11.62): the page used to stay blank (black at night) while its code was still downloading, with nothing on screen. Now a splash shows after half a second; if the code has not started after 8 s it says so and offers «reload»; after 45 s it reloads by itself (twice at most). It goes away the moment the app draws. */
+(function(){var el=document.getElementById("nf-boot"),m=document.getElementById("nf-boot-m"),b=document.getElementById("nf-boot-b"),t0=Date.now(),en=false,n=0,cu=0,iv=0,mo=null;if(!el)return;
+try{en=/^en/.test(localStorage.getItem("nf.lang")||localStorage.getItem("nf.lang.stu")||"")}catch(e){}
+try{n=+sessionStorage.getItem("nf.boot.n")||0}catch(e){}
+m.textContent=en?"Opening…":"بيفتح…";b.textContent=en?"Reload":"حمّل تاني";
+function go(){try{location.replace(location.pathname+"?nfr="+Date.now()+location.hash)}catch(e){location.reload()}}
+b.onclick=go;
+function drawn(){var r=document.getElementById("root");return!!(r&&r.firstElementChild)}
+function done(){clearInterval(iv);try{mo&&mo.disconnect()}catch(e){}try{sessionStorage.removeItem("nf.boot.n")}catch(e){}try{el.parentNode&&el.parentNode.removeChild(el)}catch(e){}try{/[?&]nfr=/.test(location.search)&&history.replaceState(null,"",location.pathname+location.hash)}catch(e){}}
+function tick(){if(drawn())return done();var s=(Date.now()-t0)/1000;
+/* the app code is running: it draws by itself — never stand in its way */
+if(typeof boot=="function"){cu=cu||Date.now();if(Date.now()-cu>4000)return done();return}
+if(s>8){m.textContent=en?"Still loading — the connection is slow.":"لسه بيحمّل — النت بطيء.";b.style.display=""}
+if(s>45&&n<2){clearInterval(iv);try{sessionStorage.setItem("nf.boot.n",String(n+1))}catch(e){}go()}}
+iv=setInterval(tick,250);
+try{mo=new MutationObserver(function(){drawn()&&done()});mo.observe(document.getElementById("root"),{childList:true})}catch(e){}
+window.nfBootSplash={done:done}})();</script>
 <script src="config.js"></script>
-<script>window.NF_PWA=true;window.NF_BUILD="20261113-2033-978d23";</script>
+<script>window.NF_PWA=true;window.NF_BUILD="20261113-2043-27958b";</script>
 
 <script src="core.js?v=ca30acacbb" data-nf-core></script>
 <script src="app-base.js?v=bd72e734eb" data-nf-appbase></script>
-<script src="app.js?v=20261113-2033-978d23" data-nf-app></script>
+<script src="app.js?v=20261113-2043-27958b" data-nf-app></script>
 
 </body>
 </html>
