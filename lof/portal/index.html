@@ -7,6 +7,8 @@
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#111111">
 <title>lōf — Supply status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111'/%3E%3Ctext x='32' y='44' font-family='Arial' font-size='34' fill='%23fff' text-anchor='middle'%3El%C5%8Df%3C/text%3E%3C/svg%3E">
 <style>
 :root{--ink:#121212;--ink2:#4a4a46;--mute:#8a877f;--line:#e6e2d9;--paper:#f6f4ef;--card:#ffffff;--acc:#1baf7a;--acc2:#0f7d56;--accbg:#e7f6ef;--warn:#b45309;--warnbg:#fdf3e5;--r:16px}
@@ -108,16 +110,71 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
 .load{padding:80px 0;text-align:center;color:var(--mute)}
 @media (max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:420px){.bar .t{display:none}.kpi .v{font-size:24px}.card{padding:15px}.btn{padding:7px 10px}}
+/* ---------- the PDF / print report (A4 landscape, built from the same data) ---------- */
+#report{display:none}
+.pg{width:297mm;height:210mm;padding:13mm 15mm 11mm;position:relative;overflow:hidden;background:#fff;color:var(--ink);page-break-after:always;break-after:page;display:flex;flex-direction:column}
+.pg:last-child{page-break-after:auto;break-after:auto}
+.pg *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cov{background:#121212;color:#fff;padding:0;flex-direction:row}
+.cov .l{flex:0 0 42%;display:flex;align-items:center;justify-content:center;border-inline-end:1px solid rgba(255,255,255,.12)}
+.cov .l .logo{height:78mm;color:#fff}
+.cov .r{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 16mm}
+.cov .ey{font-size:9.5pt;letter-spacing:.22em;text-transform:uppercase;color:#4fd1a1;font-weight:600}
+.cov h1{font-size:34pt;line-height:1.15;margin:5mm 0 3mm;font-weight:700}
+.cov .sb{font-size:12pt;color:rgba(255,255,255,.72);max-width:120mm;line-height:1.6}
+.cov .rule{height:1.2mm;width:24mm;background:var(--acc);margin:9mm 0 7mm;border-radius:1mm}
+.cov .kp{display:flex;gap:10mm}
+.cov .kp div{font-size:9pt;color:rgba(255,255,255,.6)}
+.cov .kp b{display:block;font-size:22pt;color:#fff;font-weight:700;line-height:1.2}
+.cov .kp .g b{color:#4fd1a1}
+.cov .dt{position:absolute;bottom:11mm;inset-inline-end:15mm;font-size:9pt;color:rgba(255,255,255,.55)}
+.rh{display:flex;align-items:flex-end;gap:5mm;padding-bottom:4mm;border-bottom:.3mm solid #1a1a1a;margin-bottom:6mm}
+.rh .logo{height:11mm}
+.rh .tt{flex:1}
+.rh .tt small{display:block;font-size:8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--acc2);font-weight:600}
+.rh .tt b{font-size:15pt;font-weight:700}
+.rh .d{font-size:8.5pt;color:var(--mute)}
+.rf{margin-top:auto;padding-top:3mm;border-top:.2mm solid var(--line);display:flex;justify-content:space-between;align-items:center;font-size:7.5pt;color:var(--mute)}
+.rk{display:grid;grid-template-columns:repeat(4,1fr);gap:4mm;margin-bottom:5mm}
+.rk div{border:.25mm solid var(--line);border-radius:3mm;padding:3.5mm 4.5mm}
+.rk span{font-size:8pt;color:var(--mute)}
+.rk b{display:block;font-size:20pt;font-weight:700;line-height:1.15}
+.rk .g b{color:var(--acc2)}
+.rt{width:100%;border-collapse:collapse;font-size:9pt;margin-top:2mm}
+.rt th{font-size:7.5pt;color:var(--mute);font-weight:600;text-align:start;padding:2.2mm 2mm;border-bottom:.3mm solid #1a1a1a;letter-spacing:.03em}
+.rt td{padding:2.6mm 2mm;border-bottom:.2mm solid var(--line);vertical-align:middle}
+.rt .c{text-align:center}
+.rt .nm b{display:block;font-weight:600}
+.rt .nm span{font-size:7.5pt;color:var(--mute)}
+.mb{display:flex;align-items:center;gap:2mm;min-width:34mm}
+.mb i{flex:1;height:2mm;background:#ece8df;border-radius:1mm;overflow:hidden;display:block}
+.mb i em{display:block;height:100%;background:var(--acc);border-radius:1mm}
+.mb span{font-size:8pt;font-weight:600;min-width:9mm;text-align:end}
+.st{font-size:7.5pt;font-weight:600;padding:.8mm 2.4mm;border-radius:5mm;background:#efece5;color:var(--ink2);white-space:nowrap}
+.st.done{background:var(--accbg);color:var(--acc2)}.st.part{background:#eef4ff;color:#1d4ed8}
+.cp{display:grid;grid-template-columns:1fr 1fr;gap:7mm;flex:1;min-height:0}
+.cc{border:.25mm solid var(--line);border-radius:3.5mm;padding:5mm 5.5mm;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.cc .co{font-size:8pt;color:var(--acc2);font-weight:600;letter-spacing:.04em}
+.cc h3{font-size:13pt;margin:1mm 0 2.5mm;line-height:1.3}
+.cc .mt{display:flex;flex-wrap:wrap;gap:1mm 6mm;font-size:8.5pt;color:var(--ink2);margin-bottom:3mm}
+.cc .mt b{color:var(--ink);font-weight:600}
+.cc .mt .k{color:var(--mute);margin-inline-end:1.5mm}
+.cc .pr{display:flex;justify-content:space-between;font-size:8.5pt;color:var(--mute);margin-bottom:1.5mm}
+.cc .pr b{color:var(--ink)}
+.cc .bar{height:2.4mm;background:#ece8df;border-radius:1.2mm;overflow:hidden}
+.cc .bar em{display:block;height:100%;background:var(--acc)}
+.cc table{font-size:8.5pt;margin-top:4mm}
+.cc th{font-size:7pt;padding:1.6mm 1.5mm}
+.cc td{padding:2mm 1.5mm}
+.cc .dls{margin-top:3mm;font-size:7.8pt;color:var(--ink2)}
+.cc .dls b{display:block;font-size:7.5pt;color:var(--mute);font-weight:600;margin-bottom:1mm;letter-spacing:.03em}
+.cc .dls div{padding:1.2mm 0;border-top:.2mm dashed var(--line)}
+.cc .dls .n{font-weight:600;color:var(--ink)}
 @media print{
-  @page{size:A4;margin:12mm}
-  body{background:#fff;font-size:12px}
-  .bar .btn,.bar .sp+*{display:none!important}
-  .bar{position:static;background:#fff;backdrop-filter:none;border-bottom:1px solid #ccc}
-  .grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
-  .card,.kpi{border-color:#ccc;box-shadow:none}
-  details{display:block}
-  details>summary{pointer-events:none}
-  .noprint{display:none!important}
+  @page{size:A4 landscape;margin:0}
+  html,body{background:#fff!important}
+  body>*:not(#report){display:none!important}
+  #report{display:block}
 }
 </style>
 </head>
@@ -170,6 +227,7 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
   <main class="wrap" id="main"></main>
 </div>
 
+<div id="report" aria-hidden="true"></div>
 <script>
 (function () {
   'use strict';
@@ -191,7 +249,7 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
       secT: 'المقاولون', secS: 'حسب أمر التوريد / العقد', po: 'أمر توريد', contract: 'عقد', dated: 'بتاريخ', due: 'موعد التسليم', lastDel: 'آخر توريد',
       st: { done: 'تم التوريد بالكامل', part: 'توريد جزئي', work: 'قيد التصنيع' },
       item: 'البند', qty: 'المتعاقد', got: 'تم', rem: 'المتبقي', dels: 'أذون التسليم', prior: 'توريد سابق (قبل التسجيل على النظام)', none: 'لم يتم توريد أي كميات بعد.', dn: 'إذن',
-      foot: 'البيانات مأخوذة مباشرة من نظام مصنع lōf وتتحدّث تلقائياً. الكميات فقط — بدون أسعار.', allDone: 'اكتمل', pct: '٪'
+      foot: 'البيانات مأخوذة مباشرة من نظام مصنع lōf وتتحدّث تلقائياً. الكميات فقط — بدون أسعار.', repEy: 'Site Furniture — حالة التوريدات', repT: 'حالة توريدات المقاولين', repSum: 'ملخص التعاقدات', repDet: 'تفاصيل التعاقدات', contractor: 'المقاول', project: 'المشروع (حسب المستند)', ref: 'المرجع', prog: 'التقدّم', status: 'الحالة', asOf: 'بتاريخ', page: 'صفحة', repFoot: 'lōf outdoor furniture — كميات فقط، بدون أسعار', coverSub: 'موقف توريد الفرش الخارجي لكل مقاول: الكميات المتعاقد عليها، ما تم توريده بأذون تسليم موقّعة، المتبقي، وموعد التسليم.', allDone: 'اكتمل', pct: '٪'
     },
     en: {
       barT: 'Supply status', loginTitle: 'Supply tracking', loginSub: 'Enter your login details', user: 'Username', pass: 'Password',
@@ -203,7 +261,7 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
       secT: 'Contractors', secS: 'by purchase order / contract', po: 'PO', contract: 'Contract', dated: 'dated', due: 'Delivery date', lastDel: 'Last delivery',
       st: { done: 'Fully delivered', part: 'Partly delivered', work: 'In production' },
       item: 'Item', qty: 'Contracted', got: 'Delivered', rem: 'Left', dels: 'Delivery notes', prior: 'Earlier delivery (before system records)', none: 'Nothing delivered yet.', dn: 'Note',
-      foot: 'Data comes straight from the lōf factory system and updates automatically. Quantities only — no prices.', allDone: 'complete', pct: '%'
+      foot: 'Data comes straight from the lōf factory system and updates automatically. Quantities only — no prices.', repEy: 'Site Furniture — supply status', repT: 'Contractors\' supply status', repSum: 'Contracts summary', repDet: 'Contract details', contractor: 'Contractor', project: 'Project (as on the document)', ref: 'Reference', prog: 'Progress', status: 'Status', asOf: 'As of', page: 'Page', repFoot: 'lōf outdoor furniture — quantities only, no prices', coverSub: 'Site furniture supply position per contractor: contracted quantities, what was delivered on signed delivery notes, what is left and the delivery date.', allDone: 'complete', pct: '%'
     }
   };
   var lang = LS.get(K.lang) === 'en' ? 'en' : 'ar';
@@ -239,7 +297,7 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
     cs.forEach(function (c) { var k = L(c.contractor) || '—'; if (!(k in gi)) { gi[k] = groups.length; groups.push({ name: k, list: [] }); } groups[gi[k]].list.push(c); });
     var h = '';
     h += '<section class="hero"><div class="eyebrow">' + esc(T('eyebrow')) + '</div><h1>' + esc(T('h1')(L(d.client), L(d.project))) + '</h1><p>' + esc(T('sub')) + '</p>';
-    h += '<div class="upd">' + esc(T('upd')) + ': <span class="num">' + esc(stamp(d.at)) + '</span></div></section>';
+    h += '<div class="upd">' + esc(T('upd')) + ': <bdi>' + esc(stamp(d.at)) + '</bdi></div></section>';
     h += '<div class="kpis">' + kpi(T('contracts'), cs.length) + kpi(T('pieces'), q) + kpi(T('delivered'), g, 'acc') + kpi(T('left'), q - g) + '</div>';
     h += '<div class="bigbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct(g, q) + '"><i style="width:' + pct(g, q) + '%"></i></div>';
     h += '<div class="bigcap"><span><span class="num">' + g + '</span> ' + esc(T('of')) + ' <span class="num">' + q + '</span></span><span class="num">' + pct(g, q) + '%</span></div>';
@@ -250,6 +308,7 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
     });
     h += '<footer class="foot"><span class="logo">' + LOGO + '</span><span>' + esc(T('foot')) + '</span></footer>';
     $('main').innerHTML = h;
+    try { report(); } catch (e) { /* the print report is extra */ }
   }
   function kpi(l, v, cls) { return '<div class="kpi ' + (cls || '') + '"><div class="l">' + esc(l) + '</div><div class="v num">' + esc(v) + '</div></div>'; }
   function card(c) {
@@ -279,6 +338,50 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
     }
     return h + '</article>';
   }
+
+  /* ---------------- the PDF / print report ---------------- */
+  function report() {
+    var d = data, cs = d.contracts || []; var q = 0, g = 0; cs.forEach(function (c) { q += c.qty; g += c.done; });
+    var day = dt(cairoDay(d.at)); var pages = [];
+    var foot = function (n, tot) { return '<div class="rf"><span>' + esc(T('repFoot')) + '</span><span class="num">' + esc(T('page')) + ' ' + n + ' / ' + tot + '</span></div>'; };
+    var head = function (t) { return '<div class="rh"><span class="logo">' + LOGO + '</span><div class="tt"><small>' + esc(T('repEy')) + '</small><b>' + esc(t) + '</b></div><div class="d">' + esc(L(d.client)) + ' — ' + esc(L(d.project)) + '<br>' + esc(T('asOf')) + ' <span class="num">' + esc(day) + '</span></div></div>'; };
+    /* cover */
+    pages.push('<section class="pg cov"><div class="l"><span class="logo">' + LOGO + '</span></div><div class="r"><div class="ey">' + esc(T('repEy')) + '</div><h1>' + esc(L(d.client)) + '<br>' + esc(L(d.project)) + '</h1><div class="sb">' + esc(T('coverSub')) + '</div><div class="rule"></div>' +
+      '<div class="kp"><div>' + esc(T('contracts')) + '<b class="num">' + cs.length + '</b></div><div>' + esc(T('pieces')) + '<b class="num">' + q + '</b></div><div class="g">' + esc(T('delivered')) + '<b class="num">' + g + '</b></div><div>' + esc(T('left')) + '<b class="num">' + (q - g) + '</b></div></div></div>' +
+      '<div class="dt">' + esc(T('asOf')) + ' <span class="num">' + esc(day) + '</span></div></section>');
+    /* summary */
+    var rows = cs.map(function (c) { var p = pct(c.done, c.qty);
+      return '<tr><td class="nm"><b>' + esc(L(c.contractor)) + '</b></td><td class="nm"><b>' + esc(L(c.name)) + '</b><span class="num">' + esc(c.ref) + '</span></td><td class="c num">' + c.qty + '</td><td class="c num">' + c.done + '</td><td class="c num">' + (c.qty - c.done) + '</td>' +
+        '<td><div class="mb"><i><em style="width:' + p + '%"></em></i><span class="num">' + p + '%</span></div></td><td class="c num">' + (c.state === 'done' ? '—' : esc(dt(c.due))) + '</td><td><span class="st ' + esc(c.state) + '">' + esc(T('st')[c.state] || '') + '</span></td></tr>'; }).join('');
+    pages.push('<section class="pg">' + head(T('repSum')) +
+      '<div class="rk"><div><span>' + esc(T('contracts')) + '</span><b class="num">' + cs.length + '</b></div><div><span>' + esc(T('pieces')) + '</span><b class="num">' + q + '</b></div><div class="g"><span>' + esc(T('delivered')) + '</span><b class="num">' + g + '</b></div><div><span>' + esc(T('left')) + '</span><b class="num">' + (q - g) + '</b></div></div>' +
+      '<table class="rt"><thead><tr><th>' + esc(T('contractor')) + '</th><th>' + esc(T('project')) + '</th><th class="c">' + esc(T('qty')) + '</th><th class="c">' + esc(T('got')) + '</th><th class="c">' + esc(T('rem')) + '</th><th>' + esc(T('prog')) + '</th><th class="c">' + esc(T('due')) + '</th><th>' + esc(T('status')) + '</th></tr></thead><tbody>' + rows + '</tbody></table>@@FOOT@@</section>');
+    /* details: two contracts a page — a contractor with two contracts gets its own page */
+    var groups = []; var gi = {};
+    cs.forEach(function (c) { var k = L(c.contractor); if (!(k in gi)) { gi[k] = groups.length; groups.push([]); } groups[gi[k]].push(c); });
+    var pairs = []; var single = [];
+    groups.forEach(function (gr) { if (gr.length === 2) pairs.push(gr); else gr.forEach(function (c) { single.push(c); }); });
+    for (var i = 0; i < single.length; i += 2) pairs.push(single.slice(i, i + 2));
+    pairs.sort(function (a, b) { return cs.indexOf(a[0]) - cs.indexOf(b[0]); });
+    pairs.forEach(function (pr) { pages.push('<section class="pg">' + head(T('repDet')) + '<div class="cp">' + pr.map(rcard).join('') + '</div>@@FOOT@@</section>'); });
+    var tot = pages.length;
+    $('report').innerHTML = pages.map(function (h, k) { return h.replace('@@FOOT@@', foot(k + 1, tot)); }).join('');
+  }
+  function rcard(c) {
+    var p = pct(c.done, c.qty);
+    var h = '<div class="cc"><div class="co">' + esc(L(c.contractor)) + '</div><h3>' + esc(L(c.name)) + '</h3><div class="mt"><span><span class="k">' + esc(c.refKind === 'contract' ? T('contract') : T('po')) + '</span><b class="num">' + esc(c.ref) + '</b></span>' +
+      (c.refDate ? '<span><span class="k">' + esc(T('dated')) + '</span><b class="num">' + esc(dt(c.refDate)) + '</b></span>' : '') +
+      (c.state !== 'done' && c.due ? '<span><span class="k">' + esc(T('due')) + '</span><b class="num">' + esc(dt(c.due)) + '</b></span>' : '') +
+      '<span class="st ' + esc(c.state) + '">' + esc(T('st')[c.state] || '') + '</span></div>' +
+      '<div class="pr"><span>' + esc(T('delivered')) + ' <b class="num">' + c.done + '</b> ' + esc(T('of')) + ' <b class="num">' + c.qty + '</b></span><b class="num">' + p + '%</b></div><div class="bar"><em style="width:' + p + '%"></em></div>';
+    h += '<table><thead><tr><th>' + esc(T('item')) + '</th><th class="n">' + esc(T('qty')) + '</th><th class="n">' + esc(T('got')) + '</th><th class="n">' + esc(T('rem')) + '</th></tr></thead><tbody>' + (c.items || []).map(function (it) {
+      return '<tr><td class="it">' + esc(lang === 'en' ? it.en : it.ar) + '</td><td class="n num">' + it.qty + '</td><td class="n num ' + (it.done ? 'ok' : 'zero') + '">' + it.done + '</td><td class="n num ' + (it.left ? 'left' : 'zero') + '">' + it.left + '</td></tr>'; }).join('') + '</tbody></table>';
+    var ds = c.deliveries || [];
+    h += '<div class="dls"><b>' + esc(T('dels')) + '</b>' + (ds.length ? ds.map(function (z) {
+      return '<div><span class="n">' + (z.prior ? esc(T('prior')) : esc(T('dn')) + ' <span class="num">' + esc(z.no) + '</span>') + (z.date ? ' · <span class="num">' + esc(dt(z.date)) + '</span>' : '') + '</span> — ' + z.lines.map(function (l) { return '<span class="num">' + l.qty + '</span> × ' + esc(lang === 'en' ? l.en : l.ar); }).join(' · ') + '</div>'; }).join('') : '<div>' + esc(T('none')) + '</div>') + '</div>';
+    return h + '</div>';
+  }
+  var cairoDay = function (iso) { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)); } catch (e) { return String(iso || '').slice(0, 10); } };
   function load() {
     var tok = LS.get(K.tok), exp = LS.get(K.exp);
     if (!tok || (exp && Date.parse(exp) < Date.now())) { LS.set(K.tok, null); show('vLogin'); return; }
@@ -303,8 +406,8 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(18,18,18,.08)}
   document.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('[data-act]'); if (!a) return; var k = a.getAttribute('data-act');
     if (k === 'lang') { lang = lang === 'en' ? 'ar' : 'en'; LS.set(K.lang, lang); applyLang(); }
-    else if (k === 'print') { var ds = document.querySelectorAll('details'); for (var i = 0; i < ds.length; i++) ds[i].open = true; window.print(); }
-    else if (k === 'out') { var t = LS.get(K.tok); LS.set(K.tok, null); LS.set(K.exp, null); data = null; if (t) call({ action: 'logout', token: t }).catch(function () {}); $('main').innerHTML = ''; show('vLogin'); }
+    else if (k === 'print') { try { report(); } catch (e) {} window.print(); }
+    else if (k === 'out') { var t = LS.get(K.tok); LS.set(K.tok, null); LS.set(K.exp, null); data = null; $('report').innerHTML = ''; if (t) call({ action: 'logout', token: t }).catch(function () {}); $('main').innerHTML = ''; show('vLogin'); }
   });
 
   /* ---------------- owner setup (#setup): uses the owner's factory-system session on this same site ---------------- */
