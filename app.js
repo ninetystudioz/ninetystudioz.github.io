@@ -6333,6 +6333,10 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.43 (المصنع بس) — «الكاميرات» نسخة 11 (محمود 13/11 11:50: «النقطة الحمرا دي إيه؟ عايز: لايف = أخضر، ديسكونكتد = أحمر، بيلودنج = أصفر»):
+   - النقطة اللي جنب اسم الكاميرا: أخضر = لايف شغال دلوقتي، أصفر = بيفتح / بيرجّع / الصورة واقفة، أحمر = مش متوصلة (أوفلاين، وقفت، أو لسه مااتفتحتش). كانت أحمر = لايف وبرتقالي = أونلاين.
+   - سطر صغير تحت الكاميرات بيقول معنى الألوان. خط «بيفتح» فوق الصورة بقى أصفر زي النقطة.
+   الباقي زي v11.42: */
 /* v11.42 (المصنع بس) — «الكاميرات» نسخة 10 (محمود 13/11 10:54: «دايمًا بيلاج ودايمًا بيعلّق، والزوم، واللايف دايمًا مش شغال — راجع الكود ونشوف هنطوره إزاي»). المراجعة لقت:
    1) السيستم بيعيد رسم الصفحة المفتوحة مع أي تغيير في أي حتة (مهمة، بصمة، إشعار — كذا مرة في الدقيقة). نص صفحة الكاميرات كان بيتغيّر كل مرة (علامة «لايف» + صورة محفوظة كل 10 ث)
       فالصفحة كانت بتتهد وتتبني والفيديوهات بتتشال وتتحط: تعليقة/شاشة سودة، والزوم بيموت في نص الحركة (الصباع بيبقى على عنصر اتشال).
@@ -6442,8 +6446,11 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const p = P.get(id); if (!p || !p.v || p.v.readyState < 2 || !p.v.videoWidth) return;
     try { const w = 320, h = Math.round((p.v.videoHeight / p.v.videoWidth) * w) || 180; const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(p.v, 0, 0, w, h); LS.set(frameKey(id), c.toDataURL("image/jpeg", 0.6)); } catch (e) {}
   }
-  const setWait = (id, on) => { const t = tileOf(id); if (t) t.classList.toggle("wait", !!on); };
-  const waiting = (id) => { const p = P.get(id); return (!!p && !p.started && !p.blocked) || RT.has(id); };
+  // the dot next to the camera name (محمود 13/11): green = live now, yellow = opening / reconnecting / picture stuck, red = not connected
+  const isLive = (id) => { const p = P.get(id); return !!(p && p.started && !p.soft && !p.blocked); };
+  const waiting = (id) => { const p = P.get(id); return !isLive(id) && ((!!p && !p.blocked) || RT.has(id)); };
+  const mark = (id) => { const t = tileOf(id); if (t) { t.classList.toggle("live", isLive(id)); t.classList.toggle("wait", waiting(id)); } };
+  const setWait = (id) => mark(id);
   function setMsg(id, msg) { const t = tileOf(id); const m = t && t.querySelector(".nfcw-msg"); if (m) { m.textContent = msg || ""; m.style.display = msg ? "" : "none"; } }
   // light measuring → the server log (how long to the first picture, how many drops) so we know what really happens on the phone
   const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false };
@@ -6451,7 +6458,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   function telSend(force) {
     if (!TEL.dirty || !can() || (!force && Date.now() - TEL.sent < 60000)) return;
     const t = TEL.ttff.slice().sort((a, b) => a - b);
-    const d = { v: "11.42", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
+    const d = { v: "11.43", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
     TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = 0; TEL.ttff = [];
     try { const x = S.sb.functions.invoke("hiktele", { body: d }); if (x && x.catch) x.catch(() => {}); } catch (e) {}
   }
@@ -6462,7 +6469,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     try { if (p.hls) p.hls.destroy(); } catch (e) {}
     try { p.v.pause(); p.v.removeAttribute("src"); p.v.load(); } catch (e) {}
     try { p.v.remove(); } catch (e) {}
-    const t = tileOf(id); if (t) { t.classList.remove("live", "wait"); const fr = LS.get(frameKey(id)), bx = t.querySelector(".nfcw-box"); if (fr && bx) bx.style.backgroundImage = `url('${fr}')`; }
+    mark(id);
+    const t = tileOf(id); if (t) { const fr = LS.get(frameKey(id)), bx = t.querySelector(".nfcw-box"); if (fr && bx) bx.style.backgroundImage = `url('${fr}')`; }
   }
   function stopAll() { RT.forEach((t) => clearTimeout(t)); RT.clear(); [...P.keys()].forEach((id) => stopOne(id)); foot(); telSend(true); }
   const errText = (r) => {
@@ -6478,8 +6486,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
     if (n >= 2) setMsg(cam.id, n > CFG.maxTries ? T("النت ضعيف — بنجرّب تاني كل نص دقيقة", "Weak connection — trying again every half minute") : T("اللايف بيقطّع — بنرجّعه…", "Live dropped — reconnecting…"));
     clearTimeout(RT.get(cam.id));
-    setWait(cam.id, true);
-    RT.set(cam.id, setTimeout(() => { RT.delete(cam.id); if (!P.has(cam.id) && wanted(cam)) startOne(cam); else if (!P.has(cam.id)) setWait(cam.id, false); }, n > CFG.maxTries ? CFG.slowRetry : CFG.retry[Math.min(n, CFG.retry.length) - 1]));
+    RT.set(cam.id, setTimeout(() => { RT.delete(cam.id); const c2 = (st.cams || []).find((c) => c.id === cam.id) || cam; if (!P.has(cam.id) && wanted(c2)) startOne(c2); mark(cam.id); }, n > CFG.maxTries ? CFG.slowRetry : CFG.retry[Math.min(n, CFG.retry.length) - 1]));
+    mark(cam.id);
   }
   async function startOne(cam) {
     if (!can() || !onPage() || st.idle || st.arr || P.has(cam.id) || !cam.online) return;
@@ -6515,7 +6523,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     v.addEventListener("playing", () => {
       if (P.get(cam.id) !== p) return;
       if (!p.started) { p.started = Date.now(); TEL.ttff.push(p.started - p.t0); tel("ok"); p.ft = setTimeout(() => { if (P.get(cam.id) === p) saveFrame(cam.id); }, 4000); }
-      p.lastAdv = Date.now(); p.rec = 0; p.blocked = false; TRIES.set(cam.id, 0); setMsg(cam.id, ""); setWait(cam.id, false); const tl = tileOf(cam.id); if (tl) tl.classList.add("live"); if (p.q === 1) { note(qLine(cam), 6000); foot(); }
+      p.lastAdv = Date.now(); p.rec = 0; p.blocked = false; TRIES.set(cam.id, 0); p.soft = false; setMsg(cam.id, ""); mark(cam.id); if (p.q === 1) { note(qLine(cam), 6000); foot(); }
     });
     try {
       const native = v.canPlayType("application/vnd.apple.mpegurl");
@@ -6557,11 +6565,11 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       }
       if (v.paused && !v.ended) tryPlay(p, id);
       const t = v.currentTime || 0;
-      if (Math.abs(t - p.lastT) > 0.03) { p.lastT = t; p.lastAdv = now; p.soft = false; return; } // moving (a jump by the player to catch up counts too)
+      if (Math.abs(t - p.lastT) > 0.03) { p.lastT = t; p.lastAdv = now; if (p.soft) { p.soft = false; mark(id); } return; } // moving (a jump by the player to catch up counts too)
       const stuck = now - p.lastAdv;
       if (stuck > CFG.hard) { tel("stall"); if (p.fail) p.fail(); }
       else if (stuck > CFG.soft && !p.soft) {
-        p.soft = true; tel("nudge");
+        p.soft = true; tel("nudge"); mark(id);
         try { if (p.hls) p.hls.startLoad(); else { const sk = v.seekable; if (sk && sk.length) { v.currentTime = Math.max(0, sk.end(sk.length - 1) - 4); p.lastT = v.currentTime || 0; } } tryPlay(p, id); } catch (e) {} // our own jump is not «moving»
       }
     });
@@ -6904,9 +6912,9 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   /* ---- html ---- */
   function tileHtml(c) {
     const fr = LS.get(frameKey(c.id));
-    return `<div class="nfcw-tile ${P.has(c.id) ? "live" : ""} ${waiting(c.id) ? "wait" : ""}" data-cwcam="${H(c.id)}"><div class="nfcw-box" ${fr ? `style="background-image:url('${H(fr)}')"` : ""}>
+    return `<div class="nfcw-tile ${isLive(c.id) ? "live" : ""} ${waiting(c.id) ? "wait" : ""}" data-cwcam="${H(c.id)}"><div class="nfcw-box" ${fr ? `style="background-image:url('${H(fr)}')"` : ""}>
       <div class="nfcw-msg" ${c.online ? 'style="display:none"' : ""}>${c.online ? "" : H(T("الكاميرا مش أونلاين", "Camera offline"))}</div></div>
-      <div class="nfcw-name"><span class="dot ${c.online ? "on" : ""}"></span><span class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</span></div>${per() === 1 && c.online ? qHtml(c) : ""}</div>`;
+      <div class="nfcw-name"><span class="dot"></span><span class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</span></div>${per() === 1 && c.online ? qHtml(c) : ""}</div>`;
   }
   const camWord = (n) => T(n === 1 ? "كاميرا" : n === 2 ? "كاميرتين" : `${n} كاميرات`, n === 1 ? "1 camera" : `${n} cameras`);
   function secsHtml() {
@@ -6960,10 +6968,12 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   function foot() {
     const f = document.getElementById("nfcwfoot"); if (!f) return;
     const n = P.size; const mx = [...P.values()].some((p) => p.q === 1);
+    const leg = `<div class="nfcw-leg small muted"><span><i class="g"></i>${H(T("لايف", "Live"))}</span><span><i class="y"></i>${H(T("بيحمّل", "Loading"))}</span><span><i class="r"></i>${H(T("مفصولة", "Not connected"))}</span></div>`;
     f.innerHTML = st.idle
       ? `<button type="button" class="btn p" data-cwresume>${H(T("اللايف وقف عشان مالمستش الشاشة 10 دقايق — دوس هنا يكمل", "Live paused after 10 minutes without a touch — tap to continue"))}</button>`
       : mx ? `<span class="small muted">${H(T("لايف بأعلى جودة · حوالي 40 ميجا في الدقيقة من شريحة المصنع — رجّعها «عادي» لما تخلص", "Live at top quality · about 40 MB a minute of the factory SIM — switch back to «Normal» when done"))}</span>`
       : `<span class="small muted">${n ? H(T(`لايف ${n} ${n === 1 ? "كاميرا" : "كاميرات"} · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${n} camera${n === 1 ? "" : "s"} · about ${n}–${n * 2} MB a minute of the factory SIM`)) : H(T("بيقف لوحده لما تخرج من الصفحة", "Stops by itself when you leave the page"))}</span>`;
+    if (!st.idle && st.cams && st.cams.length) f.insertAdjacentHTML("beforeend", leg);
   }
   function paint() {
     const b = document.getElementById("nfcwbody"); if (!b) return;
@@ -6985,10 +6995,11 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       const keep = new Map(); P.forEach((p, id) => { if (p.v && p.v.parentNode) { keep.set(id, p.v); p.v.parentNode.removeChild(p.v); } });
       b.style.transform = ""; b.innerHTML = bodyHtml(); b.__sig = sig;
       [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
-      keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcw-box").appendChild(v); t.classList.add("live"); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
+      keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcw-box").appendChild(v); mark(id); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
       vis.forEach((c) => { const t = tileOf(c.id); if (t) t.__ov = ovHtml(c); });
     }
     [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
+    vis.forEach((c) => { if (!c.online) { const p = P.get(c.id); if (p && !p.started) stopOne(c.id, false); if (RT.has(c.id)) { clearTimeout(RT.get(c.id)); RT.delete(c.id); } if (!P.has(c.id)) { mark(c.id); setMsg(c.id, T("الكاميرا مش أونلاين", "Camera offline")); } } });
     const l = document.getElementById("nfcwsizes"); if (l) { const sb = sizeBtns(); if (l.__h !== sb) { l.__h = sb; l.innerHTML = sb; } }
     applyMode(); layout(); applyZ();
     if (oneId) loadQ(v0[0]);
@@ -7124,12 +7135,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .nfcw-tile{border-radius:10px;overflow:hidden;background:#000;position:relative;cursor:pointer;min-width:0;min-height:0}
 .nfcw-box{position:relative;aspect-ratio:16/9;background:#111 center/cover no-repeat;display:flex;align-items:center;justify-content:center}
 .nfcw-box video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent;will-change:transform}
-.nfcw-tile.wait .nfcw-box::after{content:"";position:absolute;z-index:3;left:0;right:0;top:0;height:3px;pointer-events:none;background:linear-gradient(90deg,transparent,#f59e0b,transparent) no-repeat;background-size:45% 100%;animation:nfcwwait 1.1s linear infinite}
+.nfcw-tile.wait .nfcw-box::after{content:"";position:absolute;z-index:3;left:0;right:0;top:0;height:3px;pointer-events:none;background:linear-gradient(90deg,transparent,#facc15,transparent) no-repeat;background-size:45% 100%;animation:nfcwwait 1.1s linear infinite}
 @keyframes nfcwwait{from{background-position:-80% 0}to{background-position:180% 0}}
-@media (prefers-reduced-motion:reduce){.nfcw-tile.wait .nfcw-box::after{animation:none;background:#f59e0b;opacity:.75}}
+@media (prefers-reduced-motion:reduce){.nfcw-tile.wait .nfcw-box::after{animation:none;background:#facc15;opacity:.75}}
 .nfcw-msg{position:relative;z-index:2;color:#eee;font-size:11px;text-align:center;padding:4px 8px;background:rgba(0,0,0,.45);border-radius:8px;margin:6px}
 .nfcw-name{position:absolute;z-index:3;inset-inline-start:6px;bottom:4px;display:flex;align-items:center;gap:5px;color:#fff;font-size:11px;text-shadow:0 1px 2px #000;max-width:calc(100% - 12px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.nfcw-name .dot{width:7px;height:7px;border-radius:50%;background:#999;flex:0 0 auto}.nfcw-name .dot.on{background:#f59e0b}.nfcw-tile.live .nfcw-name .dot{background:#e11d48;box-shadow:0 0 0 3px rgba(225,29,72,.25)}
+.nfcw-name .dot{width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.3);flex:0 0 auto}.nfcw-tile.wait .nfcw-name .dot{background:#facc15;box-shadow:0 0 0 3px rgba(250,204,21,.32)}.nfcw-tile.live .nfcw-name .dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.32)}
+.nfcw-leg{display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap;margin-inline-end:10px}.nfcw-leg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-inline-end:4px}.nfcw-leg .g{background:#22c55e}.nfcw-leg .y{background:#facc15}.nfcw-leg .r{background:#ef4444}
 .nfcw-pages{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px}#nfcwfoot{margin-top:8px;min-height:24px}
 .nfcw-sec+.nfcw-sec{border-top:1px solid var(--line,#ddd);margin-top:12px;padding-top:10px}
 .nfcw-sech{display:flex;align-items:center;gap:8px;margin-bottom:6px}.nfcw-sech b{font-size:15px}.nfcw-sech .nfcw-secfull{margin-inline-start:auto}
