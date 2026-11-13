@@ -6333,6 +6333,15 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.44 (المصنع بس) — «الكاميرات» نسخة 12 (محمود 13/11 11:42 «اعمل الاتنين» + 11:50 «عايز أول ما أفتح اللايف يبقى قدامي زي يوفي»):
+   القياس من موبايله (v11.42): أول صورة بتاخد 13–18 ث — الآيفون بيستنى 3 قطع HLS (كل قطعة 3.3 ث) قبل ما يبدأ.
+   - زرار «⚡ لايف سريع (تجربة)» تحت الكاميرات: بيشغّل الكاميرات بمشغّل هيك فيجن نفسه (EZUIKit / EZOPEN) بدل HLS — المفروض أول صورة في ثانيتين–تلاتة وتأخير أقل.
+     المشغّل بينزل أول مرة بس (حوالي 1.5 ميجا) من jsDelivr، والتوكن من Edge `hikez` (للمالك بس، في الذاكرة بس).
+   - أي كاميرا السريع مايفتحهاش في 12 ث (أو يدّي خطأ) بترجع لوحدها للطريقة العادية، والزرار بيقول كام واحدة رجعت.
+   - مع السريع زرار «أعلى جودة» بيرجع يظهر حتى لو التسجيل H.265 (المشغّل ده بيعرضه) — ولو مافتحش بيرجع «عادي».
+   - أمان: لو الصفحة اتقفلت والسريع شغال (الموبايل خلّص ميموري) بيرجع المرة الجاية مقفول لوحده وبيقول كده.
+   - القياس بقى فيه أرقام السريع (فتحات / نجاح / وقت أول صورة / آخر خطأ) عشان نقارن.
+   الباقي زي v11.43: */
 /* v11.43 (المصنع بس) — «الكاميرات» نسخة 11 (محمود 13/11 11:50: «النقطة الحمرا دي إيه؟ عايز: لايف = أخضر، ديسكونكتد = أحمر، بيلودنج = أصفر»):
    - النقطة اللي جنب اسم الكاميرا: أخضر = لايف شغال دلوقتي، أصفر = بيفتح / بيرجّع / الصورة واقفة، أحمر = مش متوصلة (أوفلاين، وقفت، أو لسه مااتفتحتش). كانت أحمر = لايف وبرتقالي = أونلاين.
    - سطر صغير تحت الكاميرات بيقول معنى الألوان. خط «بيفتح» فوق الصورة بقى أصفر زي النقطة.
@@ -6393,6 +6402,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const LAND = mq("(orientation: landscape)"), TOUCH = mq("(pointer: coarse)");
   const phone = () => TOUCH.matches;
   const HLS_SRC = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
+  const EZ_SRC = "https://cdn.jsdelivr.net/npm/ezuikit-js@9.0.26/ezuikit.js", EZ_STATIC = "https://cdn.jsdelivr.net/npm/ezuikit-js@9.0.26/ezuikit_static"; // Hikvision's own web player («لايف سريع»)
   const IDLE_MS = 10 * 60 * 1000, UI_MS = 3500, MAX_LAZY = 8;
   const LS = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
   const SIZES = () => (phone() ? [1, 4, 9, 16] : [1, 4, 9, 16, 32]); // 4 = «أقسام»
@@ -6404,12 +6414,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     { id: "paint", ar: "الدهانات", en: "Painting" },
     { id: "upholstery", ar: "التنجيد والقشرة", en: "Upholstery & veneer" },
   ];
-  const st = { here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
+  const ezDied = (() => { try { if (localStorage.getItem("nf_cam_ezrun")) { localStorage.setItem("nf_cam_ezrun", ""); localStorage.setItem("nf_cam_engine", "hls"); return true; } } catch (e) {} return false; })(); // the page was killed while «لايف سريع» was playing → it comes back switched off
+  const st = { ezDied, eng: (() => { try { return localStorage.getItem("nf_cam_engine") === "ez" ? "ez" : "hls"; } catch (e) { return "hls"; } })(), here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
     q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null, hintZ: false };
   try { const l = JSON.parse(LS.get("nf_camlay") || "null"); if (l && l.map) st.lay = l; } catch (e) {}
   const Z = { id: "", s: 1, x: 0, y: 0, end: 0, pinchEnd: 0 }; // zoom of the single camera (local px of its box)
   const P = new Map(), TRIES = new Map(), RT = new Map(); // camId → { v, hls, q, … } / failures in a row / pending retry timers
-  const CFG = { tick: 2000, soft: 7000, hard: 14000, slow: 25000, retry: [1500, 3000, 6000, 12000, 15000], maxTries: 8, slowRetry: 30000, lazyOff: 6000, snap: 60000, camsEvery: 120000 }; // tests change these
+  const CFG = { tick: 2000, soft: 7000, hard: 14000, slow: 25000, ezSlow: 12000, ezLoad: 45000, ezStall: 20000, ezMax: 4, ezBadFor: 10 * 60000, retry: [1500, 3000, 6000, 12000, 15000], maxTries: 8, slowRetry: 30000, lazyOff: 6000, snap: 60000, camsEvery: 120000 }; // tests change these
   const per = () => { const s = SIZES(); return s.includes(st.n) ? st.n : s.filter((x) => x <= st.n).pop() || 4; };
   const full = () => st.mode !== "off";
   const lazy = () => per() === 4 && !full(); // departments stacked on the page → live only for what is on screen
@@ -6429,6 +6440,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 
   /* ---- player — v11.42: looks after itself (watchdog + retries while the camera is on screen), no picture grab every 10 s ---- */
   function tryPlay(p, id) {
+    if (p.kind === "ez" || !p.v) return;
     try { const pr = p.v.play(); if (pr && pr.catch) pr.catch((e) => { if (e && e.name === "NotAllowedError" && P.get(id) === p && p.v.paused) { p.blocked = true; setWait(id, false); setMsg(id, T("دوس على الشاشة عشان اللايف يشتغل", "Tap the screen to start the live")); } }); } catch (e) {}
   }
   function unblock() { // called from a real touch / click — the only moment a phone that blocks autoplay lets a video start
@@ -6443,7 +6455,16 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const tileOf = (id) => document.querySelector(`.nfcw-tile[data-cwcam="${CSS.escape(id)}"]`);
   const frameKey = (id) => "nf_camframe_" + id;
   function saveFrame(id) {
-    const p = P.get(id); if (!p || !p.v || p.v.readyState < 2 || !p.v.videoWidth) return;
+    const p = P.get(id); if (!p || !p.v) return;
+    if (p.kind === "ez") { // the fast player draws on its own canvas (or video): copy it small; a black copy (nothing drawn yet) is not kept
+      if (!p.started) return;
+      try { const src = p.v.querySelector("video") || p.v.querySelector("canvas"); const sw = src && (src.videoWidth || src.width), sh = src && (src.videoHeight || src.height); if (!sw || !sh) return;
+        const w = 320, h = Math.round((sh / sw) * w) || 180; const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); g.drawImage(src, 0, 0, w, h);
+        const d = g.getImageData(0, 0, w, h).data; let sum = 0; for (let i = 0; i < d.length; i += 4 * 97) sum += d[i] + d[i + 1] + d[i + 2]; if (sum / (d.length / (4 * 97)) < 18) return;
+        LS.set(frameKey(id), c.toDataURL("image/jpeg", 0.6)); } catch (e) {}
+      return;
+    }
+    if (p.v.readyState < 2 || !p.v.videoWidth) return;
     try { const w = 320, h = Math.round((p.v.videoHeight / p.v.videoWidth) * w) || 180; const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(p.v, 0, 0, w, h); LS.set(frameKey(id), c.toDataURL("image/jpeg", 0.6)); } catch (e) {}
   }
   // the dot next to the camera name (محمود 13/11): green = live now, yellow = opening / reconnecting / picture stuck, red = not connected
@@ -6453,13 +6474,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const setWait = (id) => mark(id);
   function setMsg(id, msg) { const t = tileOf(id); const m = t && t.querySelector(".nfcw-msg"); if (m) { m.textContent = msg || ""; m.style.display = msg ? "" : "none"; } }
   // light measuring → the server log (how long to the first picture, how many drops) so we know what really happens on the phone
-  const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false };
+  const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false, ezOpen: 0, ezOk: 0, ezFail: 0, ezStall: 0, ezTtff: [], ezErr: "" };
   const tel = (k) => { TEL[k] = (TEL[k] || 0) + 1; TEL.dirty = true; };
   function telSend(force) {
     if (!TEL.dirty || !can() || (!force && Date.now() - TEL.sent < 60000)) return;
-    const t = TEL.ttff.slice().sort((a, b) => a - b);
-    const d = { v: "11.43", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
-    TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = 0; TEL.ttff = [];
+    const t = TEL.ttff.slice().sort((a, b) => a - b), e = TEL.ezTtff.slice().sort((a, b) => a - b);
+    const d = { eng: st.eng, ezOpen: TEL.ezOpen, ezOk: TEL.ezOk, ezFail: TEL.ezFail, ezStall: TEL.ezStall, ezTtffMed: e.length ? e[Math.floor(e.length / 2)] : null, ezTtffMax: e.length ? e[e.length - 1] : null, ezErr: TEL.ezErr, v: "11.44", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
+    TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = TEL.ezOpen = TEL.ezOk = TEL.ezFail = TEL.ezStall = 0; TEL.ttff = []; TEL.ezTtff = []; TEL.ezErr = "";
     try { const x = S.sb.functions.invoke("hiktele", { body: d }); if (x && x.catch) x.catch(() => {}); } catch (e) {}
   }
   function stopOne(id, keepFrame) {
@@ -6467,12 +6488,12 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (keepFrame !== false) saveFrame(id);
     P.delete(id); clearTimeout(p.ft);
     try { if (p.hls) p.hls.destroy(); } catch (e) {}
-    try { p.v.pause(); p.v.removeAttribute("src"); p.v.load(); } catch (e) {}
-    try { p.v.remove(); } catch (e) {}
+    if (p.kind === "ez") ezKill(p);
+    else { try { p.v.pause(); p.v.removeAttribute("src"); p.v.load(); } catch (e) {} try { p.v.remove(); } catch (e) {} }
     mark(id);
     const t = tileOf(id); if (t) { const fr = LS.get(frameKey(id)), bx = t.querySelector(".nfcw-box"); if (fr && bx) bx.style.backgroundImage = `url('${fr}')`; }
   }
-  function stopAll() { RT.forEach((t) => clearTimeout(t)); RT.clear(); [...P.keys()].forEach((id) => stopOne(id)); foot(); telSend(true); }
+  function stopAll() { RT.forEach((t) => clearTimeout(t)); RT.clear(); [...P.keys()].forEach((id) => stopOne(id)); ezRun(false); foot(); telSend(true); }
   const errText = (r) => {
     const e = String((r && (r.err || r.error)) || "");
     if (/EVZ60019|Encryption/i.test(e)) return T("تشفير الفيديو شغال على الريكوردر", "Video encryption is on for the recorder");
@@ -6481,6 +6502,101 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (/main_not_h264/.test(e)) return T("الكاميرا دي بتسجّل H.265 — المتصفح مابيعرضهاش بأعلى جودة", "This camera records in H.265 — the browser can't show it at top quality");
     return T("اللايف مش راضي يشتغل", "Live would not start");
   };
+  /* ---- «لايف سريع» (v11.44, a trial the owner switches on): Hikvision's own player (EZUIKit, EZOPEN stream) instead of HLS.
+     It opens in a couple of seconds where HLS needs 13–18 s on the iPhone. Anything that goes wrong sends that camera back to the normal way by itself. ---- */
+  let ezP = null, EZT = null, ezSeq = 0; const EZBAD = new Map(), EZSTALL = new Map(); // camId → when the fast player last failed for it / how many times its picture stopped
+  const loadEz = () => (window.EZUIKit && window.EZUIKit.EZUIKitPlayer) ? Promise.resolve(window.EZUIKit) : (ezP = ezP || new Promise((ok, no) => {
+    const sc = document.createElement("script"); sc.src = EZ_SRC; sc.async = true;
+    sc.onload = () => (window.EZUIKit && window.EZUIKit.EZUIKitPlayer ? ok(window.EZUIKit) : (ezP = null, no(new Error("ez")))); sc.onerror = () => { ezP = null; no(new Error("ez")); };
+    document.head.appendChild(sc);
+    if (!console.__nfEz) { // the player reports most problems only in the console: keep the last one (short) for our health note
+      try { const ce = console.error; const wrap = function () { try { const a = [].slice.call(arguments); if (a.some((x) => typeof x === "string" && /ezuikit/i.test(x))) { const o = a.find((x) => x && typeof x === "object"); TEL.ezErr = String(o ? [o.stage, o.source, o.type, o.retcode, o.code].filter((x) => x != null && x !== "").join(":") : a[a.length - 1]).replace(/[^A-Za-z0-9 _:.-]/g, "").slice(0, 60); TEL.dirty = true; } } catch (e) {} return ce.apply(console, arguments); }; wrap.__nfEz = 1; console.error = wrap; console.__nfEz = 1; } catch (e) {}
+    }
+  }));
+  const ezRun = (on) => { const v = on ? "1" : ""; if (ezRun.v !== v) { ezRun.v = v; LS.set("nf_cam_ezrun", v); } }; // «a fast player is on the screen now» — cleared on every normal stop
+  const ezBad = (id) => { const t = EZBAD.get(id); return !!t && Date.now() - t < CFG.ezBadFor; };
+  const ezCount = () => [...P.values()].filter((p) => p.kind === "ez").length;
+  const ezWanted = (cam, q) => st.eng === "ez" && !ezBad(cam.id) && ezCount() < CFG.ezMax && !!cam.no && typeof Promise !== "undefined";
+  async function ezInfo(cam, q) { // the viewing token (kept in memory only, 20 minutes) + the camera's address for the fast player
+    const mk = (b) => `${b}/${cam.no}${q === 1 ? ".hd" : ""}.live`;
+    if (EZT && EZT.serial === cam.serial && Date.now() - EZT.at < 20 * 60000) return { token: EZT.token, domain: EZT.domain, url: mk(EZT.base) };
+    let r = null; try { const x = await S.sb.functions.invoke("hikez", { body: { id: cam.id, serial: cam.serial, quality: q } }); r = x && x.data; } catch (e) { r = null; }
+    if (!r || !r.ok || !r.token || !/^ezopen:\/\//.test(String(r.url || ""))) return null;
+    const m = String(r.url).match(/^(ezopen:\/\/[^/]+\/[^/]+)\/\d+(?:\.hd)?\.live/);
+    if (m) EZT = { token: r.token, domain: r.domain, base: m[1], serial: cam.serial, at: Date.now() };
+    return { token: r.token, domain: r.domain, url: r.url };
+  }
+  function ezFit(p) { // the player's own box covers the camera box like object-fit: cover (16:9 picture)
+    try { const o = p.v, inr = o && o.firstElementChild, bx = o && o.parentNode; if (!inr || !bx) return; const bw = bx.clientWidth, bh = bx.clientHeight; if (!bw || !bh) return;
+      const W = Math.ceil(Math.max(bw, bh * 16 / 9)), Hh = Math.ceil(W * 9 / 16);
+      if (p.fw === W && p.fh === Hh && p.bw === bw && p.bh === bh) return; p.fw = W; p.fh = Hh; p.bw = bw; p.bh = bh;
+      inr.style.width = W + "px"; inr.style.height = Hh + "px"; inr.style.left = Math.round((bw - W) / 2) + "px"; inr.style.top = Math.round((bh - Hh) / 2) + "px";
+      if (p.ez) { if (typeof p.ez.resize === "function") p.ez.resize(W, Hh); else if (typeof p.ez.reSize === "function") p.ez.reSize(W, Hh); } } catch (e) {}
+  }
+  const ezFitAll = () => P.forEach((p) => { if (p.kind === "ez") ezFit(p); });
+  function ezKill(p) { // close the fast player and take its box away (its own closing is not instant, so the box is hidden first)
+    const o = p.v, pl = p.ez; p.ez = null;
+    try { if (o) o.style.display = "none"; } catch (e) {}
+    const done = () => { try { if (o) o.remove(); } catch (e) {} };
+    if (!ezCount()) ezRun(false);
+    try { const d = pl && (typeof pl.destroy === "function" ? pl.destroy() : typeof pl.stop === "function" ? pl.stop() : null); if (d && d.then) { d.then(done, done); setTimeout(done, 2500); } else done(); } catch (e) { done(); }
+  }
+  function ezGiveUp(cam, p, why) { // the fast way did not work for this camera → the normal way, now; fast is tried again for it after 10 minutes
+    if (P.get(cam.id) !== p) return;
+    tel("ezFail"); if (!TEL.ezErr || why !== "slow") TEL.ezErr = (why + (TEL.ezErr ? "/" + TEL.ezErr : "")).slice(0, 60);
+    stopOne(cam.id, false);
+    if (p.q === 1) { backToSd(cam, { err: "player" }); return; }
+    EZBAD.set(cam.id, Date.now());
+    if (wanted(cam)) startOne(cam); else mark(cam.id);
+    foot();
+  }
+  function ezStarted(cam, p) {
+    if (P.get(cam.id) !== p) return;
+    if (!p.started) { p.started = Date.now(); TEL.ezTtff.push(p.started - p.t0); tel("ezOk"); p.ft = setTimeout(() => { if (P.get(cam.id) === p) saveFrame(cam.id); }, 4000); }
+    p.lastAdv = Date.now(); p.soft = false; TRIES.set(cam.id, 0); setMsg(cam.id, ""); mark(cam.id); ezFit(p);
+    if (p.q === 1) { note(qLine(cam), 6000); foot(); }
+  }
+  async function startEz(cam, p) {
+    const cold = !(window.EZUIKit && window.EZUIKit.EZUIKitPlayer);
+    if (cold) setMsg(cam.id, T("بننزّل المشغّل السريع — أول مرة بس…", "Downloading the fast player — first time only…"));
+    const got = await Promise.all([loadEz().catch(() => null), ezInfo(cam, p.q).catch(() => null)]);
+    if (P.get(cam.id) !== p) return;
+    if (cold) setMsg(cam.id, "");
+    const lib = got[0], info = got[1];
+    if (!lib || !info) { ezGiveUp(cam, p, lib ? "info" : "lib"); return; }
+    p.tEz = Date.now(); // the 12-second «no picture» rule counts from here (and again from the moment its decoder has arrived), not from the download
+    const tile = tileOf(cam.id), box = tile && tile.querySelector(".nfcw-box"); if (!box) { P.delete(cam.id); mark(cam.id); return; }
+    const o = document.createElement("div"); o.className = "nfcw-ez"; const inr = document.createElement("div"); inr.id = "nfcwez" + (++ezSeq); inr.className = "nfcw-ezin"; o.appendChild(inr);
+    p.v = o; box.appendChild(o); ezFit(p); applyZ();
+    try {
+      const E = lib.EZUIKitPlayer; ezRun(true);
+      p.ez = new E({ id: inr.id, accessToken: info.token, url: info.url, width: p.fw || box.clientWidth, height: p.fh || box.clientHeight, template: "simple", audio: false, language: "en", dblClickFullscreen: false,
+        env: { domain: info.domain }, staticPath: EZ_STATIC, loggerOptions: { level: "ERROR" },
+        handleSuccess: () => {}, handleError: (e) => { try { TEL.ezErr = String([e && e.type, e && e.retcode, e && e.code, e && e.msg].filter((x) => x != null && x !== "").join(":")).replace(/[^A-Za-z0-9 _:.-]/g, "").slice(0, 60); TEL.dirty = true; } catch (x) {} if (P.get(cam.id) === p && !p.started) ezGiveUp(cam, p, "err"); } });
+      const on = (name, fn) => { try { if (typeof p.ez.on === "function") p.ez.on(name, fn); else if (p.ez.eventEmitter && typeof p.ez.eventEmitter.on === "function") p.ez.eventEmitter.on(name, fn); } catch (e) {} };
+      on((E.EVENTS && E.EVENTS.firstFrameDisplay) || "firstFrameDisplay", () => ezStarted(cam, p));
+      on((E.EVENTS && E.EVENTS.decoderLoaded) || "decoderLoaded", () => { if (P.get(cam.id) === p && !p.started) p.tEz = Date.now(); });
+    } catch (e) { ezGiveUp(cam, p, "ctor"); return; }
+    foot();
+  }
+  function ezWatch(p, id, cam, now) { // called every 2 s for a fast player
+    if (!p.started) { if (p.tEz ? now - p.tEz > CFG.ezSlow : now - p.t0 > CFG.ezLoad) { tel("slow"); ezGiveUp(cam, p, p.tEz ? "slow" : "load"); } return; }
+    if (p.noOsd || !p.ez || typeof p.ez.getOSDTime !== "function") return;
+    if (!p.osdBusy) { p.osdBusy = true; // the time printed by the camera on the picture: when it stops changing the picture has stopped
+      try { const r = p.ez.getOSDTime(); if (r && r.then) r.then((t) => { p.osdBusy = false; const k = JSON.stringify(t && t.data !== undefined ? t.data : t); if (k === undefined || k === "null" || k === "-1") { p.osdNo = (p.osdNo || 0) + 1; if (p.osdNo > 4 && !p.osdSeen) p.noOsd = true; return; } p.osdSeen = true; if (k !== p.osd) { p.osd = k; p.lastAdv = Date.now(); if (p.soft) { p.soft = false; mark(id); } } }, () => { p.osdBusy = false; p.osdNo = (p.osdNo || 0) + 1; if (p.osdNo > 4 && !p.osdSeen) p.noOsd = true; }); else { p.osdBusy = false; p.noOsd = true; } } catch (e) { p.osdBusy = false; p.noOsd = true; }
+    }
+    if (!p.osdSeen) return;
+    const stuck = now - p.lastAdv;
+    if (stuck > CFG.ezStall) { // stopped for 20 s: open it again once; a second time → the normal way for this camera
+      tel("ezStall"); const n = (EZSTALL.get(id) || 0) + 1; EZSTALL.set(id, n);
+      if (n >= 2) ezGiveUp(cam, p, "stall"); else { stopOne(id, true); if (wanted(cam)) retry(cam); }
+    }
+    else if (stuck > CFG.soft && !p.soft) { p.soft = true; mark(id); }
+  }
+  function setEng(e) {
+    st.eng = e === "ez" ? "ez" : "hls"; st.ezDied = false; LS.set("nf_cam_engine", st.eng); EZBAD.clear(); EZSTALL.clear(); TRIES.clear(); st.q.max = false;
+    stopAll(); if (st.eng === "ez") loadEz().catch(() => {}); paint();
+  }
   const wanted = (cam) => onPage() && !st.idle && !st.arr && !document.hidden && visible().some((c) => c.id === cam.id) && (!lazy() || seen.has(cam.id));
   function retry(cam) { // the stream dropped or never came → again, slower each time, as long as this camera is on the screen
     const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
@@ -6493,12 +6609,14 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (!can() || !onPage() || st.idle || st.arr || P.has(cam.id) || !cam.online) return;
     if (!tileOf(cam.id)) return;
     clearTimeout(RT.get(cam.id)); RT.delete(cam.id);
-    const v = document.createElement("video");
-    v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.crossOrigin = "anonymous";
     const q = per() === 1 && st.q.max && st.q.cam === cam.id ? 1 : 2; // 1 = main stream («أعلى جودة»)
-    const p = { v, hls: null, q, t0: Date.now(), started: 0, lastT: -1, lastAdv: Date.now(), soft: false, rec: 0, fail: null, ft: null, blocked: false }; P.set(cam.id, p);
-    tel("open"); watchOn(); setWait(cam.id, true);
+    const fast = ezWanted(cam, q);
+    const v = fast ? null : document.createElement("video");
+    if (v) { v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.crossOrigin = "anonymous"; }
+    const p = { v, hls: null, ez: null, kind: fast ? "ez" : "hls", q, t0: Date.now(), started: 0, lastT: -1, lastAdv: Date.now(), soft: false, rec: 0, fail: null, ft: null, blocked: false }; P.set(cam.id, p);
+    tel(fast ? "ezOpen" : "open"); watchOn(); setWait(cam.id, true);
     if (!(TRIES.get(cam.id) > 1)) setMsg(cam.id, LS.get(frameKey(cam.id)) ? "" : T("بنفتح اللايف…", "Opening live…"));
+    if (fast) { startEz(cam, p); foot(); return; }
     let r = null;
     try { const x = await S.sb.functions.invoke("hik", { body: { action: "live", id: cam.id, serial: cam.serial, protocol: 2, quality: q } }); r = x && x.data; } catch (e) { r = null; }
     if (P.get(cam.id) !== p) return;
@@ -6555,10 +6673,12 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (!P.size && !RT.size) return;
     if (!onPage() || document.hidden || st.idle) { wdAt = 0; return; }
     const now = Date.now();
-    if (!wdAt || now - wdAt > CFG.tick * 4) P.forEach((p) => { p.lastAdv = now; if (!p.started) p.t0 = Math.max(p.t0, now - CFG.slow / 2); }); // timers were asleep: start counting again
+    if (!wdAt || now - wdAt > CFG.tick * 4) P.forEach((p) => { p.lastAdv = now; if (!p.started) { p.t0 = Math.max(p.t0, now - (p.kind === "ez" ? CFG.ezSlow : CFG.slow) / 2); if (p.tEz) p.tEz = Math.max(p.tEz, now - CFG.ezSlow / 2); } }); // timers were asleep: start counting again
     wdAt = now;
     P.forEach((p, id) => {
-      const v = p.v, cam = (st.cams || []).find((c) => c.id === id); if (!v || !cam || p.blocked) return;
+      const v = p.v, cam = (st.cams || []).find((c) => c.id === id); if (!cam) return;
+      if (p.kind === "ez") { ezWatch(p, id, cam, now); return; }
+      if (!v || p.blocked) return;
       if (!p.started) { // never showed a picture
         if (now - p.t0 > CFG.slow) { tel("slow"); if (p.fail) p.fail(); else { P.delete(id); if (wanted(cam)) retry(cam); else setWait(id, false); } }
         return;
@@ -6620,7 +6740,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       if (r && r.ok && r.main && r.main.codec) { const j = { main: r.main.codec, w: r.main.w, h: r.main.h, sw: r.sub ? r.sub.w : null, sh: r.sub ? r.sub.h : null, at: Date.now() }; st.qi[c.id] = j; LS.set("nf_camq_" + c.id, JSON.stringify(j)); delete st.qFail[c.id]; qPaint(); }
     } catch (e) {} finally { delete st.qBusy[c.id]; }
   }
-  const maxOk = (c) => { const i = qInfo(c); return !i || i.main === "H.264"; };
+  const maxOk = (c) => { if (st.eng === "ez" && c && !ezBad(c.id)) return true; const i = qInfo(c); return !i || i.main === "H.264"; }; // the fast player (v11.44) shows H.265 too
   const qLine = (c) => { const i = qInfo(c); const res = i && i.w ? ` ${i.w}×${i.h}` : ""; return T(`أعلى جودة${res} · حوالي 40 ميجا في الدقيقة من شريحة المصنع`, `Top quality${res} · about 40 MB a minute of the factory SIM`); };
   function note(msg, ms) {
     const c = visible()[0]; const t = c && per() === 1 && tileOf(c.id); const n = t && t.querySelector(".nfcw-qn"); if (!n) return;
@@ -6667,7 +6787,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
      the box size is read once per gesture (no re-layout while the fingers move), the edges are soft and spring back,
      after a drag the picture keeps gliding a little, and ＋ / － / the number / double tap animate instead of jumping. */
   const ZMAX = 6, ZRUB = 0.35;
-  const one = () => { if (per() !== 1) return null; const c = visible()[0]; const p = c && P.get(c.id); const t = c && tileOf(c.id); const el = t && t.querySelector(".nfcw-box"); return p && el ? { id: c.id, el, v: p.v } : null; };
+  const one = () => { if (per() !== 1) return null; const c = visible()[0]; const p = c && P.get(c.id); const t = c && tileOf(c.id); const el = t && t.querySelector(".nfcw-box"); return p && p.v && el ? { id: c.id, el, v: p.v } : null; };
   function loc(R, px, py) { return st.mode === "rot" ? { x: py - R.top, y: R.right - px } : { x: px - R.left, y: py - R.top }; } // the iPhone «rot» view is turned 90° clockwise
   function local(el, px, py) { return loc(el.getBoundingClientRect(), px, py); } // screen point → point inside the element
   const clampv = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -6973,7 +7093,10 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       ? `<button type="button" class="btn p" data-cwresume>${H(T("اللايف وقف عشان مالمستش الشاشة 10 دقايق — دوس هنا يكمل", "Live paused after 10 minutes without a touch — tap to continue"))}</button>`
       : mx ? `<span class="small muted">${H(T("لايف بأعلى جودة · حوالي 40 ميجا في الدقيقة من شريحة المصنع — رجّعها «عادي» لما تخلص", "Live at top quality · about 40 MB a minute of the factory SIM — switch back to «Normal» when done"))}</span>`
       : `<span class="small muted">${n ? H(T(`لايف ${n} ${n === 1 ? "كاميرا" : "كاميرات"} · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${n} camera${n === 1 ? "" : "s"} · about ${n}–${n * 2} MB a minute of the factory SIM`)) : H(T("بيقف لوحده لما تخرج من الصفحة", "Stops by itself when you leave the page"))}</span>`;
-    if (!st.idle && st.cams && st.cams.length) f.insertAdjacentHTML("beforeend", leg);
+    if (!st.idle && st.cams && st.cams.length) {
+      const on = st.eng === "ez", back = on ? [...EZBAD.keys()].filter((id) => ezBad(id)).length : 0;
+      f.insertAdjacentHTML("beforeend", leg + `<div class="nfcw-engrow"><button type="button" class="btn sm nfcw-engb ${on ? "on" : ""}" data-cweng aria-pressed="${on}">⚡ ${H(T("لايف سريع (تجربة)", "Fast live (trial)"))}${on ? " ✓" : ""}</button><span class="small muted">${H(on ? (back ? T(`السريع مافتحش على ${back} — شغّالة بالطريقة العادية`, `Fast did not open on ${back} — running the normal way`) : T("بيفتح بمشغّل هيك فيجن — لو حاجة باظت اقفله", "Opens with Hikvision's own player — switch it off if anything misbehaves")) : st.ezDied ? T("السريع قفل الصفحة آخر مرة فاتقفل لوحده — دوس لو عايز تجرّبه تاني", "Fast closed the page last time, so it switched itself off — tap to try again") : T("بيفتح الكاميرا في ثواني بدل ما تستنى — جرّبه", "Opens a camera in seconds instead of the wait — try it"))}</span></div>`);
+    }
   }
   function paint() {
     const b = document.getElementById("nfcwbody"); if (!b) return;
@@ -7001,8 +7124,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
     vis.forEach((c) => { if (!c.online) { const p = P.get(c.id); if (p && !p.started) stopOne(c.id, false); if (RT.has(c.id)) { clearTimeout(RT.get(c.id)); RT.delete(c.id); } if (!P.has(c.id)) { mark(c.id); setMsg(c.id, T("الكاميرا مش أونلاين", "Camera offline")); } } });
     const l = document.getElementById("nfcwsizes"); if (l) { const sb = sizeBtns(); if (l.__h !== sb) { l.__h = sb; l.innerHTML = sb; } }
-    applyMode(); layout(); applyZ();
-    if (oneId) loadQ(v0[0]);
+    applyMode(); layout(); ezFitAll(); applyZ();
+    if (oneId) { qPaint(); loadQ(v0[0]); } // the quality pill follows what is possible now (it changes with «لايف سريع»)
     if (lazy()) { if (rebuilt || !IO) observe(); else startSeen(); }
     else { if (IO) { IO.disconnect(); IO = null; } if (onPage() && !document.hidden && !st.idle && !st.arr) vis.forEach((c, i) => { if (!P.has(c.id) && !RT.has(c.id)) setTimeout(() => startOne(c), i * 250); }); }
     foot();
@@ -7122,7 +7245,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   }
   try { LAND.addEventListener("change", onOrient); } catch (e) { try { LAND.addListener(onOrient); } catch (x) {} }
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && st.mode === "full" && !(phone() && LAND.matches)) exitFull(); });
-  let rz = null; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (onPage()) layout(); }, 120); });
+  let rz = null; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (onPage()) { layout(); ezFitAll(); } }, 120); });
 
   /* ---- styles ---- */
   if (!document.getElementById("nfcw-css")) {
@@ -7141,6 +7264,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .nfcw-msg{position:relative;z-index:2;color:#eee;font-size:11px;text-align:center;padding:4px 8px;background:rgba(0,0,0,.45);border-radius:8px;margin:6px}
 .nfcw-name{position:absolute;z-index:3;inset-inline-start:6px;bottom:4px;display:flex;align-items:center;gap:5px;color:#fff;font-size:11px;text-shadow:0 1px 2px #000;max-width:calc(100% - 12px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .nfcw-name .dot{width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.3);flex:0 0 auto}.nfcw-tile.wait .nfcw-name .dot{background:#facc15;box-shadow:0 0 0 3px rgba(250,204,21,.32)}.nfcw-tile.live .nfcw-name .dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.32)}
+.nfcw-ez{position:absolute;inset:0;overflow:hidden;pointer-events:none;will-change:transform;background:transparent}.nfcw-ezin{position:absolute;left:0;top:0;width:100%;height:100%}.nfcw-ezin *{pointer-events:none!important}
+.nfcw-engrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}.nfcw-engb.on{background:#16a34a;border-color:#16a34a;color:#fff}
 .nfcw-leg{display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap;margin-inline-end:10px}.nfcw-leg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-inline-end:4px}.nfcw-leg .g{background:#22c55e}.nfcw-leg .y{background:#facc15}.nfcw-leg .r{background:#ef4444}
 .nfcw-pages{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px}#nfcwfoot{margin-top:8px;min-height:24px}
 .nfcw-sec+.nfcw-sec{border-top:1px solid var(--line,#ddd);margin-top:12px;padding-top:10px}
@@ -7191,6 +7316,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     st.root = r;
     if (phone() && LAND.matches) st.mode = "full";
     if (!st.here) { st.here = true; st.idle = false; TRIES.clear(); poke(); }
+    if (st.eng === "ez") loadEz().catch(() => {});
     applyMode(); loadCams(false); arrPaint(); if (full()) showUi();
   }
   EXTRA_VIEWS.cams = () => {
@@ -7234,6 +7360,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const pg = t.closest("[data-cwpage]"); if (pg) { ev.preventDefault(); if (Date.now() - (Z.pinchEnd || 0) < 400) return; /* a finger of a pinch, not a tap */ Z.end = 0; flip(Number(pg.getAttribute("data-cwpage"))); return; }
     const fc = t.closest("[data-cwfocus]"); if (fc) { ev.preventDefault(); st.focus = fc.getAttribute("data-cwfocus"); LS.set("nf_cams_focus", st.focus); paint(); return; }
     if (t.closest("[data-cwresume]")) { ev.preventDefault(); st.idle = false; poke(); paint(); return; }
+    if (t.closest("[data-cweng]")) { ev.preventDefault(); setEng(st.eng === "ez" ? "hls" : "ez"); return; }
     if (t.closest("[data-cwrefresh]")) { ev.preventDefault(); stopAll(); loadCams(true); return; }
     const sf = t.closest("[data-cwsecfull]"); if (sf) { ev.preventDefault(); st.page = Number(sf.getAttribute("data-cwsecfull")) || 0; enterFull(); return; }
     if (t.closest("[data-cwland]")) { ev.preventDefault(); if (per() === 4) st.page = topSec(); enterFull(); return; }
@@ -7260,7 +7387,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   }
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("pagehide", () => stopAll());
-  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy, CFG, TEL, RT, TRIES, watch, mount, sigOf, telSend, startOne, stopOne, unblock, loadCams, view: () => EXTRA_VIEWS.cams() }; // for tests
+  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy, CFG, TEL, RT, TRIES, watch, mount, sigOf, telSend, startOne, stopOne, unblock, loadCams, view: () => EXTRA_VIEWS.cams(), setEng, EZBAD, ezInfo, ezFitAll, ezReset: () => { EZT = null; ezP = null; } }; // for tests
 })();;
 (function(){if(window.__NF_A1136__)return;window.__NF_A1136__=1;const r="nf.rfb.back",y=12e4,i={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,n)=>{try{n==null?localStorage.removeItem(t):localStorage.setItem(t,n)}catch{}}},c=()=>{try{return sessionStorage.getItem("nf.ninety.co")||""}catch{return""}},s=t=>{try{typeof ninetySet=="function"?ninetySet(t):sessionStorage.setItem("nf.ninety.co",t)}catch{}},a=t=>["","ninety","dashboard"].includes(String(t||"").replace(/^#\/?/,"").split("/")[0])||String(t||"").replace(/^#\/?/,"")==="";function l(){const t=String(location.hash||"");i.set(r,JSON.stringify({h:t,co:c(),at:Date.now()}))}try{window.addEventListener("click",t=>{t.target&&t.target.closest&&t.target.closest("button.nfrfb")&&l()},!0)}catch{}let e=null;try{const t=JSON.parse(i.get(r)||"null");t&&Date.now()-(+t.at||0)<y&&(e=t)}catch{e=null}if(i.set(r,null),window.nfRefreshStay={remember:l,last:()=>e},!e)return;e.co&&!c()&&s(e.co);const o=String(e.h||""),f=()=>{try{const t=String(location.hash||"");if(o&&o!=="#/ninety"&&t!==o&&a(t)){const n=o.replace(/^#\/?/,"").split("/");typeof S=="object"&&S&&(S.route={view:n[0]||"dashboard",id:n[1]||null,sub:n[2]||null}),location.hash=o}e.co&&!c()&&s(e.co),typeof render=="function"&&render(!0)}catch{}};let u=0;const h=()=>{u++;try{e.co&&!c()&&s(e.co);const t=String(location.hash||"");o&&t!==o&&a(t)&&o!=="#/ninety"&&f()}catch{}u<12&&setTimeout(h,500)};setTimeout(h,0);try{document.addEventListener("nf:login",()=>setTimeout(f,60),{once:!0})}catch{}})();;
 (function(){if(window.__NF_A1137__||(window.__NF_A1137__=1,typeof isStudioz=="function"&&isStudioz()||typeof isConstruction=="function"&&isConstruction()||typeof isStuSys=="function"&&isStuSys())||typeof vMe!="function")return;const w=()=>typeof I18N!="undefined"&&I18N.lang==="en",i=(t,e)=>w()?e:t,o=t=>typeof esc=="function"?esc(String(t==null?"":t)):String(t==null?"":t),c={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,e)=>{try{e==null?localStorage.removeItem(t):localStorage.setItem(t,e)}catch{}}},l=()=>{try{return/Android/i.test(navigator.userAgent||"")}catch{return!1}},u=()=>{try{return!!(S.session&&S.session.workerId)&&!(typeof isAdmin=="function"&&isAdmin())}catch{return!1}},s=()=>"nf.pt.done."+(S.session&&S.session.workerId||""),n={checked:!1,busy:!1,email:"",justSaved:!1,err:""},m=async t=>{if(!S.sb||!S.sb.functions)throw new Error("offline");const e=await S.sb.functions.invoke("play-testers",{body:t});if(e.error){let r="error";try{r=(await e.error.context.json()).error||r}catch{}throw new Error(r)}return e.data||{}},f=()=>{try{S.route&&S.route.view==="me"&&typeof rerender=="function"&&rerender()}catch{}};async function y(){if(!(n.checked||n.busy||!u()||!l()||c.get(s()))){n.busy=!0;try{const t=await m({action:"get"});n.checked=!0,t&&t.email?(c.set(s(),"1"),n.email=t.email):f()}catch{}finally{n.busy=!1}}}function g(){return!u()||!l()?"":n.justSaved?`<div class="card ptc ok" id="ptc"><div class="ptc-h">\u2713 ${o(i("\u0627\u062A\u0633\u062C\u0651\u0644","Saved"))}</div><div class="tiny muted">${o(i(`${n.email} \u2014 \u0647\u064A\u0648\u0635\u0644\u0643 \u0644\u064A\u0646\u0643 \u0645\u0646 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A \u062A\u0646\u0632\u0651\u0644 \u0645\u0646\u0647 \u0627\u0644\u0623\u0628\u0644\u0643\u064A\u0634\u0646.`,`${n.email} \u2014 you will get a Google Play link to install the app.`))}</div></div>`:c.get(s())||!n.checked?"":`<div class="card ptc" id="ptc"><div class="ptc-h">${o(i("\u0623\u0628\u0644\u0643\u064A\u0634\u0646 Ninety \u0639\u0644\u0649 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A","Ninety app on Google Play"))}</div>
