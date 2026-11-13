@@ -6096,3 +6096,18 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     st.day = t.value || today(); st.rows = null; st.cam = ""; paint(); load(false);
   });
 })();
+/* v11.30 (المصنع بس) — إصلاح: «الكاميرات لايف» (#/cams) و«مين اتشاف فين» (#/faces) ماكانوش بيفتحوا (محمود 13/11 05:37).
+   السبب: parseRoute بيقبل بس الصفحات اللي ليها اسم في VIEW_TITLES، وغير كده بيرجع للرئيسية. الحل: نسجّل الاسمين. */
+;(function(){
+  if (window.__NF_CAMROUTES__ || typeof VIEW_TITLES === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_CAMROUTES__ = 1;
+  if (!VIEW_TITLES.cams) VIEW_TITLES.cams = "الكاميرات لايف";
+  if (!VIEW_TITLES.faces) VIEW_TITLES.faces = "مين اتشاف فين";
+  // لو الصفحة اتفتحت على الرابط ده قبل التسجيل، نعيد قراءة الرابط
+  try {
+    if (/^#\/(cams|faces)(\/|$)/.test(location.hash) && typeof parseRoute === "function" && S && S.route && S.route.view !== location.hash.split("/")[1]) {
+      parseRoute(); if (typeof rerender === "function") rerender();
+    }
+  } catch (e) { console.warn("cams routes", e); }
+})();
