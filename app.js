@@ -6333,6 +6333,12 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.35 (المصنع بس) — «الكاميرات» نسخة 6 (محمود 13/11 07:32، سكرينين):
+   - «مش عارف أعمل زوم إن ولا زوم أوت»: زراير ＋ / الرقم (دوسة = يرجع 1×) / － على الكاميرا الواحدة (جنب الصورة)، والصباعين/الدبل تاب لسه شغالين،
+     وتكبير الآيفون نفسه (gesture) مقفول على الصورة عشان مايتلخبطش. لو كبّرت 2× وانت على «عادي» ← ملحوظة إن «أعلى جودة» أوضح.
+   - «لما أدوس يجيب الكاميرا اللي بعدها»: سهمين ‹ › كبار على جنبي الصورة (كاميرا واحدة بالطول وبالعرض، والشبكة بالعرض) — شغالين حتى وانت مكبّر.
+   - «9 / 16 بالطول: الكاميرات جنب بعض مش تحت بعض»: أقل عدد أعمدة = جذر العدد (4 ← 2×2، 9 ← 3×3، 16 ← 4×4).
+   الباقي زي v11.34: */
 /* v11.34 (المصنع بس) — «الكاميرات» نسخة 5 (ملاحظات محمود 13/11 06:57–07:03، «ابدأ» 07:03):
    1) بالعرض الصورة بتملا الشاشة كلها زي الفيلم (من غير أسود ومن غير عمود الأسامي) — الأزرار فوق الصورة وبتختفي لوحدها بعد 3.5 ث، أي لمسة بتظهرها؛
       وسلايد يمين/شمال = الكاميرا (أو القسم) اللي بعدها/قبلها (مش وانت مكبّر).
@@ -6351,6 +6357,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.__NF_CAMWALL__ = 1;
   const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
   const T = (a, b) => (EN() ? b : a);
+  const RTL = () => { try { return getComputedStyle(document.getElementById("nfcwroot") || document.documentElement).direction === "rtl"; } catch (e) { return !EN(); } };
   const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s));
   const can = () => !!(S && S.sb && S.sb.functions) && typeof isAdmin === "function" && isAdmin() && !S.viewOrig && !S.demoOrig;
   const onPage = () => /^#\/cams(\/|$)/.test(location.hash);
@@ -6370,7 +6377,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     { id: "upholstery", ar: "التنجيد والقشرة", en: "Upholstery & veneer" },
   ];
   const st = { here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
-    q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null };
+    q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null, hintZ: false };
   try { const l = JSON.parse(LS.get("nf_camlay") || "null"); if (l && l.map) st.lay = l; } catch (e) {}
   const Z = { id: "", s: 1, x: 0, y: 0, end: 0 }; // zoom of the single camera (local px of its box)
   const P = new Map(), TRIES = new Map(); // camId → { v, hls, q } / automatic restarts in a row
@@ -6517,7 +6524,14 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   function qHtml(c) {
     const mx = st.q.max && st.q.cam === c.id;
     return `<div class="nfcw-q" role="group" aria-label="${H(T("الجودة", "Quality"))}"><button type="button" class="${mx ? "" : "on"}" data-cwq="sd">${H(T("عادي", "Normal"))}</button><button type="button" class="${mx ? "on" : ""} ${maxOk(c) ? "" : "na"}" data-cwq="max">${H(T("أعلى جودة", "Top quality"))}</button></div>
-      <button type="button" class="nfcw-zr" data-cwzr style="display:none" aria-label="${H(T("رجّع التكبير", "Reset zoom"))}">1×</button><div class="nfcw-qn" style="display:none"></div>`;
+      <div class="nfcw-zc" role="group" aria-label="${H(T("التكبير", "Zoom"))}"><button type="button" data-cwz="in" aria-label="${H(T("كبّر", "Zoom in"))}">＋</button><button type="button" class="lv" data-cwzr aria-label="${H(T("رجّع التكبير", "Reset zoom"))}">1×</button><button type="button" data-cwz="out" aria-label="${H(T("صغّر", "Zoom out"))}">－</button></div>
+      ${navHtml()}<div class="nfcw-qn" style="display:none"></div>`;
+  }
+  function navHtml() { // ‹ › next / previous (Arabic: next is on the left)
+    const n = per(), cams = ordered(); const pages = n === 1 ? cams.length : n === 4 ? secs().length : Math.ceil(cams.length / n);
+    if (pages < 2) return "";
+    const nx = RTL() ? "‹" : "›", pv = RTL() ? "›" : "‹"; // next sits at the reading end of the picture
+    return `<button type="button" class="nfcw-nav nx" data-cwpage="1" aria-label="${H(T("اللي بعدها", "Next"))}">${nx}</button><button type="button" class="nfcw-nav pv" data-cwpage="-1" aria-label="${H(T("اللي قبلها", "Previous"))}">${pv}</button>`;
   }
   function qPaint() {
     const c = visible()[0]; if (per() !== 1 || !c) return; const t = tileOf(c.id); const b = t && t.querySelector(".nfcw-q"); if (!b) return;
@@ -6548,12 +6562,20 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     Z.s = Math.min(6, Math.max(1, Z.s)); if (Z.s < 1.02) { Z.s = 1; Z.x = 0; Z.y = 0; }
     Z.x = Math.min(0, Math.max(W - W * Z.s, Z.x)); Z.y = Math.min(0, Math.max(Hh - Hh * Z.s, Z.y));
     b.v.style.transformOrigin = "0 0"; b.v.style.transform = Z.s > 1 ? `translate(${Z.x}px,${Z.y}px) scale(${Z.s})` : "";
-    const zr = b.el.parentNode && b.el.parentNode.querySelector("[data-cwzr]"); if (zr) { zr.style.display = Z.s > 1 ? "" : "none"; zr.textContent = Z.s > 1 ? `${Z.s.toFixed(1).replace(/\.0$/, "")}× ↺` : "1×"; }
+    const zr = b.el.parentNode && b.el.parentNode.querySelector("[data-cwzr]"); if (zr) { zr.textContent = Z.s > 1 ? `${Z.s.toFixed(1).replace(/\.0$/, "")}×` : "1×"; zr.classList.toggle("on", Z.s > 1); }
+    if (Z.s >= 2 && !st.hintZ && !(st.q.max && st.q.cam === b.id)) { st.hintZ = true; note(T("الصورة المكبّرة بتبان أوضح مع «أعلى جودة»", "Zoomed pictures look sharper with «Top quality»"), 5000); }
+  }
+  function zoomBy(f) { // ＋ / － buttons: zoom around the middle of the picture
+    const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
+    const s = Math.min(6, Math.max(1, Z.s * f)); if (s < 1.05) zReset(b.id); else zoomAt(b.el.offsetWidth / 2, b.el.offsetHeight / 2, s);
+    applyZ();
   }
   function zoomAt(lx, ly, s) { const cx = (lx - Z.x) / Z.s, cy = (ly - Z.y) / Z.s; Z.s = s; Z.x = lx - s * cx; Z.y = ly - s * cy; }
   let G = null, tapT = null, tapAt = 0;
   const pt = (b, t) => local(b.el, t.clientX, t.clientY);
-  const CTRL = "[data-cwq],[data-cwzr],.nfcw-bar,#nfcwarr,.nfcw-chips,.nfcw-pages,#nfcwfoot,.nfcw-sech";
+  const CTRL = "[data-cwq],[data-cwzr],[data-cwz],.nfcw-zc,.nfcw-nav,.nfcw-bar,#nfcwarr,.nfcw-chips,.nfcw-pages,#nfcwfoot,.nfcw-sech";
+  // iPhone: its own pinch-to-zoom of the whole page would fight ours on the picture
+  ["gesturestart", "gesturechange"].forEach((n) => document.addEventListener(n, (e) => { if (onPage() && (one() || full())) e.preventDefault(); }, { passive: false }));
   document.addEventListener("touchstart", (e) => {
     if (!onPage()) return; const b = one(); if (!b || !b.el.contains(e.target) || (e.target.closest && e.target.closest(CTRL))) return;
     if (Z.id !== b.id) zReset(b.id);
@@ -6634,7 +6656,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (s.lock !== "h") return;
     Z.end = Date.now(); swipeReset(false);
     if (Math.abs(s.dx) < 60) { swipeReset(true); return; }
-    flip((EN() ? s.dx < 0 : s.dx > 0) ? 1 : -1); // Arabic (right-to-left): pulling the picture to the right brings the next one
+    flip((RTL() ? s.dx > 0 : s.dx < 0) ? 1 : -1); // right-to-left page: pulling the picture to the right brings the next one
   }, { passive: true });
   // a real mouse (computer) shows the buttons when it moves; the fake mouse events phones send after a tap are ignored
   document.addEventListener("mousemove", () => { if (Date.now() - lastTouch < 800) return; if (onPage() && full() && !uiOn()) showUi(); });
@@ -6653,9 +6675,9 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     return cams.slice(st.page * n, st.page * n + n);
   };
   // biggest 16:9 tiles that fit k cameras in W×H (gap g) → { cols, w }
-  function fit(k, W, H, g) {
+  function fit(k, W, H, g, minC) {
     let best = { cols: 1, w: 0 };
-    for (let c = 1; c <= Math.max(1, k); c++) {
+    for (let c = Math.max(1, Math.min(k, minC || 1)); c <= Math.max(1, k); c++) {
       const rows = Math.ceil(k / c);
       const w = Math.min((W - g * (c - 1)) / c, ((H - g * (rows - 1)) / rows) * 16 / 9);
       if (w > best.w + 0.5) best = { cols: c, w };
@@ -6686,7 +6708,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const tab = document.querySelector("nav.tabbar"); const tabH = tab && getComputedStyle(tab).display !== "none" ? tab.getBoundingClientRect().height + 16 : 0;
     const pages = document.querySelector(".nfcw-pages"); const foot = document.getElementById("nfcwfoot");
     const H = Math.max(160, window.innerHeight - r.top - tabH - (pages ? pages.offsetHeight + 10 : 0) - (foot ? 34 : 0) - 8);
-    const g = 6, f = fit(k, W, H, g);
+    const g = 6, f = fit(k, W, H, g, per() === 1 ? 1 : Math.ceil(Math.sqrt(k))); // 4 → 2×2, 9 → 3×3, 16 → 4×4 (side by side, not one under the other)
     grid.style.gridTemplateColumns = `repeat(${f.cols}, ${f.w}px)`;
     grid.style.justifyContent = "center";
   }
@@ -6725,7 +6747,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const nav = pages > 1 && !full() ? `<div class="nfcw-pages"><button type="button" class="btn sm" data-cwpage="-1" aria-label="${H(T("السابق", "Previous"))}">›</button><span class="small">${cur + 1} / ${pages}</span><button type="button" class="btn sm" data-cwpage="1" aria-label="${H(T("التالي", "Next"))}">‹</button></div>` : "";
     const chips = n === 1 && !full() ? `<div class="nfcw-chips">${cams.map((c) => `<button type="button" class="chip notr ${vis[0] && vis[0].id === c.id ? "on" : ""}" data-cwfocus="${H(c.id)}">${H(c.name || c.no)}</button>`).join("")}</div>` : "";
     const lab = full() ? `<div class="nfcw-plabel notr" dir="auto">${H(labelText())}${pages > 1 ? ` <span aria-hidden="true">⇆</span>` : ""}</div>` : "";
-    return `${chips}<div class="nfcw-grid ${n === 1 ? "one" : ""}">${vis.map(tileHtml).join("")}</div>${nav}${lab}`;
+    const arrows = full() && n !== 1 ? navHtml() : ""; // one camera has its arrows on the picture itself
+    return `${chips}<div class="nfcw-grid ${n === 1 ? "one" : ""}">${vis.map(tileHtml).join("")}</div>${nav}${lab}${arrows}`;
   }
   const sizeBtns = () => SIZES().map((n) => `<button type="button" class="chip ${per() === n ? "on" : ""}" data-cwn="${n}" aria-label="${H(n === 1 ? T("كاميرا واحدة", "1 camera") : n === 4 ? T("الأقسام", "Departments") : T(`${n} كاميرات`, `${n} cameras`))}">${n === 1 ? H(T("واحدة", "1")) : n === 4 ? H(T("أقسام", "Depts")) : n}</button>`).join("");
   const landLabel = () => (phone() ? "⟲ " + T("بالعرض", "Landscape") : "⛶ " + T("ملء الشاشة", "Full screen"));
@@ -6886,7 +6909,10 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .nfcw-grid.one .nfcw-box{touch-action:none}
 .nfcw-q{position:absolute;z-index:4;top:6px;inset-inline-end:6px;display:flex;border-radius:999px;overflow:hidden;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);transition:opacity .25s}
 .nfcw-q button{all:unset;cursor:pointer;color:#fff;font-size:12px;padding:5px 10px;line-height:1.2;white-space:nowrap}.nfcw-q button.on{background:#fff;color:#000;font-weight:600}.nfcw-q button.na{opacity:.55}
-.nfcw-zr{all:unset;cursor:pointer;position:absolute;z-index:4;top:6px;inset-inline-start:6px;color:#fff;font-size:12px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25)}
+.nfcw-zc{position:absolute;z-index:4;top:6px;inset-inline-start:6px;display:flex;flex-direction:row;border-radius:999px;overflow:hidden;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);transition:opacity .25s}
+.nfcw-zc button{all:unset;cursor:pointer;color:#fff;width:34px;height:30px;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1}.nfcw-zc button.lv{font-size:11px;width:40px;border-inline:1px solid rgba(255,255,255,.2)}.nfcw-zc button.lv.on{background:#fff;color:#000;font-weight:700}
+.nfcw-nav{all:unset;cursor:pointer;position:absolute;z-index:5;top:50%;transform:translateY(-50%);width:40px;height:56px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:34px;line-height:1;border-radius:12px;background:rgba(0,0,0,.4);transition:opacity .25s;-webkit-tap-highlight-color:transparent}
+.nfcw-nav.nx{inset-inline-end:6px}.nfcw-nav.pv{inset-inline-start:6px}.nfcw-root.full .nfcw-nav{width:48px;height:72px;font-size:42px}
 .nfcw-qn{position:absolute;z-index:4;inset-inline:8px;bottom:26px;margin:auto;max-width:520px;color:#fff;font-size:12px;line-height:1.5;text-align:center;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.7)}
 .nfcw-root:not(.full) .nfcw-exit{display:none!important}.nfcw-plabel{display:none}html.nfcw-lock,html.nfcw-lock body{overflow:hidden!important}
 .nfcw-root.full{position:fixed;inset:0;z-index:10000;background:#000;color:#fff;margin:0;padding:0;display:block;box-sizing:border-box;overflow:hidden}
@@ -6901,9 +6927,9 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .nfcw-root.full .chip{color:#fff;border-color:rgba(255,255,255,.45);background:rgba(0,0,0,.35)}.nfcw-root.full .chip.on{background:#fff;color:#000}
 .nfcw-root.full .btn.nfcw-exit{display:inline-flex!important;align-items:center;gap:6px;background:#fff!important;color:#000!important;border:0!important;font-weight:700;font-size:14px;padding:7px 16px;border-radius:999px;box-shadow:0 1px 8px rgba(0,0,0,.6);flex:0 0 auto;opacity:1!important}
 .nfcw-root.full .nfcw-plabel{display:block;position:absolute;z-index:30;top:56px;left:50%;transform:translateX(-50%);max-width:80%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:rgba(0,0,0,.55);color:#fff;font-size:12px;padding:4px 12px;border-radius:999px;transition:opacity .25s;pointer-events:none}
-.nfcw-root.full .nfcw-q{top:auto;bottom:12px;inset-inline-end:12px}.nfcw-root.full .nfcw-qn{bottom:56px}.nfcw-root.full .nfcw-zr{top:auto;bottom:12px;inset-inline-start:auto;inset-inline-end:200px}
+.nfcw-root.full .nfcw-q{top:auto;bottom:12px;inset-inline-end:12px}.nfcw-root.full .nfcw-qn{bottom:56px}.nfcw-root.full .nfcw-zc{flex-direction:column;border-radius:14px;top:50%;transform:translateY(-50%);inset-inline-start:62px}.nfcw-root.full .nfcw-zc button{width:42px;height:40px;font-size:22px}.nfcw-root.full .nfcw-zc button.lv{height:26px;width:42px;border-inline:0;border-block:1px solid rgba(255,255,255,.2)}
 .nfcw-root.full #nfcwfoot{position:absolute;z-index:31;bottom:12px;inset-inline:0;margin:0;min-height:0;display:flex;justify-content:center;pointer-events:none}.nfcw-root.full #nfcwfoot .btn{pointer-events:auto}.nfcw-root.full #nfcwfoot .muted{display:none}
-.nfcw-root.full.ui-off .nfcw-bar .chips,.nfcw-root.full.ui-off .nfcw-plabel,.nfcw-root.full.ui-off .nfcw-q{opacity:0;pointer-events:none}.nfcw-root.full.ui-off .nfcw-bar{background:none}
+.nfcw-root.full.ui-off .nfcw-bar .chips,.nfcw-root.full.ui-off .nfcw-plabel,.nfcw-root.full.ui-off .nfcw-q,.nfcw-root.full.ui-off .nfcw-zc,.nfcw-root.full.ui-off .nfcw-nav{opacity:0;pointer-events:none}.nfcw-root.full.ui-off .nfcw-bar{background:none}
 .nfcw-arr{position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
 .nfcw-arrin{width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:16px 16px 0 0;color:#1d1d1b;background:#fbfaf6!important;backdrop-filter:none!important;box-shadow:0 -6px 24px rgba(0,0,0,.25)}
 .nfcw-arrh{display:flex;flex-direction:column;gap:4px}.nfcw-arrl{overflow:auto;display:flex;flex-direction:column;gap:10px}
@@ -6956,7 +6982,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       }
       return;
     }
-    const pg = t.closest("[data-cwpage]"); if (pg) { ev.preventDefault(); flip(Number(pg.getAttribute("data-cwpage"))); return; }
+    const pg = t.closest("[data-cwpage]"); if (pg) { ev.preventDefault(); Z.end = 0; flip(Number(pg.getAttribute("data-cwpage"))); return; }
     const fc = t.closest("[data-cwfocus]"); if (fc) { ev.preventDefault(); st.focus = fc.getAttribute("data-cwfocus"); LS.set("nf_cams_focus", st.focus); paint(); return; }
     if (t.closest("[data-cwresume]")) { ev.preventDefault(); st.idle = false; poke(); paint(); return; }
     if (t.closest("[data-cwrefresh]")) { ev.preventDefault(); stopAll(); loadCams(true); return; }
@@ -6964,7 +6990,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (t.closest("[data-cwland]")) { ev.preventDefault(); if (per() === 4) st.page = topSec(); enterFull(); return; }
     if (t.closest("[data-cwexit]")) { ev.preventDefault(); goBack(); return; }
     const qb = t.closest("[data-cwq]"); if (qb) { ev.preventDefault(); setQ(qb.getAttribute("data-cwq") === "max"); if (full()) showUi(); return; }
-    if (t.closest("[data-cwzr]")) { ev.preventDefault(); zReset(Z.id); applyZ(); return; }
+    if (t.closest("[data-cwzr]")) { ev.preventDefault(); zReset(Z.id); applyZ(); if (full()) showUi(); return; }
+    const zb = t.closest("[data-cwz]"); if (zb) { ev.preventDefault(); zoomBy(zb.getAttribute("data-cwz") === "in" ? 1.5 : 1 / 1.5); if (full()) showUi(); return; }
     const tile = t.closest(".nfcw-tile[data-cwcam]");
     if (tile) {
       ev.preventDefault(); if (Date.now() - Z.end < 350) return; // that was a swipe / drag, not a tap
@@ -6983,5 +7010,5 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   }
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("pagehide", () => stopAll());
-  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen }; // for tests
+  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy }; // for tests
 })();
