@@ -6333,6 +6333,12 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.37 (المصنع بس) — «الكاميرات» نسخة 7 (محمود 13/11 08:19: «الزوم إن والزوم أوت لسه مش بيتعمل بسلاسة، محتاجه سلس جدًا»):
+   - التكبير بيترسم مرة كل فريم على كارت الشاشة (requestAnimationFrame + translate3d) ومقاس الصورة بيتقري مرة واحدة أول اللمسة، فمفيش تقطيع.
+   - الأطراف طرية: لو صغّرت تحت 1× أو كبّرت فوق 6× أو سحبت بعد الحافة بتتحرك أبطأ وترجع لمكانها بنعومة لما تسيب.
+   - بعد سحبة سريعة الصورة بتكمّل تزحلق شوية وتهدى (زي صور الموبايل).
+   - ＋ / － / الرقم / الدبل تاب بيكبّروا ويصغّروا بحركة ناعمة بدل ما ينطّوا. عجلة الماوس/التاتش باد على الكمبيوتر بقت ناعمة كمان.
+   الباقي زي v11.35: */
 /* v11.35 (المصنع بس) — «الكاميرات» نسخة 6 (محمود 13/11 07:32، سكرينين):
    - «مش عارف أعمل زوم إن ولا زوم أوت»: زراير ＋ / الرقم (دوسة = يرجع 1×) / － على الكاميرا الواحدة (جنب الصورة)، والصباعين/الدبل تاب لسه شغالين،
      وتكبير الآيفون نفسه (gesture) مقفول على الصورة عشان مايتلخبطش. لو كبّرت 2× وانت على «عادي» ← ملحوظة إن «أعلى جودة» أوضح.
@@ -6379,7 +6385,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const st = { here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
     q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null, hintZ: false };
   try { const l = JSON.parse(LS.get("nf_camlay") || "null"); if (l && l.map) st.lay = l; } catch (e) {}
-  const Z = { id: "", s: 1, x: 0, y: 0, end: 0 }; // zoom of the single camera (local px of its box)
+  const Z = { id: "", s: 1, x: 0, y: 0, end: 0, pinchEnd: 0 }; // zoom of the single camera (local px of its box)
   const P = new Map(), TRIES = new Map(); // camId → { v, hls, q } / automatic restarts in a row
   const per = () => { const s = SIZES(); return s.includes(st.n) ? st.n : s.filter((x) => x <= st.n).pop() || 4; };
   const full = () => st.mode !== "off";
@@ -6549,72 +6555,154 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (max) note(T("بنفتح أعلى جودة…", "Opening top quality…"), 0);
   }
 
-  /* ---- zoom (pinch / drag / double tap / mouse wheel) on the one open camera ---- */
+  /* ---- zoom (pinch / drag / double tap / mouse wheel) on the one open camera — v11.37 «سلس جدًا»:
+     the picture is redrawn once per screen frame (requestAnimationFrame) on the phone's graphics chip (translate3d),
+     the box size is read once per gesture (no re-layout while the fingers move), the edges are soft and spring back,
+     after a drag the picture keeps gliding a little, and ＋ / － / the number / double tap animate instead of jumping. */
+  const ZMAX = 6, ZRUB = 0.35;
   const one = () => { if (per() !== 1) return null; const c = visible()[0]; const p = c && P.get(c.id); const t = c && tileOf(c.id); const el = t && t.querySelector(".nfcw-box"); return p && el ? { id: c.id, el, v: p.v } : null; };
-  function local(el, px, py) { // screen point → point inside the element (the iPhone «rot» view is turned 90° clockwise)
-    const R = el.getBoundingClientRect();
-    return st.mode === "rot" ? { x: py - R.top, y: R.right - px } : { x: px - R.left, y: py - R.top };
+  function loc(R, px, py) { return st.mode === "rot" ? { x: py - R.top, y: R.right - px } : { x: px - R.left, y: py - R.top }; } // the iPhone «rot» view is turned 90° clockwise
+  function local(el, px, py) { return loc(el.getBoundingClientRect(), px, py); } // screen point → point inside the element
+  const clampv = (v, a, b) => Math.min(b, Math.max(a, v));
+  const rub = (v, a, b) => (v < a ? a - (a - v) * ZRUB : v > b ? b + (v - b) * ZRUB : v); // soft edge: moves 1/3 as far past the edge
+  function zBounds(W, Hh, s) { // where the picture may sit at zoom s (it always covers the box; below 1× it stays in the middle)
+    if (s <= 1) { const cx = (W - W * s) / 2, cy = (Hh - Hh * s) / 2; return { x0: cx, x1: cx, y0: cy, y1: cy }; }
+    return { x0: W - W * s, x1: 0, y0: Hh - Hh * s, y1: 0 };
   }
-  function zReset(id) { Z.id = id || ""; Z.s = 1; Z.x = 0; Z.y = 0; }
-  function applyZ() {
+  let ZA = null, ZF = 0, G = null, tapT = null, tapAt = 0, zWheelT = null;
+  function zStop() { if (ZA) { cancelAnimationFrame(ZA.raf); ZA = null; } }
+  function zReset(id) { zStop(); Z.id = id || ""; Z.s = 1; Z.x = 0; Z.y = 0; }
+  const n4 = (v) => +v.toFixed(4);
+  function zDraw(b) {
+    b = b || one(); if (!b) return;
+    const s = Z.s, on = Math.abs(s - 1) > 1e-4 || Math.abs(Z.x) > 0.01 || Math.abs(Z.y) > 0.01;
+    if (b.v.style.transformOrigin !== "0px 0px") b.v.style.transformOrigin = "0 0";
+    b.v.style.transform = on ? `translate3d(${n4(Z.x)}px,${n4(Z.y)}px,0) scale(${n4(s)})` : "";
+    const txt = s > 1.001 ? `${(Math.round(s * 10) / 10).toFixed(1).replace(/\.0$/, "")}×` : "1×";
+    const zr = b.el.parentNode && b.el.parentNode.querySelector("[data-cwzr]");
+    if (zr && zr.textContent !== txt) { zr.textContent = txt; zr.classList.toggle("on", s > 1.001); }
+  }
+  function zSoon() { if (!ZF) ZF = requestAnimationFrame(() => { ZF = 0; zDraw(G && G.b); }); }
+  function zHint(b) { if (b && Z.s >= 2 && !st.hintZ && !(st.q.max && st.q.cam === b.id)) { st.hintZ = true; note(T("الصورة المكبّرة بتبان أوضح مع «أعلى جودة»", "Zoomed pictures look sharper with «Top quality»"), 5000); } }
+  function applyZ() { // hard limits + draw now (after a re-paint, a new video, a resize)
     const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
+    if (ZA || G) { zDraw(b); return; } // a gesture / animation is running: just redraw
     const W = b.el.offsetWidth, Hh = b.el.offsetHeight;
-    Z.s = Math.min(6, Math.max(1, Z.s)); if (Z.s < 1.02) { Z.s = 1; Z.x = 0; Z.y = 0; }
-    Z.x = Math.min(0, Math.max(W - W * Z.s, Z.x)); Z.y = Math.min(0, Math.max(Hh - Hh * Z.s, Z.y));
-    b.v.style.transformOrigin = "0 0"; b.v.style.transform = Z.s > 1 ? `translate(${Z.x}px,${Z.y}px) scale(${Z.s})` : "";
-    const zr = b.el.parentNode && b.el.parentNode.querySelector("[data-cwzr]"); if (zr) { zr.textContent = Z.s > 1 ? `${Z.s.toFixed(1).replace(/\.0$/, "")}×` : "1×"; zr.classList.toggle("on", Z.s > 1); }
-    if (Z.s >= 2 && !st.hintZ && !(st.q.max && st.q.cam === b.id)) { st.hintZ = true; note(T("الصورة المكبّرة بتبان أوضح مع «أعلى جودة»", "Zoomed pictures look sharper with «Top quality»"), 5000); }
+    Z.s = clampv(Z.s, 1, ZMAX); if (Z.s < 1.02) { Z.s = 1; Z.x = 0; Z.y = 0; }
+    const B = zBounds(W, Hh, Z.s); Z.x = clampv(Z.x, B.x0, B.x1); Z.y = clampv(Z.y, B.y0, B.y1);
+    zDraw(b);
+  }
+  function zGo(s, fx, fy, ms, b) { // animate to zoom s, keeping the point under (fx, fy) still as long as the edges allow
+    b = b || one(); if (!b) return; if (Z.id !== b.id) zReset(b.id); zStop();
+    const W = b.el.offsetWidth, Hh = b.el.offsetHeight;
+    s = clampv(s, 1, ZMAX); if (s < 1.02) s = 1;
+    const s0 = Z.s, x0 = Z.x, y0 = Z.y, cx = (fx - x0) / s0, cy = (fy - y0) / s0, B = zBounds(W, Hh, s);
+    const tx = clampv(fx - s * cx, B.x0, B.x1), ty = clampv(fy - s * cy, B.y0, B.y1), dx = tx - (fx - s * cx), dy = ty - (fy - s * cy);
+    const fin = () => { ZA = null; Z.s = s; Z.x = s === 1 ? 0 : tx; Z.y = s === 1 ? 0 : ty; zDraw(b); zHint(b); };
+    if (Math.abs(s - s0) < 1e-3 && Math.abs(tx - x0) < 0.5 && Math.abs(ty - y0) < 0.5) { fin(); return; }
+    const t0 = performance.now(); ms = ms || 240;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); // ease-out
+      if (k >= 1) { fin(); return; }
+      const si = s0 * Math.pow(s / s0, e); // zoom moves evenly on a log scale
+      Z.s = si; Z.x = fx - si * cx + dx * e; Z.y = fy - si * cy + dy * e; zDraw(b);
+      ZA.raf = requestAnimationFrame(step);
+    };
+    ZA = { raf: requestAnimationFrame(step), s };
+  }
+  function zGlide(b, W, Hh, vx, vy) { // after a quick drag the picture keeps moving and slows down (stops at the edges)
+    zStop(); let last = performance.now();
+    const step = (now) => {
+      const dt = Math.min(40, now - last); last = now;
+      const B = zBounds(W, Hh, Z.s); Z.x += vx * dt; Z.y += vy * dt;
+      const f = Math.pow(0.93, dt / 16.7); vx *= f; vy *= f;
+      if (Z.x < B.x0) { Z.x = B.x0; vx = 0; } if (Z.x > B.x1) { Z.x = B.x1; vx = 0; }
+      if (Z.y < B.y0) { Z.y = B.y0; vy = 0; } if (Z.y > B.y1) { Z.y = B.y1; vy = 0; }
+      zDraw(b);
+      if (Math.hypot(vx, vy) > 0.02) ZA.raf = requestAnimationFrame(step); else ZA = null;
+    };
+    ZA = { raf: requestAnimationFrame(step), s: Z.s };
   }
   function zoomBy(f) { // ＋ / － buttons: zoom around the middle of the picture
     const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
-    const s = Math.min(6, Math.max(1, Z.s * f)); if (s < 1.05) zReset(b.id); else zoomAt(b.el.offsetWidth / 2, b.el.offsetHeight / 2, s);
-    applyZ();
+    const base = ZA && ZA.s ? ZA.s : Z.s; let s = clampv(base * f, 1, ZMAX); if (s < 1.05) s = 1;
+    zGo(s, b.el.offsetWidth / 2, b.el.offsetHeight / 2, 220, b);
   }
   function zoomAt(lx, ly, s) { const cx = (lx - Z.x) / Z.s, cy = (ly - Z.y) / Z.s; Z.s = s; Z.x = lx - s * cx; Z.y = ly - s * cy; }
-  let G = null, tapT = null, tapAt = 0;
-  const pt = (b, t) => local(b.el, t.clientX, t.clientY);
   const CTRL = "[data-cwq],[data-cwzr],[data-cwz],.nfcw-zc,.nfcw-nav,.nfcw-bar,#nfcwarr,.nfcw-chips,.nfcw-pages,#nfcwfoot,.nfcw-sech";
   // iPhone: its own pinch-to-zoom of the whole page would fight ours on the picture
   ["gesturestart", "gesturechange"].forEach((n) => document.addEventListener(n, (e) => { if (onPage() && (one() || full())) e.preventDefault(); }, { passive: false }));
+  const tpt = (g, t) => loc(g.R, t.clientX, t.clientY);
+  function panFrom(g, t) { const a = tpt(g, t); return { k: "pan", b: g.b, R: g.R, W: g.W, H: g.H, px: a.x, py: a.y, x: g.rx != null ? g.rx : Z.x, y: g.ry != null ? g.ry : Z.y, moved: !!g.moved, tr: [] }; }
   document.addEventListener("touchstart", (e) => {
-    if (!onPage()) return; const b = one(); if (!b || !b.el.contains(e.target) || (e.target.closest && e.target.closest(CTRL))) return;
+    if (!onPage()) return; const b = one(); if (!b) return;
+    const inPic = (t) => t && b.el.contains(t) && !(t.closest && t.closest(CTRL));
+    // two fingers: it is a pinch if either finger is on the picture (one may sit on an arrow / button)
+    if (!(inPic(e.target) || (e.touches.length >= 2 && [...e.touches].some((t) => inPic(t.target))))) return;
     if (Z.id !== b.id) zReset(b.id);
-    if (e.touches.length >= 2) { const a = pt(b, e.touches[0]), c = pt(b, e.touches[1]); G = { k: "pinch", d: Math.hypot(a.x - c.x, a.y - c.y) || 1, s: Z.s, cx: (a.x + c.x) / 2, cy: (a.y + c.y) / 2, x: Z.x, y: Z.y }; e.preventDefault(); }
-    else if (e.touches.length === 1 && Z.s > 1) { const a = pt(b, e.touches[0]); G = { k: "pan", px: a.x, py: a.y, x: Z.x, y: Z.y, moved: false }; }
+    const g0 = { b, R: b.el.getBoundingClientRect(), W: b.el.offsetWidth, H: b.el.offsetHeight };
+    if (e.touches.length >= 2) {
+      zStop(); const a = tpt(g0, e.touches[0]), c = tpt(g0, e.touches[1]);
+      G = Object.assign(g0, { k: "pinch", d: Math.hypot(a.x - c.x, a.y - c.y) || 1, s: Z.s, cx: (a.x + c.x) / 2, cy: (a.y + c.y) / 2, x: Z.x, y: Z.y, fx: (a.x + c.x) / 2, fy: (a.y + c.y) / 2 });
+      e.preventDefault();
+    } else if (e.touches.length === 1 && Z.s > 1) { zStop(); G = panFrom(g0, e.touches[0]); }
   }, { passive: false });
   document.addEventListener("touchmove", (e) => {
-    if (!G) return; const b = one(); if (!b) { G = null; return; }
+    if (!G) return;
     if (G.k === "pinch" && e.touches.length >= 2) {
-      e.preventDefault(); const a = pt(b, e.touches[0]), c = pt(b, e.touches[1]);
-      const s = Math.min(6, Math.max(1, (G.s * Math.hypot(a.x - c.x, a.y - c.y)) / G.d)), ccx = (G.cx - G.x) / G.s, ccy = (G.cy - G.y) / G.s;
-      Z.s = s; Z.x = (a.x + c.x) / 2 - s * ccx; Z.y = (a.y + c.y) / 2 - s * ccy; applyZ();
+      e.preventDefault(); const a = tpt(G, e.touches[0]), c = tpt(G, e.touches[1]);
+      let s = (G.s * Math.hypot(a.x - c.x, a.y - c.y)) / G.d;
+      s = s < 1 ? Math.max(0.6, 1 - (1 - s) * ZRUB) : s > ZMAX ? ZMAX + (s - ZMAX) * ZRUB : s; // soft past 1× and 6×
+      const mx = (a.x + c.x) / 2, my = (a.y + c.y) / 2, ccx = (G.cx - G.x) / G.s, ccy = (G.cy - G.y) / G.s, B = zBounds(G.W, G.H, s);
+      G.rx = mx - s * ccx; G.ry = my - s * ccy; G.fx = mx; G.fy = my;
+      Z.s = s; Z.x = rub(G.rx, B.x0, B.x1); Z.y = rub(G.ry, B.y0, B.y1); zSoon();
     } else if (G.k === "pan" && e.touches.length === 1) {
-      e.preventDefault(); const a = pt(b, e.touches[0]); if (Math.abs(a.x - G.px) + Math.abs(a.y - G.py) > 6) G.moved = true;
-      Z.x = G.x + (a.x - G.px); Z.y = G.y + (a.y - G.py); applyZ();
+      e.preventDefault(); const a = tpt(G, e.touches[0]); if (Math.abs(a.x - G.px) + Math.abs(a.y - G.py) > 6) G.moved = true;
+      const B = zBounds(G.W, G.H, Z.s), now = performance.now();
+      Z.x = rub(G.x + (a.x - G.px), B.x0, B.x1); Z.y = rub(G.y + (a.y - G.py), B.y0, B.y1);
+      G.tr.push({ t: now, x: Z.x, y: Z.y }); while (G.tr.length > 2 && now - G.tr[0].t > 100) G.tr.shift();
+      zSoon();
     }
   }, { passive: false });
-  document.addEventListener("touchend", (e) => {
-    if (!G) return; const b = one();
-    if (G.k === "pinch" || G.moved) Z.end = Date.now();
-    if (b && e.touches.length === 1 && Z.s > 1) { const a = pt(b, e.touches[0]); G = { k: "pan", px: a.x, py: a.y, x: Z.x, y: Z.y, moved: true }; return; }
-    if (!e.touches.length) G = null;
-  }, { passive: true });
-  document.addEventListener("wheel", (e) => {
+  function zTouchEnd(e) {
+    if (!G) return; const g = G;
+    if (g.k === "pinch" || g.moved) Z.end = Date.now();
+    if (g.k === "pinch") Z.pinchEnd = Date.now();
+    if (g.k === "pinch" && e.touches.length === 1) { // one finger still down: keep dragging from here
+      if (Z.s < 1 || Z.s > ZMAX) { G = null; zGo(Z.s, g.fx, g.fy, 260, g.b); return; }
+      G = panFrom(Object.assign(g, { moved: true }), e.touches[0]); return;
+    }
+    if (e.touches.length) return;
+    G = null;
+    if (g.k === "pinch") { zGo(Z.s, g.fx, g.fy, 260, g.b); return; } // spring back inside 1×–6× and the edges
+    const B = zBounds(g.W, g.H, Z.s), out = Z.x < B.x0 - 0.5 || Z.x > B.x1 + 0.5 || Z.y < B.y0 - 0.5 || Z.y > B.y1 + 0.5;
+    if (out) { zGo(Z.s, g.W / 2, g.H / 2, 260, g.b); return; }
+    const tr = g.tr || []; let vx = 0, vy = 0;
+    if (tr.length >= 2) { const p0 = tr[0], q = tr[tr.length - 1], dt = q.t - p0.t; if (dt > 0 && performance.now() - q.t < 80) { vx = (q.x - p0.x) / dt; vy = (q.y - p0.y) / dt; } }
+    if (Math.hypot(vx, vy) > 0.25) zGlide(g.b, g.W, g.H, vx, vy);
+  }
+  document.addEventListener("touchend", zTouchEnd, { passive: true });
+  document.addEventListener("touchcancel", zTouchEnd, { passive: true });
+  document.addEventListener("wheel", (e) => { // computer: mouse wheel / trackpad pinch, smooth steps around the pointer
     if (!onPage()) return; const b = one(); if (!b || !b.el.contains(e.target)) return;
-    e.preventDefault(); if (Z.id !== b.id) zReset(b.id);
-    const a = local(b.el, e.clientX, e.clientY); zoomAt(a.x, a.y, Math.min(6, Math.max(1, Z.s * (e.deltaY < 0 ? 1.25 : 0.8)))); applyZ(); poke();
+    e.preventDefault(); if (Z.id !== b.id) zReset(b.id); zStop();
+    const W = b.el.offsetWidth, Hh = b.el.offsetHeight, a = local(b.el, e.clientX, e.clientY);
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    let s = clampv(Z.s * Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0025)), 1, ZMAX); if (s < 1.02) s = 1;
+    zoomAt(a.x, a.y, s); const B = zBounds(W, Hh, s); Z.x = s === 1 ? 0 : clampv(Z.x, B.x0, B.x1); Z.y = s === 1 ? 0 : clampv(Z.y, B.y0, B.y1);
+    zSoon(); poke(); clearTimeout(zWheelT); zWheelT = setTimeout(() => zHint(b), 400);
   }, { passive: false });
   let M = null; // mouse drag while zoomed (computer)
-  document.addEventListener("mousedown", (e) => { if (!onPage() || e.button !== 0) return; const b = one(); if (!b || Z.s <= 1 || !b.el.contains(e.target) || (e.target.closest && e.target.closest(CTRL))) return; const a = local(b.el, e.clientX, e.clientY); M = { px: a.x, py: a.y, x: Z.x, y: Z.y, moved: false }; e.preventDefault(); });
-  document.addEventListener("mousemove", (e) => { if (!M) return; const b = one(); if (!b) { M = null; return; } const a = local(b.el, e.clientX, e.clientY); if (Math.abs(a.x - M.px) + Math.abs(a.y - M.py) > 4) M.moved = true; Z.x = M.x + (a.x - M.px); Z.y = M.y + (a.y - M.py); applyZ(); });
+  document.addEventListener("mousedown", (e) => { if (!onPage() || e.button !== 0) return; const b = one(); if (!b || Z.s <= 1 || !b.el.contains(e.target) || (e.target.closest && e.target.closest(CTRL))) return; zStop(); const a = local(b.el, e.clientX, e.clientY); M = { b, R: b.el.getBoundingClientRect(), W: b.el.offsetWidth, H: b.el.offsetHeight, px: a.x, py: a.y, x: Z.x, y: Z.y, moved: false }; e.preventDefault(); });
+  document.addEventListener("mousemove", (e) => { if (!M) return; const a = loc(M.R, e.clientX, e.clientY); if (Math.abs(a.x - M.px) + Math.abs(a.y - M.py) > 4) M.moved = true; const B = zBounds(M.W, M.H, Z.s); Z.x = clampv(M.x + (a.x - M.px), B.x0, B.x1); Z.y = clampv(M.y + (a.y - M.py), B.y0, B.y1); zSoon(); });
   document.addEventListener("mouseup", () => { if (M && M.moved) Z.end = Date.now(); M = null; });
   function tapLive(ev) { // one camera, live: one tap → full screen (portrait) / show-hide the buttons (landscape); two taps → zoom in there / back out
     if (Date.now() - Z.end < 350) return;
     const now = Date.now();
     if (tapT && now - tapAt < 330) {
       clearTimeout(tapT); tapT = null; const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
-      if (Z.s > 1) zReset(b.id); else { const a = local(b.el, ev.clientX, ev.clientY); zoomAt(a.x, a.y, 2.5); }
-      applyZ(); return;
+      const a = local(b.el, ev.clientX, ev.clientY);
+      zGo((ZA && ZA.s ? ZA.s : Z.s) > 1 ? 1 : 2.5, a.x, a.y, 260, b); return;
     }
     tapAt = now; clearTimeout(tapT);
     const was = st.uiWas;
@@ -6641,6 +6729,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   document.addEventListener("touchstart", (e) => {
     if (!onPage()) return; const r = rootEl(); if (!r || !r.contains(e.target)) return;
     lastTouch = Date.now(); st.uiWas = uiOn(); if (full()) showUi();
+    if (SW && SW.lock === "h") swipeReset(true);
     SW = null;
     if (e.touches.length !== 1 || Z.s > 1 || !canSwipe() || st.arr || (e.target.closest && e.target.closest(CTRL))) return;
     const a = local(r, e.touches[0].clientX, e.touches[0].clientY); SW = { x: a.x, y: a.y, dx: 0, lock: "" };
@@ -6982,7 +7071,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       }
       return;
     }
-    const pg = t.closest("[data-cwpage]"); if (pg) { ev.preventDefault(); Z.end = 0; flip(Number(pg.getAttribute("data-cwpage"))); return; }
+    const pg = t.closest("[data-cwpage]"); if (pg) { ev.preventDefault(); if (Date.now() - (Z.pinchEnd || 0) < 400) return; /* a finger of a pinch, not a tap */ Z.end = 0; flip(Number(pg.getAttribute("data-cwpage"))); return; }
     const fc = t.closest("[data-cwfocus]"); if (fc) { ev.preventDefault(); st.focus = fc.getAttribute("data-cwfocus"); LS.set("nf_cams_focus", st.focus); paint(); return; }
     if (t.closest("[data-cwresume]")) { ev.preventDefault(); st.idle = false; poke(); paint(); return; }
     if (t.closest("[data-cwrefresh]")) { ev.preventDefault(); stopAll(); loadCams(true); return; }
@@ -6990,7 +7079,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (t.closest("[data-cwland]")) { ev.preventDefault(); if (per() === 4) st.page = topSec(); enterFull(); return; }
     if (t.closest("[data-cwexit]")) { ev.preventDefault(); goBack(); return; }
     const qb = t.closest("[data-cwq]"); if (qb) { ev.preventDefault(); setQ(qb.getAttribute("data-cwq") === "max"); if (full()) showUi(); return; }
-    if (t.closest("[data-cwzr]")) { ev.preventDefault(); zReset(Z.id); applyZ(); if (full()) showUi(); return; }
+    if (t.closest("[data-cwzr]")) { ev.preventDefault(); { const b = one(); if (b) zGo(1, b.el.offsetWidth / 2, b.el.offsetHeight / 2, 220, b); else { zReset(Z.id); applyZ(); } } if (full()) showUi(); return; }
     const zb = t.closest("[data-cwz]"); if (zb) { ev.preventDefault(); zoomBy(zb.getAttribute("data-cwz") === "in" ? 1.5 : 1 / 1.5); if (full()) showUi(); return; }
     const tile = t.closest(".nfcw-tile[data-cwcam]");
     if (tile) {
