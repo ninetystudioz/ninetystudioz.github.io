@@ -267,3 +267,163 @@
 })();
 ;(function(){if(window.__NF_A1152__||(window.__NF_A1152__=1,typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction()))return;const p={penHeld:0,penApplied:0,penDropped:0,attBlocked:0,logSkipped:0},m={AGE:5*6e4,ATT_N:4,ATT_MS:10*6e4};if(typeof applyAutoPenalties=="function"&&typeof computeAutoPenalties=="function"){const s=new Map;let y=0;const c=n=>(+n.days||0)+"|"+(+n.minutes||0),A=(n,e,t,o)=>{o.add(n);const a=s.get(n);return a&&a.sig===e?t-a.t>=m.AGE?(s.delete(n),p.penApplied++,!0):(p.penHeld++,!1):(s.set(n,{sig:e,t}),p.penHeld++,!1)};applyAutoPenalties=(n=>async function(e,t){if(y)return n.apply(this,arguments);let o=0,a=0;const u=Date.now(),g=new Set;for(const r of t||[]){const l=computeAutoPenalties(r,e),_=new Set(l.map(i=>i.id));for(const i of l){const d=byId("penalties",i.id);d&&(d.status==="waived"||d.edited)||d&&+d.days==+i.days&&+d.minutes==+i.minutes||A("s:"+i.id,c(i),u,g)&&(await Store.save("penalties",Object.assign({},d||{},i),{silent:!0}),o++)}for(const i of list("penalties"))i.auto&&i.workerId===r.id&&i.month===e&&!_.has(i.id)&&i.status!=="waived"&&!i.edited&&A("r:"+i.id,"x",u,g)&&(await Store.remove("penalties",i.id),a++)}const w=e+"_",f=new Set((t||[]).map(r=>r.id));if(s.forEach((r,l)=>{if(g.has(l))return;const _=l.slice(2);if(!_.startsWith(w))return;const i=_.slice(w.length);for(const d of f)if(i.startsWith(d+"_")){s.delete(l),p.penDropped++;return}}),o||a)try{rerender()}catch{}return{created:o,removed:a}})(applyAutoPenalties),typeof ACTIONS=="object"&&typeof ACTIONS.penAuto=="function"&&(ACTIONS.penAuto=(n=>async function(){y++;try{return await n.apply(this,arguments)}finally{y--}})(ACTIONS.penAuto));let h=!1;try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(()=>{h||!S.session||(h=!0,setTimeout(()=>{try{typeof window.nfPenAutoRun=="function"&&window.nfPenAutoRun(!0)}catch{}},m.AGE+5e4))})}catch{}window.nfPenCalm={seen:s,manual:()=>y}}if(typeof setAtt=="function"){const s=new Map,y=/At$|^queued|^updated/,c=e=>Array.isArray(e)?"["+e.map(c).join(",")+"]":e&&typeof e=="object"?"{"+Object.keys(e).filter(t=>!y.test(t)).sort().map(t=>t+":"+c(e[t])).join(",")+"}":JSON.stringify(e===void 0?null:e);let A=0;const h=(e,t)=>{try{return c((attendanceFor(e)||{})[t.id]||null)}catch{return""}},n=(e,t)=>(s.get(e)||[]).filter(o=>t-o.t<m.ATT_MS);setAtt=(e=>function(t,o,a){let u=null,g="";try{if(t&&o&&o.id&&a&&typeof a=="object"){u=t+"|"+o.id,g=c(a);const f=Date.now(),r=n(u,f).filter(l=>l.sig===g);if(r.length>=m.ATT_N&&h(t,o)!==r[r.length-1].after){p.attBlocked++;try{console.warn("nf: attendance row saved "+r.length+" times in 10 min and still coming back \u2014 held",u)}catch{}if(f-A>6e4){A=f;try{toast(typeof I18N!="undefined"&&I18N.lang==="en"?"This row was saved several times and keeps changing back \u2014 another device is changing it. Refresh both devices.":"\u0627\u0644\u0633\u0637\u0631 \u062F\u0647 \u0627\u062A\u062D\u0641\u0638 \u0643\u0630\u0627 \u0645\u0631\u0629 \u0648\u0644\u0633\u0647 \u0628\u064A\u0631\u062C\u0639 \u2014 \u0641\u064A\u0647 \u062C\u0647\u0627\u0632 \u062A\u0627\u0646\u064A \u0628\u064A\u063A\u064A\u0651\u0631\u0647. \u0627\u0639\u0645\u0644 \u062A\u062D\u062F\u064A\u062B \u0644\u0644\u062C\u0647\u0627\u0632\u064A\u0646.","err")}catch{}}return Promise.resolve()}}}catch{u=null}const w=e.apply(this,arguments);return u&&Promise.resolve(w).then(()=>{try{const f=Date.now(),r=n(u,f);r.push({sig:g,t:f,after:h(t,o)}),s.set(u,r),s.size>400&&s.delete(s.keys().next().value)}catch{}},()=>{}),w})(setAtt)}if(typeof logChange=="function"){const s={live:1,track:1};logChange=(y=>function(c,A,h,n){try{if(c==="driverpos"||c==="dict")return p.logSkipped++,Promise.resolve();if(c==="trips"&&h==="update"&&Array.isArray(n)){const e=n.filter(t=>!["updatedAt","updatedBy"].includes(t));if(e.length&&e.every(t=>s[t]))return p.logSkipped++,Promise.resolve()}}catch{}return y.apply(this,arguments)})(logChange)}window.nfCalmWrites={stats:()=>Object.assign({},p),cfg:m}})();
 ;(function(){if(window.__NF_SIDENOW__)return;window.__NF_SIDENOW__=1;try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(function(){try{typeof i18nToggleUI=="function"&&i18nToggleUI()}catch(e){}try{window.nfSideStripNow&&window.nfSideStripNow()}catch(e){}try{window.nfHomeTogNow&&window.nfHomeTogNow()}catch(e){}try{window.nfFabDialNow&&window.nfFabDialNow()}catch(e){}})}catch(e){}})();
+
+/* v11.54 (المصنع بس) — «كمبيوتر التحليل» #/vision (المالك بس)
+   محمود 13/11 17:05 «ابتدي بقى السيستم اللي هنحطه على الكمبيوتر» + 17:57 «كمل»: الصفحة اللي بيتربط منها كمبيوتر تحليل الكاميرات اللي في المصنع.
+   - «اربط كمبيوتر جديد»: الأمر اللي بيتكتب على الكمبيوتر (نسخ) + خانة الكود اللي بيظهر على شاشته + «وافق واربط» (Edge `vision` approve).
+   - حالة كل كمبيوتر: شغال دلوقتي / آخر اتصال، البروسيسور والرام وكارت الشاشة وحرارته، البرنامج اللي شغال عليه، عنوانه، وأجهزة الفيديو اللي لقاها على الشبكة + «شيله».
+   - صفحة جديدة للمالك بس؛ مفيش صلاحية اتغيّرت لحد. الكمبيوتر هو اللي بيكلّم السيستم (مفيش حاجة مفتوحة على شبكة المصنع). */
+;(function () {
+  if (window.__NF_VISION__ || typeof EXTRA_VIEWS === "undefined" || typeof NAV === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_VISION__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]));
+  const can = () => !!(S && S.sb && S.sb.functions) && typeof isAdmin === "function" && isAdmin() && !S.viewOrig && !S.demoOrig;
+  const CMD = 'curl -fsSL "https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/vision?a=install" | sudo bash';
+  const st = { nodes: null, want: null, skew: 0, at: 0, err: "", busy: false, msg: "", ok: false, timer: null, rm: "", code: "", name: "" };
+
+  if (typeof canSee === "function") canSee = ((f) => function (v) { return v === "vision" ? can() : f.apply(this, arguments); })(canSee);
+  try {
+    if (Array.isArray(NAV) && !NAV.some((n) => n && n.id === "vision")) {
+      const item = { id: "vision", label: () => T("كمبيوتر التحليل", "Analysis computer"), icon: "monitor" };
+      const i = NAV.findIndex((n) => n && n.id === "faces"), j = i >= 0 ? i + 1 : NAV.findIndex((n) => n && n.id === "settings");
+      if (j >= 0) NAV.splice(j, 0, item); else NAV.push(item);
+    }
+  } catch (e) { console.warn("vision nav", e); }
+  if (typeof EXTRA_TITLES !== "undefined") EXTRA_TITLES.vision = () => ({ title: T("كمبيوتر التحليل", "Analysis computer"), sub: T("كمبيوتر المصنع اللي بيحلّل الكاميرات — للمالك بس", "The factory computer that analyses the cameras — owner only") });
+  try { // the app only opens pages that have a name in VIEW_TITLES (the lesson of v11.30)
+    if (typeof VIEW_TITLES !== "undefined" && !VIEW_TITLES.vision) VIEW_TITLES.vision = "كمبيوتر التحليل";
+    if (/^#\/vision(\/|$)/.test(location.hash) && typeof parseRoute === "function" && S && S.route && S.route.view !== "vision") { parseRoute(); if (typeof rerender === "function") rerender(); }
+  } catch (e) { console.warn("vision route", e); }
+
+  function css() {
+    if (document.getElementById("nfvz-css")) return;
+    const s = document.createElement("style"); s.id = "nfvz-css";
+    s.textContent = `.nfvz-cmd{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:rgba(0,0,0,.06);border-radius:8px;padding:10px;word-break:break-all;user-select:all;-webkit-user-select:all}
+.nfvz-steps{margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.nfvz-form{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.nfvz-form .nfvz-code{max-width:140px;font-size:20px;letter-spacing:3px;text-align:center;direction:ltr}
+.nfvz-node{display:flex;flex-direction:column;gap:6px}
+.nfvz-node .nfvz-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.nfvz-node .nfvz-h b{font-size:15px}
+.nfvz-dot{width:10px;height:10px;border-radius:50%;background:#bbb;flex:none}.nfvz-dot.on{background:#1faa59}.nfvz-dot.off{background:#d9822b}.nfvz-dot.no{background:#d64545}
+.nfvz-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}.nfvz-kv span:nth-child(odd){color:var(--ink2,#666)}
+.nfvz-kv .ltr{direction:ltr;text-align:start;unicode-bidi:plaintext}`;
+    document.head.appendChild(s);
+  }
+  const ago = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 90) return T("من ثواني", "seconds ago");
+    const m = Math.round(s / 60); if (m < 90) return T(`من ${m} دقيقة`, `${m} min ago`);
+    const h = Math.round(m / 60); if (h < 36) return T(`من ${h} ساعة`, `${h} h ago`);
+    return T(`من ${Math.round(h / 24)} يوم`, `${Math.round(h / 24)} days ago`);
+  };
+  async function ask(body) { // → the function's answer, also when it answered with an error status
+    try {
+      const x = await S.sb.functions.invoke("vision", { body });
+      if (x && x.data) return x.data;
+      const c = x && x.error && x.error.context;
+      if (c && typeof c.json === "function") { try { return await c.json(); } catch (e) {} }
+      return { ok: false, err: "server" };
+    } catch (e) { return { ok: false, err: "net" }; }
+  }
+  async function load() {
+    if (!can() || st.busy) return; st.busy = true;
+    const r = await ask({ a: "nodes" }); st.busy = false;
+    if (r && r.ok) { st.nodes = r.nodes || []; st.want = r.want || null; st.skew = r.now ? Date.parse(r.now) - Date.now() : 0; st.err = ""; st.at = Date.now(); }
+    else { st.err = String((r && (r.err || r.error)) || "server"); if (!st.nodes) st.nodes = []; }
+    paint();
+  }
+  function nodeHtml(n) {
+    const now = Date.now() + st.skew, seen = n.seen_at ? Date.parse(n.seen_at) : 0, live = n.status === "approved" && seen && now - seen < 200000;
+    const h = n.health || {}, inf = n.info || {}, m = inf.machine || {}, g = (inf.graphics && inf.graphics.nvidia) || null, hg = h.gpu || null, ch = h.child || {};
+    const dot = n.status === "revoked" ? "no" : n.status === "pending" ? "" : live ? "on" : "off";
+    const state = n.status === "pending" ? T("مستني موافقتك — الكود ظاهر على شاشته", "Waiting for your approval — the code is on its screen")
+      : n.status === "revoked" ? T("متشال", "Removed")
+      : live ? T("شغال دلوقتي", "Online now") : (seen ? T("مش متصل — آخر اتصال ", "Offline — last seen ") + ago(now - seen) : T("لسه ما اتصلش", "Has not connected yet"));
+    const rows = [];
+    const cpu = m.cpu || inf.cpu; if (cpu) rows.push([T("البروسيسور", "Processor"), cpu + (m.threads || inf.cores ? ` · ${m.threads || inf.cores}` : ""), 1]);
+    const ram = m.ram_mb || h.mem_total_mb; if (ram) rows.push([T("الرام", "Memory"), `${Math.round(ram / 1024)} GB` + (h.mem_free_mb != null ? T(` (فاضي ${Math.round(h.mem_free_mb / 1024)})`, ` (${Math.round(h.mem_free_mb / 1024)} free)`) : ""), 1]);
+    if (hg || g) rows.push([T("كارت الشاشة", "Graphics card"), (hg ? hg.name : g.name) + (hg ? ` · ${hg.temp}°C · ${hg.util}%` : ""), 1]);
+    else if (inf.graphics) rows.push([T("كارت الشاشة", "Graphics card"), T("لسه من غير تعريف — هيتسطّب من هنا", "Driver not installed yet — it will be installed from here"), 0]);
+    if (h.disk_free_gb != null) rows.push([T("المساحة الفاضية", "Free disk"), `${Math.round(h.disk_free_gb)} GB`, 1]);
+    if (m.os || inf.os) rows.push([T("النظام", "System"), m.os || inf.os, 1]);
+    if (h.ip) rows.push([T("عنوانه على الشبكة", "Network address"), h.ip, 1]);
+    if (n.status === "approved") rows.push([T("البرنامج", "Program"), (n.bundle_ver || T("لسه بينزل", "downloading")) + (n.bundle_ver ? (ch.running ? T(" · شغال", " · running") : T(" · واقف", " · stopped")) : "") + (st.want && n.bundle_ver && st.want !== n.bundle_ver ? T(` ← بيتحدّث لـ ${st.want}`, ` → updating to ${st.want}`) : ""), 0]);
+    const rec = inf.network && Array.isArray(inf.network.recorder_like) ? inf.network.recorder_like : null;
+    if (rec) rows.push([T("أجهزة فيديو على الشبكة", "Video devices on the network"), rec.length ? rec.slice(0, 12).map((d) => d.ip).join("  ") : T("مالقاش ولا جهاز — اتأكد إنه على سويتش الريكوردر", "none found — check it is on the recorder's switch"), rec.length ? 1 : 0]);
+    const rm = n.status === "revoked" ? "" : st.rm === n.id
+      ? `<button type="button" class="btn sm danger" data-vz="rm2" data-id="${H(n.id)}"><span>${H(T("متأكد؟ شيله", "Sure? Remove"))}</span></button><button type="button" class="btn sm" data-vz="rm0"><span>${H(T("لأ", "No"))}</span></button>`
+      : `<button type="button" class="btn sm" data-vz="rm1" data-id="${H(n.id)}"><span>${H(n.status === "pending" ? T("ارفضه", "Reject") : T("شيله", "Remove"))}</span></button>`;
+    return `<div class="card nfvz-node" data-node="${H(n.id)}"><div class="nfvz-h"><span class="nfvz-dot ${dot}"></span><b class="notr" dir="auto">${H(n.name || T("كمبيوتر من غير اسم", "Unnamed computer"))}</b><span class="small muted">${H(state)}</span><span style="flex:1"></span>${rm}</div>${rows.length ? `<div class="nfvz-kv">${rows.map((r) => `<span>${H(r[0])}</span><span class="${r[2] ? "ltr notr" : ""}">${H(r[1])}</span>`).join("")}</div>` : ""}</div>`;
+  }
+  function listHtml() {
+    if (!st.nodes) return `<div class="muted small">${H(T("بنشوف الكمبيوترات…", "Checking computers…"))}</div>`;
+    const err = st.err ? `<div class="banner warn"><span>${H(T("تعذّر التحميل: ", "Could not load: ") + st.err)}</span></div>` : "";
+    if (!st.nodes.length) return err + `<div class="banner info"><span>${H(T("لسه مفيش كمبيوتر مربوط. اتبع الخطوات اللي فوق.", "No computer linked yet. Follow the steps above."))}</span></div>`;
+    return err + st.nodes.map(nodeHtml).join("");
+  }
+  function paint() {
+    const l = document.getElementById("nfvzlist"); if (l) l.innerHTML = listHtml();
+    const m = document.getElementById("nfvzmsg"); if (m) { m.textContent = st.msg || ""; m.className = "small " + (st.msg ? (st.ok ? "ok" : "bad") : ""); m.style.color = st.msg ? (st.ok ? "#1a8a48" : "#c0392b") : ""; }
+    const c = document.querySelector("[data-vzcode]"), n = document.querySelector("[data-vzname]");
+    if (c && !c.value && st.code && document.activeElement !== c) c.value = st.code;
+    if (n && !n.value && st.name && document.activeElement !== n) n.value = st.name;
+  }
+  EXTRA_VIEWS.vision = () => {
+    if (!can()) return `<div class="card"><p class="small ink2">${H(T("الصفحة دي للمالك بس.", "This page is for the owner only."))}</p></div>`;
+    css();
+    setTimeout(() => { paint(); if (!st.nodes || Date.now() - st.at > 15000) load(); }, 30);
+    clearInterval(st.timer); st.timer = setInterval(() => { if (!/^#\/vision(\/|$)/.test(location.hash) || document.hidden) return; load(); }, 20000);
+    return `<div class="stack">
+      <div class="card"><h3 style="margin:0 0 10px">${H(T("اربط كمبيوتر جديد", "Link a new computer"))}</h3>
+        <ol class="nfvz-steps">
+          <li>${H(T("الكمبيوتر يتوصل بكابل على نفس سويتش جهاز التسجيل، ويتسطّب عليه Ubuntu 24.04.", "Connect the computer by cable to the recorder's switch and install Ubuntu 24.04 on it."))}</li>
+          <li>${H(T("اللي بيسطّب يفتح Terminal على الكمبيوتر ويكتب الأمر ده:", "Whoever installs it opens Terminal on the computer and types this command:"))}
+            <div class="nfvz-cmd notr" id="nfvzcmd">${H(CMD)}</div>
+            <button type="button" class="btn sm" data-vz="copy" style="margin-top:6px">${typeof icon === "function" ? icon("copy") : ""}<span>${H(T("انسخ الأمر", "Copy the command"))}</span></button></li>
+          <li>${H(T("هيظهر على شاشة الكمبيوتر كود من 6 أرقام — اكتبه هنا:", "A 6-digit code appears on the computer's screen — type it here:"))}
+            <div class="nfvz-form" style="margin-top:6px"><input class="input nfvz-code notr" data-vzcode inputmode="numeric" autocomplete="off" maxlength="7" placeholder="000000" aria-label="${H(T("الكود", "Code"))}">
+              <input class="input" data-vzname maxlength="60" style="max-width:220px" placeholder="${H(T("اسم الكمبيوتر (مثلًا: كمبيوتر المصنع)", "Computer name (e.g. Factory computer)"))}" aria-label="${H(T("اسم الكمبيوتر", "Computer name"))}">
+              <button type="button" class="btn primary" data-vz="approve"><span>${H(T("وافق واربط", "Approve and link"))}</span></button></div>
+            <div id="nfvzmsg" class="small" style="margin-top:6px;min-height:18px"></div></li>
+        </ol>
+        <p class="small ink2" style="margin:10px 0 0">${H(T("الكمبيوتر اللي توافق عليه بياخد برنامجه وتحديثاته من السيستم وبينفّذها بتحكم كامل في الجهاز. ماتوافقش غير على كود ظاهر قدامك على شاشة الكمبيوتر نفسه.", "A computer you approve takes its program and updates from the system and runs them with full control of that machine. Only approve a code you can see on the computer's own screen."))}</p></div>
+      <div id="nfvzlist"></div></div>`;
+  };
+  async function approve() {
+    const c = document.querySelector("[data-vzcode]"), n = document.querySelector("[data-vzname]");
+    const code = String((c && c.value) || "").replace(/\D/g, ""), name = String((n && n.value) || "").trim();
+    if (code.length !== 6) { st.msg = T("الكود 6 أرقام — زي ما هو ظاهر على شاشة الكمبيوتر.", "The code is 6 digits — exactly as shown on the computer's screen."); st.ok = false; return paint(); }
+    st.msg = T("بنربط…", "Linking…"); st.ok = true; paint();
+    const r = await ask({ a: "approve", code, name: name || T("كمبيوتر المصنع", "Factory computer") });
+    if (r && r.ok) { st.msg = T("اتربط ✓ — هيبدأ ينزّل برنامجه خلال دقيقة.", "Linked ✓ — it starts downloading its program within a minute."); st.ok = true; st.code = ""; st.name = ""; if (c) c.value = ""; if (n) n.value = ""; }
+    else { st.ok = false; const e = String((r && (r.err || r.error)) || ""); st.msg = e === "no_such_code" ? T("مفيش كمبيوتر مستني بالكود ده — راجع الأرقام اللي على الشاشة.", "No computer is waiting with this code — check the digits on its screen.") : e === "net" ? T("النت واقف — جرّب تاني.", "No internet — try again.") : T("ماتربطش: ", "Not linked: ") + (e || "server"); }
+    paint(); load();
+  }
+  async function remove(id) {
+    st.rm = ""; const r = await ask({ a: "revoke", node: id });
+    if (!(r && r.ok)) { st.msg = T("ماتشالش: ", "Not removed: ") + String((r && (r.err || r.error)) || "server"); st.ok = false; }
+    paint(); load();
+  }
+  document.addEventListener("click", (ev) => {
+    const b = ev.target && ev.target.closest ? ev.target.closest("[data-vz]") : null; if (!b) return;
+    ev.preventDefault(); const k = b.getAttribute("data-vz");
+    if (k === "approve") return void approve();
+    if (k === "rm1") { st.rm = b.getAttribute("data-id") || ""; return paint(); }
+    if (k === "rm0") { st.rm = ""; return paint(); }
+    if (k === "rm2") return void remove(b.getAttribute("data-id") || "");
+    if (k === "copy") {
+      const done = (ok) => { const s = b.querySelector("span"); if (s) { s.textContent = ok ? T("اتنسخ ✓", "Copied ✓") : T("حدّد الأمر وانسخه بإيدك", "Select the command and copy it"); setTimeout(() => { s.textContent = T("انسخ الأمر", "Copy the command"); }, 2500); } };
+      try { navigator.clipboard.writeText(CMD).then(() => done(true), () => done(false)); } catch (e) { done(false); }
+    }
+  });
+  document.addEventListener("input", (ev) => {
+    const t = ev.target; if (!t || !t.matches) return;
+    if (t.matches("[data-vzcode]")) { st.code = t.value; if (st.msg && !st.ok) { st.msg = ""; paint(); } }
+    else if (t.matches("[data-vzname]")) st.name = t.value;
+  });
+  window.__nfVision = { st, load, paint, CMD }; // for tests
+})();
