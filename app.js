@@ -6333,6 +6333,10 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.39 (المصنع بس) — «الكاميرات» نسخة 8 (محمود 13/11 09:31: التسجيل يفضل H.265 عشان الهارد يشيل الضعف):
+   - لما الكاميرا بتسجّل H.265 زرار «عادي / أعلى جودة» مش بيظهر خالص (المتصفح مابيعرضش H.265)، وملحوظة «أوضح مع أعلى جودة» وقت الزوم مابتظهرش.
+   - معلومة الكوديك بتتحدّث كل 30 دقيقة (كانت 12 ساعة) عشان أي تغيير في التسجيل يبان بسرعة.
+   الباقي زي v11.37: */
 /* v11.37 (المصنع بس) — «الكاميرات» نسخة 7 (محمود 13/11 08:19: «الزوم إن والزوم أوت لسه مش بيتعمل بسلاسة، محتاجه سلس جدًا»):
    - التكبير بيترسم مرة كل فريم على كارت الشاشة (requestAnimationFrame + translate3d) ومقاس الصورة بيتقري مرة واحدة أول اللمسة، فمفيش تقطيع.
    - الأطراف طرية: لو صغّرت تحت 1× أو كبّرت فوق 6× أو سحبت بعد الحافة بتتحرك أبطأ وترجع لمكانها بنعومة لما تسيب.
@@ -6503,8 +6507,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 
   /* ---- v11.33: quality (عادي / أعلى جودة) for the one open camera ---- */
   const qInfo = (c) => {
-    if (!c) return null; if (st.qi[c.id]) return st.qi[c.id];
-    try { const j = JSON.parse(LS.get("nf_camq_" + c.id) || "null"); if (j && j.main && Date.now() - (j.at || 0) < 12 * 3600e3) return (st.qi[c.id] = j); } catch (e) {}
+    if (!c) return null; if (st.qi[c.id] && Date.now() - (st.qi[c.id].at || 0) < 30 * 60e3) return st.qi[c.id];
+    try { const j = JSON.parse(LS.get("nf_camq_" + c.id) || "null"); if (j && j.main && Date.now() - (j.at || 0) < 30 * 60e3) return (st.qi[c.id] = j); } catch (e) {}
     return null;
   };
   async function loadQ(c) {
@@ -6529,7 +6533,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   }
   function qHtml(c) {
     const mx = st.q.max && st.q.cam === c.id;
-    return `<div class="nfcw-q" role="group" aria-label="${H(T("الجودة", "Quality"))}"><button type="button" class="${mx ? "" : "on"}" data-cwq="sd">${H(T("عادي", "Normal"))}</button><button type="button" class="${mx ? "on" : ""} ${maxOk(c) ? "" : "na"}" data-cwq="max">${H(T("أعلى جودة", "Top quality"))}</button></div>
+    return `<div class="nfcw-q" role="group" aria-label="${H(T("الجودة", "Quality"))}"${maxOk(c) ? "" : ' style="display:none"'}><button type="button" class="${mx ? "" : "on"}" data-cwq="sd">${H(T("عادي", "Normal"))}</button><button type="button" class="${mx ? "on" : ""} ${maxOk(c) ? "" : "na"}" data-cwq="max">${H(T("أعلى جودة", "Top quality"))}</button></div>
       <div class="nfcw-zc" role="group" aria-label="${H(T("التكبير", "Zoom"))}"><button type="button" data-cwz="in" aria-label="${H(T("كبّر", "Zoom in"))}">＋</button><button type="button" class="lv" data-cwzr aria-label="${H(T("رجّع التكبير", "Reset zoom"))}">1×</button><button type="button" data-cwz="out" aria-label="${H(T("صغّر", "Zoom out"))}">－</button></div>
       ${navHtml()}<div class="nfcw-qn" style="display:none"></div>`;
   }
@@ -6544,6 +6548,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const mx = st.q.max && st.q.cam === c.id;
     b.querySelector('[data-cwq="sd"]').classList.toggle("on", !mx);
     const m = b.querySelector('[data-cwq="max"]'); m.classList.toggle("on", mx); m.classList.toggle("na", !maxOk(c));
+    b.style.display = maxOk(c) ? "" : "none"; // the camera records H.265 → only «عادي» in the browser (owner chose H.265, 13/11 09:31)
   }
   function setQ(max) {
     const c = visible()[0]; if (per() !== 1 || !c) return;
@@ -6583,7 +6588,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (zr && zr.textContent !== txt) { zr.textContent = txt; zr.classList.toggle("on", s > 1.001); }
   }
   function zSoon() { if (!ZF) ZF = requestAnimationFrame(() => { ZF = 0; zDraw(G && G.b); }); }
-  function zHint(b) { if (b && Z.s >= 2 && !st.hintZ && !(st.q.max && st.q.cam === b.id)) { st.hintZ = true; note(T("الصورة المكبّرة بتبان أوضح مع «أعلى جودة»", "Zoomed pictures look sharper with «Top quality»"), 5000); } }
+  function zHint(b) { if (b && Z.s >= 2 && !st.hintZ && !(st.q.max && st.q.cam === b.id) && maxOk((st.cams || []).find((c) => c.id === b.id))) { st.hintZ = true; note(T("الصورة المكبّرة بتبان أوضح مع «أعلى جودة»", "Zoomed pictures look sharper with «Top quality»"), 5000); } }
   function applyZ() { // hard limits + draw now (after a re-paint, a new video, a resize)
     const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
     if (ZA || G) { zDraw(b); return; } // a gesture / animation is running: just redraw
