@@ -6333,6 +6333,14 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.46 (المصنع بس) — «الكاميرات» نسخة 14 (محمود 13/11 13:32: «في حاجة تسرّع الكاميرات أكتر، ونعلّي جودة الفيو بحيث لما أعمل زوم أجيب كل التفاصيل»):
+   - **الزوم بيجيب التفاصيل لوحده:** في الكاميرا الواحدة، أول ما تكبّر (من 1.4×) ستريم الكاميرا الرئيسي (مقاسها الكامل) بيفتح ورا الصورة وياخد مكانها أول ما يجهز — الصورة مابتسودّش والزوم مابيتحركش.
+     لما ترجّع 1× بترجع «عادي» بعد 4 ثواني؛ ولو سبت الموبايل دقيقتين وهي مكبّرة بترجع «عادي» برضه (عشان الشريحة) وأي لمسة بترجّع التفاصيل. لو التفاصيل مافتحتش في 15 ث الصورة العادية بتفضل وبنجرّب تاني بعد دقيقتين.
+   - «عادي / أعلى جودة» بقوا بيتبدّلوا من غير قطع (نفس الطريقة). «عادي» وإنت مكبّر = من غير تفاصيل تلقائي للكاميرا دي لحد ما ترجع 1×؛ «أعلى جودة» باليد بتفضل لما تصغّر.
+   - كاميرات الخلفية بتجهز اتنين اتنين بدل واحدة واحدة. وإنت مكبّر بالتفاصيل الكاملة بتفضل الكاميرا اللي بعدها بس جاهزة ورا (التقليب يفضل فوري)؛ «أعلى جودة» باليد زي ما هي (ولا واحدة).
+   - تصليح: أول فريم في أي زوم متحرك (＋/－، دبل تاب، رجوع البينش) كان بيتحرك عكس الاتجاه لحظة (ساعة الفريم بتبقى ورا وقت البداية بكام ملّي) — بقى يبدأ من مكانه.
+   - القياس: hdUp / hdOk / hdFail / hdTtffMed + مقاس الرسم الفعلي (cw للتفاصيل، sw للعادي) وأقصى زوم (zMax) — عشان نتأكد إن التفاصيل الكاملة بتوصل فعلًا على الموبايل.
+   الباقي زي v11.45: */
 /* v11.45 (المصنع بس) — «الكاميرات» نسخة 13 (محمود 13/11 12:40: «لما أفتح الكاميرات تلوّد كل الكاميرات في الباك جراوند» + 12:24 «عايز أول ما أفتح اللايف يبقى قدامي»):
    - الكاميرا الواحدة مع «لايف سريع»: بعد ما الكاميرا اللي قدامك تفتح، باقي الكاميرات (لحد 3، الأقرب الأول) بتفتح في الخلفية واحدة واحدة وتفضل جاهزة — لما تقلّب عليها بتلاقيها لايف على طول.
      بتقف كلها مع وقفة الـ10 دقايق / الخروج من الصفحة / «أعلى جودة». السطر اللي تحت بيقول كام واحدة جاهزة في الخلفية والاستهلاك.
@@ -6426,12 +6434,12 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const ezDied = (() => { try { if (localStorage.getItem("nf_cam_ezrun")) { localStorage.setItem("nf_cam_ezrun", ""); return true; } } catch (e) {} return false; })(); // the page was killed while the fast player was on screen → this one time the cameras open the backup (HLS) way
   // eng — v11.45: the fast player is simply how cameras open (no switch); "hls" only after a crash under it (once) or by the manual escape key nf_cam_way
   const st = { ezDied, eng: (() => { try { return ezDied || localStorage.getItem("nf_cam_way") === "hls" ? "hls" : "ez"; } catch (e) { return "hls"; } })(), here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
-    q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null, hintZ: false };
+    q: { cam: "", max: false, auto: false, noAuto: "" }, zOutAt: 0, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null, hintZ: false };
   try { const l = JSON.parse(LS.get("nf_camlay") || "null"); if (l && l.map) st.lay = l; } catch (e) {}
   try { const c = JSON.parse(LS.get("nf_camlist") || "null"); if (c && Array.isArray(c.cams) && c.cams.length && c.cams.every((x) => x && x.id && x.serial)) st.cams = c.cams; } catch (e) {} // last time's list: the boxes show at once (v11.45); the fresh list follows
   const Z = { id: "", s: 1, x: 0, y: 0, end: 0, pinchEnd: 0 }; // zoom of the single camera (local px of its box)
   const P = new Map(), TRIES = new Map(), RT = new Map(); // camId → { v, hls, q, … } / failures in a row / pending retry timers
-  const CFG = { tick: 2000, soft: 7000, hard: 14000, slow: 25000, ezSlow: 12000, ezLoad: 45000, ezStall: 20000, ezMax: 4, ezBadFor: 10 * 60000, warmMax: 3, warmAfter: 8000, retry: [1500, 3000, 6000, 12000, 15000], maxTries: 8, slowRetry: 30000, lazyOff: 6000, snap: 60000, camsEvery: 120000 }; // tests change these
+  const CFG = { tick: 2000, soft: 7000, hard: 14000, slow: 25000, ezSlow: 12000, ezLoad: 45000, ezStall: 20000, ezMax: 4, ezBadFor: 10 * 60000, warmMax: 3, warmAfter: 8000, warmPar: 2, zUp: 1.4, zDownWait: 4000, hdSlow: 15000, hdBadFor: 120000, hdIdle: 120000, retry: [1500, 3000, 6000, 12000, 15000], maxTries: 8, slowRetry: 30000, lazyOff: 6000, snap: 60000, camsEvery: 120000 }; // tests change these
   const per = () => { const s = SIZES(); return s.includes(st.n) ? st.n : s.filter((x) => x <= st.n).pop() || 4; };
   const full = () => st.mode !== "off";
   const lazy = () => per() === 4 && !full(); // departments stacked on the page → live only for what is on screen
@@ -6469,7 +6477,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const p = P.get(id); if (!p || !p.v) return;
     if (p.kind === "ez") { // the fast player draws on its own canvas (or video): copy it small; a black copy (nothing drawn yet) is not kept
       if (!p.started) return;
-      try { const src = p.v.querySelector("video") || p.v.querySelector("canvas"); const sw = src && (src.videoWidth || src.width), sh = src && (src.videoHeight || src.height); if (!sw || !sh) return;
+      try { const lay = p.in || p.v, src = lay.querySelector("video") || lay.querySelector("canvas"); const sw = src && (src.videoWidth || src.width), sh = src && (src.videoHeight || src.height); if (!sw || !sh) return;
         const w = 320, h = Math.round((sh / sw) * w) || 180; const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); g.drawImage(src, 0, 0, w, h);
         const d = g.getImageData(0, 0, w, h).data; let sum = 0; for (let i = 0; i < d.length; i += 4 * 97) sum += d[i] + d[i + 1] + d[i + 2]; if (sum / (d.length / (4 * 97)) < 18) return;
         LS.set(frameKey(id), c.toDataURL("image/jpeg", 0.6)); } catch (e) {}
@@ -6485,19 +6493,20 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const setWait = (id) => mark(id);
   function setMsg(id, msg) { const t = tileOf(id); const m = t && t.querySelector(".nfcw-msg"); if (m) { m.textContent = msg || ""; m.style.display = msg ? "" : "none"; } }
   // light measuring → the server log (how long to the first picture, how many drops) so we know what really happens on the phone
-  const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false, ezOpen: 0, ezOk: 0, ezFail: 0, ezStall: 0, ezTtff: [], ezErr: "", bg: 0, hit: 0, miss: 0 };
+  const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false, ezOpen: 0, ezOk: 0, ezFail: 0, ezStall: 0, ezTtff: [], ezErr: "", bg: 0, hit: 0, miss: 0, hdUp: 0, hdOk: 0, hdFail: 0, hdTtff: [], cw: 0, sw: 0, zMax: 0 };
   const tel = (k) => { TEL[k] = (TEL[k] || 0) + 1; TEL.dirty = true; };
   function telSend(force) {
     if (!TEL.dirty || !can() || (!force && Date.now() - TEL.sent < 60000)) return;
-    const t = TEL.ttff.slice().sort((a, b) => a - b), e = TEL.ezTtff.slice().sort((a, b) => a - b);
-    const d = { bg: TEL.bg, hit: TEL.hit, miss: TEL.miss, eng: st.eng, ezOpen: TEL.ezOpen, ezOk: TEL.ezOk, ezFail: TEL.ezFail, ezStall: TEL.ezStall, ezTtffMed: e.length ? e[Math.floor(e.length / 2)] : null, ezTtffMax: e.length ? e[e.length - 1] : null, ezErr: TEL.ezErr, v: "11.45", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
-    TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = TEL.ezOpen = TEL.ezOk = TEL.ezFail = TEL.ezStall = TEL.bg = TEL.hit = TEL.miss = 0; TEL.ttff = []; TEL.ezTtff = []; TEL.ezErr = "";
+    const t = TEL.ttff.slice().sort((a, b) => a - b), e = TEL.ezTtff.slice().sort((a, b) => a - b), hq = TEL.hdTtff.slice().sort((a, b) => a - b);
+    const d = { hdUp: TEL.hdUp, hdOk: TEL.hdOk, hdFail: TEL.hdFail, hdTtffMed: hq.length ? hq[Math.floor(hq.length / 2)] : null, cw: TEL.cw || null, sw: TEL.sw || null, zMax: Math.round(TEL.zMax * 10) || null, bg: TEL.bg, hit: TEL.hit, miss: TEL.miss, eng: st.eng, ezOpen: TEL.ezOpen, ezOk: TEL.ezOk, ezFail: TEL.ezFail, ezStall: TEL.ezStall, ezTtffMed: e.length ? e[Math.floor(e.length / 2)] : null, ezTtffMax: e.length ? e[e.length - 1] : null, ezErr: TEL.ezErr, v: "11.46", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
+    TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = TEL.ezOpen = TEL.ezOk = TEL.ezFail = TEL.ezStall = TEL.bg = TEL.hit = TEL.miss = TEL.hdUp = TEL.hdOk = TEL.hdFail = TEL.cw = TEL.sw = TEL.zMax = 0; TEL.ttff = []; TEL.ezTtff = []; TEL.hdTtff = []; TEL.ezErr = "";
     try { const x = S.sb.functions.invoke("hiktele", { body: d }); if (x && x.catch) x.catch(() => {}); } catch (e) {}
   }
   function stopOne(id, keepFrame) {
     const p = P.get(id); if (!p) return;
     if (keepFrame !== false) saveFrame(id);
     P.delete(id); clearTimeout(p.ft);
+    if (p.nx) { const n = p.nx; p.nx = null; ezKill(n, true); } // a stream that was on its way to replace this one
     try { if (p.hls) p.hls.destroy(); } catch (e) {}
     if (p.kind === "ez") ezKill(p);
     else { try { p.v.pause(); p.v.removeAttribute("src"); p.v.load(); } catch (e) {} try { p.v.remove(); } catch (e) {} }
@@ -6544,16 +6553,16 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     return Math.max(d, Math.min(8, sw / W));
   }
   function ezFit(p) { // the player's own box covers the camera box like object-fit: cover (16:9 picture)
-    try { const o = p.v, inr = o && o.firstElementChild; let bx = o && o.parentNode; if (bx && bx.id === "nfcwpark") bx = document.querySelector("#nfcwbody .nfcw-box"); // waiting in the background: sized like the box on screen, so nothing jumps when it comes forward
+    try { const o = p.v, inr = p.in || (o && o.firstElementChild); let bx = o && o.parentNode; if (bx && bx.id === "nfcwpark") bx = document.querySelector("#nfcwbody .nfcw-box"); // waiting in the background: sized like the box on screen, so nothing jumps when it comes forward
       if (!inr || !bx) return; const bw = bx.clientWidth, bh = bx.clientHeight; if (!bw || !bh) return;
       const W = Math.ceil(Math.max(bw, bh * 16 / 9)), Hh = Math.ceil(W * 9 / 16);
       if (p.fw === W && p.fh === Hh && p.bw === bw && p.bh === bh) return; p.fw = W; p.fh = Hh; p.bw = bw; p.bh = bh;
       inr.style.width = W + "px"; inr.style.height = Hh + "px"; inr.style.left = Math.round((bw - W) / 2) + "px"; inr.style.top = Math.round((bh - Hh) / 2) + "px";
       if (p.ez) { if (typeof p.ez.resize === "function") p.ez.resize(W, Hh); else if (typeof p.ez.reSize === "function") p.ez.reSize(W, Hh); } } catch (e) {}
   }
-  const ezFitAll = () => P.forEach((p) => { if (p.kind === "ez") ezFit(p); });
-  function ezKill(p) { // close the fast player and take its box away (its own closing is not instant, so the box is hidden first)
-    const o = p.v, pl = p.ez; p.ez = null;
+  const ezFitAll = () => P.forEach((p) => { if (p.kind === "ez") { ezFit(p); if (p.nx) ezFit(p.nx); } });
+  function ezKill(p, layerOnly) { // close the fast player and take its box away (its own closing is not instant, so the box is hidden first); layerOnly = it shared the box with another stream (a swap): only its own layer goes
+    const o = layerOnly ? p.in : p.v, pl = p.ez; p.ez = null;
     try { if (o) o.style.display = "none"; } catch (e) {}
     const done = () => { try { if (o) o.remove(); } catch (e) {} };
     if (!ezCount()) ezRun(false);
@@ -6587,7 +6596,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const tile = tileOf(cam.id), box = tile ? tile.querySelector(".nfcw-box") : (isWarm(cam.id) ? parkEl() : null); if (!box) { P.delete(cam.id); mark(cam.id); return; }
     p.bg = !tile;
     const o = document.createElement("div"); o.className = "nfcw-ez"; const inr = document.createElement("div"); inr.id = "nfcwez" + (++ezSeq); inr.className = "nfcw-ezin"; o.appendChild(inr);
-    p.v = o; box.appendChild(o); ezFit(p); applyZ();
+    p.v = o; p.in = inr; box.appendChild(o); ezFit(p); applyZ();
     try {
       const E = lib.EZUIKitPlayer; ezRun(true);
       const w0 = p.fw || box.clientWidth || 320; p.dpr = Math.round(ezDpr(cam, p.q, w0) * 100) / 100;
@@ -6614,6 +6623,79 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     }
     else if (stuck > CFG.soft && !p.soft) { p.soft = true; mark(id); }
   }
+  /* ---- v11.46: the camera on screen changes stream without a gap — the new stream starts as a layer under the picture, inside the same box
+     (so the zoom, a finger on it and the page all keep the very same element), and takes over at its first frame.
+     On top of that: zooming in brings the camera's full picture by itself, zooming out (or leaving the phone alone) gives the light one back. ---- */
+  const HDBAD = new Map(); let zqT = 0, lastAct = Date.now(); // camId → when its full picture last failed to open
+  function swapQ(cam, q) {
+    const cur = P.get(cam.id);
+    if (!cur || cur.kind !== "ez" || !cur.started || !cur.v || !cur.in || cur.bg || cur.nx || cur.q === q || st.eng !== "ez" || ezBad(cam.id) || !tileOf(cam.id)) return false;
+    const n = { v: cur.v, in: null, hls: null, ez: null, kind: "ez", q, t0: Date.now(), started: 0, lastT: -1, lastAdv: Date.now(), soft: false, rec: 0, fail: null, ft: null, blocked: false, bg: false };
+    cur.nx = n; watchOn(); ezNext(cam, cur, n); return true;
+  }
+  async function ezNext(cam, cur, n) {
+    const live = () => P.get(cam.id) === cur && cur.nx === n;
+    const got = await Promise.all([loadEz().catch(() => null), ezInfo(cam, n.q).catch(() => null)]);
+    if (!live()) return;
+    const lib = got[0], info = got[1], box = cur.v && cur.v.parentNode;
+    if (!lib || !info || !box || !cur.in || cur.in.parentNode !== cur.v) { nxDrop(cam, cur, false, lib ? "info" : "lib"); return; }
+    n.tEz = Date.now();
+    const inr = document.createElement("div"); inr.id = "nfcwez" + (++ezSeq); inr.className = "nfcw-ezin"; n.in = inr;
+    cur.v.insertBefore(inr, cur.in); ezFit(n); // under the picture that is showing
+    try {
+      const E = lib.EZUIKitPlayer; const w0 = n.fw || box.clientWidth || 320; n.dpr = Math.round(ezDpr(cam, n.q, w0) * 100) / 100;
+      n.ez = new E({ id: inr.id, accessToken: info.token, url: info.url, width: w0, height: n.fh || box.clientHeight || 180, dpr: n.dpr, template: "simple", audio: false, language: "en", dblClickFullscreen: false,
+        env: { domain: info.domain }, staticPath: EZ_STATIC, loggerOptions: { level: "ERROR" },
+        handleSuccess: () => {}, handleError: (e) => { try { TEL.ezErr = String([e && e.type, e && e.retcode, e && e.code, e && e.msg].filter((x) => x != null && x !== "").join(":")).replace(/[^A-Za-z0-9 _:.-]/g, "").slice(0, 60); TEL.dirty = true; } catch (x) {} if (live() && !n.started) nxDrop(cam, cur, false, "err"); } });
+      const on = (name, fn) => { try { if (typeof n.ez.on === "function") n.ez.on(name, fn); else if (n.ez.eventEmitter && typeof n.ez.eventEmitter.on === "function") n.ez.eventEmitter.on(name, fn); } catch (e) {} };
+      on((E.EVENTS && E.EVENTS.firstFrameDisplay) || "firstFrameDisplay", () => nxTake(cam, cur, n));
+      on((E.EVENTS && E.EVENTS.decoderLoaded) || "decoderLoaded", () => { if (live() && !n.started) n.tEz = Date.now(); });
+    } catch (e) { nxDrop(cam, cur, false, "ctor"); }
+  }
+  function nxTake(cam, cur, n) { // the new stream shows its first picture: it is the camera's player now, the old layer goes
+    if (P.get(cam.id) !== cur || cur.nx !== n) return;
+    cur.nx = null; n.started = Date.now(); n.lastAdv = n.started; clearTimeout(cur.ft);
+    if (n.q === 1) { TEL.hdTtff.push(n.started - n.t0); tel("hdOk"); }
+    P.set(cam.id, n);
+    setTimeout(() => ezKill(cur, true), 80); // the new picture is on the screen first, then the old layer is taken away — no flash
+    n.ft = setTimeout(() => { if (P.get(cam.id) === n) saveFrame(cam.id); }, 4000);
+    EZSTALL.delete(cam.id); TRIES.set(cam.id, 0); setMsg(cam.id, ""); mark(cam.id); ezFit(n); qPaint();
+    if (n.q === 1) note(qLine(cam), 6000);
+    foot(); setTimeout(warmTick, 250);
+  }
+  function nxDrop(cam, cur, quiet, why) { // the stream that was coming is given up: the picture on screen simply stays
+    const n = cur && cur.nx; if (!n) return; cur.nx = null; ezKill(n, true);
+    if (n.q === 1) {
+      const mine = st.q.cam === cam.id; if (mine) { st.q.max = false; st.q.auto = false; }
+      if (!quiet) { tel("hdFail"); HDBAD.set(cam.id, Date.now()); TEL.ezErr = ("hd-" + (why || "") + (TEL.ezErr ? "/" + TEL.ezErr : "")).slice(0, 60); }
+      if (mine) { qPaint(); note(quiet ? "" : T("التفاصيل الكاملة مافتحتش (ممكن نت المصنع ضعيف) — الصورة العادية شغالة وهنجرّب تاني بعد شوية", "Full detail would not open (the factory connection may be weak) — the normal picture stays and it is tried again in a while"), quiet ? 0 : 7000); foot(); setTimeout(warmTick, 250); }
+    } else if (!quiet) { stopOne(cam.id); if (wanted(cam)) startOne(cam); } // the light stream did not come back this way → the plain way
+  }
+  function zqSoon(ms) { if (!zqT) zqT = setTimeout(() => { zqT = 0; try { autoQ(); } catch (e) {} }, ms || 300); }
+  function autoQ() { // zoomed in → the camera's full picture; back at 1× (or the phone left alone for 2 minutes) → the light one again
+    if (per() !== 1 || st.eng !== "ez" || st.idle || st.arr || !onPage() || document.hidden) return;
+    if (G || ZA) { zqSoon(); return; } // fingers still on it / still gliding: decide once it is still
+    const c = visible()[0], p = c && P.get(c.id); if (!c || !p) return;
+    const now = Date.now(), zs = Z.id === c.id ? Z.s : 1, mx = st.q.max && st.q.cam === c.id, cold = now - lastAct > CFG.hdIdle;
+    if (zs <= 1.02 && st.q.noAuto) st.q.noAuto = "";
+    if (!mx) {
+      if (zs < CFG.zUp || cold || p.kind !== "ez" || !p.started || p.nx || p.q === 1 || p.bg || !maxOk(c) || st.q.noAuto === c.id || now - (HDBAD.get(c.id) || 0) < CFG.hdBadFor) return;
+      st.q.cam = c.id; st.q.max = true; st.q.auto = true; st.zOutAt = 0;
+      if (!swapQ(c, 1)) { st.q.max = false; st.q.auto = false; return; }
+      tel("hdUp"); qPaint(); note(T("بنجيب التفاصيل…", "Getting the detail…"), 0); warmTick(); foot();
+      return;
+    }
+    if (!st.q.auto) return; // «أعلى جودة» chosen by hand stays until it is switched off by hand
+    const out = zs <= 1.02;
+    if (!out && !cold) { st.zOutAt = 0; return; }
+    if (!cold) { if (!st.zOutAt) st.zOutAt = now; if (now - st.zOutAt < CFG.zDownWait) { zqSoon(CFG.zDownWait - (now - st.zOutAt) + 60); return; } }
+    st.zOutAt = 0;
+    if (p.nx) { if (p.nx.q === 1) nxDrop(c, p, true); return; } // the full picture was still on its way: it is just called off
+    st.q.max = false; st.q.auto = false;
+    if (p.q === 1 && !swapQ(c, 2)) { stopOne(c.id); startOne(c); }
+    qPaint(); foot();
+    if (cold && !out) note(T("رجعنا للصورة العادية عشان شريحة المصنع — المس الصورة ترجع التفاصيل", "Back to the normal picture to spare the factory SIM — touch the picture for the detail again"), 8000);
+  }
   function setEng(e) {
     st.eng = e === "ez" ? "ez" : "hls"; st.ezDied = false; LS.set("nf_cam_way", st.eng === "hls" ? "hls" : ""); EZBAD.clear(); EZSTALL.clear(); TRIES.clear(); st.q.max = false;
     stopAll(); if (st.eng === "ez") loadEz().catch(() => {}); paint();
@@ -6621,10 +6703,11 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   /* ---- v11.45: the other cameras get ready behind the one on screen (one-camera view with «لايف سريع»), so turning to the next one finds it already live ---- */
   const parkEl = () => document.getElementById("nfcwpark");
   function warmCams() { // which cameras stay live although they are not on screen — the nearest ones first
-    if (per() !== 1 || st.eng !== "ez" || st.idle || st.arr || st.q.max || !onPage() || document.hidden) return [];
+    if (per() !== 1 || st.eng !== "ez" || st.idle || st.arr || (st.q.max && !st.q.auto) || !onPage() || document.hidden) return [];
+    const lim = st.q.max ? 1 : CFG.warmMax; // the full picture is on by the zoom: only the next camera stays ready (phone memory + the factory line)
     const cams = ordered(), f = visible()[0]; if (!f || cams.length < 2) return [];
     const i = cams.findIndex((c) => c.id === f.id), out = [], N = cams.length;
-    for (let k = 1; k < N && out.length < CFG.warmMax; k++) [i + k, i - k].forEach((j) => { const c = cams[((j % N) + N) % N]; if (c && c.id !== f.id && c.online && c.no && !ezBad(c.id) && !out.includes(c) && out.length < CFG.warmMax) out.push(c); });
+    for (let k = 1; k < N && out.length < lim; k++) [i + k, i - k].forEach((j) => { const c = cams[((j % N) + N) % N]; if (c && c.id !== f.id && c.online && c.no && !ezBad(c.id) && !out.includes(c) && out.length < lim) out.push(c); });
     return out;
   }
   const isWarm = (id) => warmCams().some((c) => c.id === id);
@@ -6635,8 +6718,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (!w.length) return;
     const f = visible()[0], pf = f && P.get(f.id);
     if (f && f.online && !(pf && (pf.started || Date.now() - pf.t0 > CFG.warmAfter))) return;
-    if ([...P.values()].some((p) => p.bg && !p.started)) return;
-    const c = w.find((x) => !P.has(x.id) && !RT.has(x.id)); if (c) { tel("bg"); startOne(c); }
+    const room = CFG.warmPar - [...P.values()].filter((p) => p.bg && !p.started).length; if (room <= 0) return;
+    w.filter((x) => !P.has(x.id) && !RT.has(x.id)).slice(0, room).forEach((c) => { tel("bg"); startOne(c); }); // two at a time (v11.46)
   }
   // the owner opened the app with «لايف سريع» on: fetch the player and the viewing token now, so the cameras page has nothing left to wait for
   let preDone = false;
@@ -6723,10 +6806,11 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (!P.size && !RT.size) return;
     if (!onPage() || document.hidden || st.idle) { wdAt = 0; return; }
     const now = Date.now();
-    if (!wdAt || now - wdAt > CFG.tick * 4) P.forEach((p) => { p.lastAdv = now; if (!p.started) { p.t0 = Math.max(p.t0, now - (p.kind === "ez" ? CFG.ezSlow : CFG.slow) / 2); if (p.tEz) p.tEz = Math.max(p.tEz, now - CFG.ezSlow / 2); } }); // timers were asleep: start counting again
+    if (!wdAt || now - wdAt > CFG.tick * 4) P.forEach((p) => { p.lastAdv = now; if (!p.started) { p.t0 = Math.max(p.t0, now - (p.kind === "ez" ? CFG.ezSlow : CFG.slow) / 2); if (p.tEz) p.tEz = Math.max(p.tEz, now - CFG.ezSlow / 2); } if (p.nx) { p.nx.t0 = Math.max(p.nx.t0, now - CFG.ezLoad / 2); if (p.nx.tEz) p.nx.tEz = Math.max(p.nx.tEz, now - CFG.hdSlow / 2); } }); // timers were asleep: start counting again
     wdAt = now;
     P.forEach((p, id) => {
       const v = p.v, cam = (st.cams || []).find((c) => c.id === id); if (!cam) return;
+      if (p.nx && (p.nx.tEz ? now - p.nx.tEz > CFG.hdSlow : now - p.nx.t0 > CFG.ezLoad)) { nxDrop(cam, p, false, "slow"); if (P.get(id) !== p) return; }
       if (p.kind === "ez") { ezWatch(p, id, cam, now); return; }
       if (!v || p.blocked) return;
       if (!p.started) { // never showed a picture
@@ -6745,6 +6829,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     });
     // a picture for next time's first paint — only when nobody is touching the screen (it costs a hiccup)
     if (now - snapAt > CFG.snap && now - lastTouch > 5000 && !G && !ZA) { snapAt = now; P.forEach((p, id) => { if (p.started) saveFrame(id); }); }
+    try { const c1 = per() === 1 && visible()[0], p1 = c1 && P.get(c1.id); if (p1 && p1.kind === "ez" && p1.started && p1.in) { const sc = p1.in.querySelector("video") || p1.in.querySelector("canvas"), w = (sc && (sc.videoWidth || sc.width)) || 0; if (p1.q === 1) TEL.cw = Math.max(TEL.cw, w); else TEL.sw = Math.max(TEL.sw, w); } } catch (e) {} // how many dots the picture is really drawn with on this phone
+    autoQ();
     warmTick();
     telSend(false);
   }
@@ -6798,7 +6884,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     n.textContent = msg || ""; n.style.display = msg ? "" : "none"; clearTimeout(st.noteT); if (msg && ms) st.noteT = setTimeout(() => { n.style.display = "none"; }, ms);
   }
   function backToSd(cam, r) { // top quality could not start → normal stream again, and say why
-    st.q.max = false; TRIES.set(cam.id, 0);
+    st.q.max = false; st.q.auto = false; HDBAD.set(cam.id, Date.now()); TRIES.set(cam.id, 0);
     if (r && /main_not_h264/.test(String(r.err || ""))) { const i = qInfo(cam) || {}; i.main = "H.265"; i.at = Date.now(); st.qi[cam.id] = i; LS.set("nf_camq_" + cam.id, JSON.stringify(i)); }
     qPaint();
     note(r && /main_not_h264/.test(String(r.err || "")) ? errText(r) : T("أعلى جودة مافتحتش (ممكن النت ضعيف) — رجعنا للعادي", "Top quality would not open (the connection may be weak) — back to normal"), 7000);
@@ -6826,10 +6912,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   function setQ(max) {
     const c = visible()[0]; if (per() !== 1 || !c) return;
     if (max && !maxOk(c)) { note(T("الكاميرا دي بتسجّل H.265 — المتصفح مابيعرضهاش بأعلى جودة. لو عايزها، تسجيلها لازم يتحوّل H.264 (الهارد ممكن يشيل أيام أقل).", "This camera records in H.265 — the browser can't show it at top quality. For that its recording must switch to H.264 (the disk may hold fewer days)."), 9000); return; }
-    if (!!max === (st.q.max && st.q.cam === c.id)) return;
-    st.q.cam = c.id; st.q.max = !!max; TRIES.set(c.id, 0);
-    if (P.has(c.id)) stopOne(c.id);
-    paint();
+    const was = st.q.max && st.q.cam === c.id, p = P.get(c.id), want = max ? 1 : 2;
+    if (!!max === was) { if (was && st.q.auto) { st.q.auto = false; foot(); warmTick(); } return; } // «أعلى جودة» tapped while the zoom had brought it: now it stays when zooming out too
+    if (p && p.nx) nxDrop(c, p, true);
+    st.q.cam = c.id; st.q.max = !!max; st.q.auto = false; st.q.noAuto = !max && Z.id === c.id && Z.s >= CFG.zUp ? c.id : ""; st.zOutAt = 0; TRIES.set(c.id, 0);
+    if (p && p.q === want && p.started) { qPaint(); foot(); warmTick(); return; } // that stream is the one showing (the swap the other way had not happened yet)
+    if (p && swapQ(c, want)) { qPaint(); foot(); warmTick(); } // v11.46: no black gap — the picture stays until the other stream is there
+    else { if (P.has(c.id)) stopOne(c.id); paint(); }
     if (max) note(T("بنفتح أعلى جودة…", "Opening top quality…"), 0);
   }
 
@@ -6859,9 +6948,11 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const txt = s > 1.001 ? `${(Math.round(s * 10) / 10).toFixed(1).replace(/\.0$/, "")}×` : "1×";
     const zr = b.el.parentNode && b.el.parentNode.querySelector("[data-cwzr]");
     if (zr && zr.textContent !== txt) { zr.textContent = txt; zr.classList.toggle("on", s > 1.001); }
+    if (s > TEL.zMax) TEL.zMax = Math.min(s, ZMAX);
+    zqSoon();
   }
-  function zSoon() { if (!ZF) ZF = requestAnimationFrame(() => { ZF = 0; zDraw(G && G.b); }); }
-  function zHint(b) { if (b && Z.s >= 2 && !st.hintZ && !(st.q.max && st.q.cam === b.id) && maxOk((st.cams || []).find((c) => c.id === b.id))) { st.hintZ = true; note(T("الصورة المكبّرة بتبان أوضح مع «أعلى جودة»", "Zoomed pictures look sharper with «Top quality»"), 5000); } }
+  function zSoon() { lastAct = Date.now(); if (!ZF) ZF = requestAnimationFrame(() => { ZF = 0; zDraw(G && G.b); }); }
+  function zHint(b) { if (st.eng === "ez") return; if (b && Z.s >= 2 && !st.hintZ && !(st.q.max && st.q.cam === b.id) && maxOk((st.cams || []).find((c) => c.id === b.id))) { st.hintZ = true; note(T("الصورة المكبّرة بتبان أوضح مع «أعلى جودة»", "Zoomed pictures look sharper with «Top quality»"), 5000); } }
   function applyZ() { // hard limits + draw now (after a re-paint, a new video, a resize)
     const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
     if (ZA || G) { zDraw(b); return; } // a gesture / animation is running: just redraw
@@ -6880,7 +6971,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (Math.abs(s - s0) < 1e-3 && Math.abs(tx - x0) < 0.5 && Math.abs(ty - y0) < 0.5) { fin(); return; }
     const t0 = performance.now(); ms = ms || 240;
     const step = (now) => {
-      const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); // ease-out
+      const k = Math.min(1, Math.max(0, (now - t0) / ms)), e = 1 - Math.pow(1 - k, 3); // ease-out (never backwards: the frame clock may be a little behind the start time)
       if (k >= 1) { fin(); return; }
       const si = s0 * Math.pow(s / s0, e); // zoom moves evenly on a log scale
       Z.s = si; Z.x = fx - si * cx + dx * e; Z.y = fy - si * cy + dy * e; zDraw(b);
@@ -6891,7 +6982,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   function zGlide(b, W, Hh, vx, vy) { // after a quick drag the picture keeps moving and slows down (stops at the edges)
     zStop(); let last = performance.now();
     const step = (now) => {
-      const dt = Math.min(40, now - last); last = now;
+      const dt = Math.max(0, Math.min(40, now - last)); last = now;
       const B = zBounds(W, Hh, Z.s); Z.x += vx * dt; Z.y += vy * dt;
       const f = Math.pow(0.93, dt / 16.7); vx *= f; vy *= f;
       if (Z.x < B.x0) { Z.x = B.x0; vx = 0; } if (Z.x > B.x1) { Z.x = B.x1; vx = 0; }
@@ -7142,7 +7233,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const leg = `<div class="nfcw-leg small muted"><span><i class="g"></i>${H(T("لايف", "Live"))}</span><span><i class="y"></i>${H(T("بيحمّل", "Loading"))}</span><span><i class="r"></i>${H(T("مفصولة", "Not connected"))}</span></div>`;
     f.innerHTML = st.idle
       ? `<button type="button" class="btn p" data-cwresume>${H(T("اللايف وقف عشان مالمستش الشاشة 10 دقايق — دوس هنا يكمل", "Live paused after 10 minutes without a touch — tap to continue"))}</button>`
-      : mx ? `<span class="small muted">${H(T("لايف بأعلى جودة · حوالي 40 ميجا في الدقيقة من شريحة المصنع — رجّعها «عادي» لما تخلص", "Live at top quality · about 40 MB a minute of the factory SIM — switch back to «Normal» when done"))}</span>`
+      : mx ? `<span class="small muted">${H(st.q.auto ? T("تفاصيل كاملة وإنت مكبّر · حوالي 40 ميجا في الدقيقة من شريحة المصنع — بترجع «عادي» لوحدها لما تصغّر", "Full detail while zoomed in · about 40 MB a minute of the factory SIM — back to «Normal» by itself when you zoom out") : T("لايف بأعلى جودة · حوالي 40 ميجا في الدقيقة من شريحة المصنع — رجّعها «عادي» لما تخلص", "Live at top quality · about 40 MB a minute of the factory SIM — switch back to «Normal» when done"))}</span>`
       : bgN ? `<span class="small muted">${H(T(`لايف ${fg === 1 ? "كاميرا" : fg + " كاميرات"} + ${bgN} جاهزة في الخلفية · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${fg} camera${fg === 1 ? "" : "s"} + ${bgN} ready in the background · about ${n}–${n * 2} MB a minute of the factory SIM`))}</span>`
       : `<span class="small muted">${n ? H(T(`لايف ${n} ${n === 1 ? "كاميرا" : "كاميرات"} · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${n} camera${n === 1 ? "" : "s"} · about ${n}–${n * 2} MB a minute of the factory SIM`)) : H(T("بيقف لوحده لما تخرج من الصفحة", "Stops by itself when you leave the page"))}</span>`;
     if (!st.idle && st.cams && st.cams.length) {
@@ -7155,7 +7246,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   function paint() {
     const b = document.getElementById("nfcwbody"); if (!b) return;
     const v0 = visible(), oneId = per() === 1 && v0[0] ? v0[0].id : "";
-    if (st.q.cam !== oneId) { const was = st.q.cam && P.get(st.q.cam); if (was && was.q === 1) stopOne(st.q.cam); st.q.max = false; st.q.cam = oneId; }
+    if (st.q.cam !== oneId) { const was = st.q.cam && P.get(st.q.cam); if (was && was.nx) nxDrop({ id: st.q.cam }, was, true); if (was && was.q === 1) stopOne(st.q.cam); st.q.max = false; st.q.auto = false; st.q.noAuto = ""; st.zOutAt = 0; st.q.cam = oneId; }
     if (Z.id !== oneId) zReset(oneId);
     const sig = sigOf(), grid0 = b.querySelector(":scope > .nfcw-grid");
     const vis = visible(), ids = new Set(vis.map((c) => c.id));
@@ -7207,6 +7298,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     paint();
   }
   function poke() {
+    lastAct = Date.now(); zqSoon();
     clearTimeout(st.idleT); if (!onPage()) return;
     if (st.idle) { st.idle = false; TRIES.clear(); setTimeout(() => { if (onPage()) paint(); }, 0); } // any touch brings the live back (no need to find the button)
     st.idleT = setTimeout(() => { if (!onPage() || !P.size) return; st.idle = true; stopAll(); foot(); }, IDLE_MS);
@@ -7448,7 +7540,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   }
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("pagehide", () => stopAll());
-  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy, CFG, TEL, RT, TRIES, watch, mount, sigOf, telSend, startOne, stopOne, unblock, loadCams, view: () => EXTRA_VIEWS.cams(), setEng, EZBAD, ezInfo, ezFitAll, ezReset: () => { EZT = null; ezP = null; }, warmCams, warmTick, preWarm }; // for tests
+  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy, CFG, TEL, RT, TRIES, watch, mount, sigOf, telSend, startOne, stopOne, unblock, loadCams, view: () => EXTRA_VIEWS.cams(), setEng, EZBAD, ezInfo, ezFitAll, ezReset: () => { EZT = null; ezP = null; }, warmCams, warmTick, preWarm, swapQ, autoQ, HDBAD, act: (t) => { lastAct = t; } }; // for tests
 })();;
 (function(){if(window.__NF_A1136__)return;window.__NF_A1136__=1;const r="nf.rfb.back",y=12e4,i={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,n)=>{try{n==null?localStorage.removeItem(t):localStorage.setItem(t,n)}catch{}}},c=()=>{try{return sessionStorage.getItem("nf.ninety.co")||""}catch{return""}},s=t=>{try{typeof ninetySet=="function"?ninetySet(t):sessionStorage.setItem("nf.ninety.co",t)}catch{}},a=t=>["","ninety","dashboard"].includes(String(t||"").replace(/^#\/?/,"").split("/")[0])||String(t||"").replace(/^#\/?/,"")==="";function l(){const t=String(location.hash||"");i.set(r,JSON.stringify({h:t,co:c(),at:Date.now()}))}try{window.addEventListener("click",t=>{t.target&&t.target.closest&&t.target.closest("button.nfrfb")&&l()},!0)}catch{}let e=null;try{const t=JSON.parse(i.get(r)||"null");t&&Date.now()-(+t.at||0)<y&&(e=t)}catch{e=null}if(i.set(r,null),window.nfRefreshStay={remember:l,last:()=>e},!e)return;e.co&&!c()&&s(e.co);const o=String(e.h||""),f=()=>{try{const t=String(location.hash||"");if(o&&o!=="#/ninety"&&t!==o&&a(t)){const n=o.replace(/^#\/?/,"").split("/");typeof S=="object"&&S&&(S.route={view:n[0]||"dashboard",id:n[1]||null,sub:n[2]||null}),location.hash=o}e.co&&!c()&&s(e.co),typeof render=="function"&&render(!0)}catch{}};let u=0;const h=()=>{u++;try{e.co&&!c()&&s(e.co);const t=String(location.hash||"");o&&t!==o&&a(t)&&o!=="#/ninety"&&f()}catch{}u<12&&setTimeout(h,500)};setTimeout(h,0);try{document.addEventListener("nf:login",()=>setTimeout(f,60),{once:!0})}catch{}})();;
 (function(){if(window.__NF_A1137__||(window.__NF_A1137__=1,typeof isStudioz=="function"&&isStudioz()||typeof isConstruction=="function"&&isConstruction()||typeof isStuSys=="function"&&isStuSys())||typeof vMe!="function")return;const w=()=>typeof I18N!="undefined"&&I18N.lang==="en",i=(t,e)=>w()?e:t,o=t=>typeof esc=="function"?esc(String(t==null?"":t)):String(t==null?"":t),c={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,e)=>{try{e==null?localStorage.removeItem(t):localStorage.setItem(t,e)}catch{}}},l=()=>{try{return/Android/i.test(navigator.userAgent||"")}catch{return!1}},u=()=>{try{return!!(S.session&&S.session.workerId)&&!(typeof isAdmin=="function"&&isAdmin())}catch{return!1}},s=()=>"nf.pt.done."+(S.session&&S.session.workerId||""),n={checked:!1,busy:!1,email:"",justSaved:!1,err:""},m=async t=>{if(!S.sb||!S.sb.functions)throw new Error("offline");const e=await S.sb.functions.invoke("play-testers",{body:t});if(e.error){let r="error";try{r=(await e.error.context.json()).error||r}catch{}throw new Error(r)}return e.data||{}},f=()=>{try{S.route&&S.route.view==="me"&&typeof rerender=="function"&&rerender()}catch{}};async function y(){if(!(n.checked||n.busy||!u()||!l()||c.get(s()))){n.busy=!0;try{const t=await m({action:"get"});n.checked=!0,t&&t.email?(c.set(s(),"1"),n.email=t.email):f()}catch{}finally{n.busy=!1}}}function g(){return!u()||!l()?"":n.justSaved?`<div class="card ptc ok" id="ptc"><div class="ptc-h">\u2713 ${o(i("\u0627\u062A\u0633\u062C\u0651\u0644","Saved"))}</div><div class="tiny muted">${o(i(`${n.email} \u2014 \u0647\u064A\u0648\u0635\u0644\u0643 \u0644\u064A\u0646\u0643 \u0645\u0646 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A \u062A\u0646\u0632\u0651\u0644 \u0645\u0646\u0647 \u0627\u0644\u0623\u0628\u0644\u0643\u064A\u0634\u0646.`,`${n.email} \u2014 you will get a Google Play link to install the app.`))}</div></div>`:c.get(s())||!n.checked?"":`<div class="card ptc" id="ptc"><div class="ptc-h">${o(i("\u0623\u0628\u0644\u0643\u064A\u0634\u0646 Ninety \u0639\u0644\u0649 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A","Ninety app on Google Play"))}</div>
