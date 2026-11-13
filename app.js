@@ -6333,3 +6333,298 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.32 (المصنع بس) — «الكاميرات» نسخة 3 (محمود 13/11 06:04–06:06):
+   - الكاميرات بتتوزّع لوحدها على المساحة الفاضية كلها (من غير فراغ تحت ومن غير سكرول) — الحجم بيتحسب حسب عدد الكاميرات والشاشة.
+   - العدد: كاميرا واحدة / 4 / 9 / 16 / 32 (32 على الكمبيوتر بس — الموبايل مابيستحملش 32 فيديو مع بعض). بيتفتكر.
+   - «بالعرض»: أندرويد ← شاشة كاملة + قفل بالعرض؛ آيفون ← نفس العرض متلفّ 90°؛ الكمبيوتر ← «ملء الشاشة». ولو لفّيت الموبايل بالعرض ← تملا الشاشة لوحدها.
+   - زي v11.31: اللايف بيبدأ لوحده للكاميرات الظاهرة، آخر صورة بتظهر فورًا، كله بيقف لما تخرج أو الأبليكيشن يروح الخلفية، وقف بعد 10 دقايق من غير لمس.
+   بيحل محل عرض v11.31 (أسماء data-/classes جديدة فالقديم مابيتحركش). */
+;(function(){
+  if (window.__NF_CAMWALL__ || typeof EXTRA_VIEWS === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_CAMWALL__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s));
+  const can = () => !!(S && S.sb && S.sb.functions) && typeof isAdmin === "function" && isAdmin() && !S.viewOrig && !S.demoOrig;
+  const onPage = () => /^#\/cams(\/|$)/.test(location.hash);
+  const mq = (q) => { try { return window.matchMedia(q); } catch (e) { return { matches: false, addEventListener() {} }; } };
+  const LAND = mq("(orientation: landscape)"), TOUCH = mq("(pointer: coarse)");
+  const phone = () => TOUCH.matches;
+  const HLS_SRC = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
+  const IDLE_MS = 10 * 60 * 1000;
+  const LS = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const SIZES = () => (phone() ? [1, 4, 9, 16] : [1, 4, 9, 16, 32]);
+  const st = { here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false };
+  const P = new Map(), TRIES = new Map(); // camId → { v, hls } / automatic restarts in a row
+  const per = () => { const s = SIZES(); return s.includes(st.n) ? st.n : s.filter((x) => x <= st.n).pop() || 4; };
+
+  /* ---- player (same as v11.31) ---- */
+  let hlsP = null;
+  const loadHls = () => window.Hls ? Promise.resolve(window.Hls) : (hlsP = hlsP || new Promise((ok, no) => {
+    const s = document.createElement("script"); s.src = HLS_SRC; s.async = true;
+    s.onload = () => (window.Hls ? ok(window.Hls) : no(new Error("hls"))); s.onerror = () => { hlsP = null; no(new Error("hls")); };
+    document.head.appendChild(s);
+  }));
+  const tileOf = (id) => document.querySelector(`.nfcw-tile[data-cwcam="${CSS.escape(id)}"]`);
+  const frameKey = (id) => "nf_camframe_" + id;
+  function saveFrame(id) {
+    const p = P.get(id); if (!p || !p.v || p.v.readyState < 2 || !p.v.videoWidth) return;
+    try { const w = 320, h = Math.round((p.v.videoHeight / p.v.videoWidth) * w) || 180; const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(p.v, 0, 0, w, h); LS.set(frameKey(id), c.toDataURL("image/jpeg", 0.6)); } catch (e) {}
+  }
+  function setMsg(id, msg) { const t = tileOf(id); const m = t && t.querySelector(".nfcw-msg"); if (m) { m.textContent = msg || ""; m.style.display = msg ? "" : "none"; } }
+  function stopOne(id, keepFrame) {
+    const p = P.get(id); if (!p) return;
+    if (keepFrame !== false) saveFrame(id);
+    P.delete(id);
+    try { if (p.hls) p.hls.destroy(); } catch (e) {}
+    try { p.v.pause(); p.v.removeAttribute("src"); p.v.load(); } catch (e) {}
+    try { p.v.remove(); } catch (e) {}
+  }
+  function stopAll() { [...P.keys()].forEach((id) => stopOne(id)); clearInterval(st.snapT); st.snapT = null; foot(); }
+  const errText = (r) => {
+    const e = String((r && (r.err || r.error)) || "");
+    if (/EVZ60019|Encryption/i.test(e)) return T("تشفير الفيديو شغال على الريكوردر", "Video encryption is on for the recorder");
+    if (/no_token|no_keys/.test(e)) return T("ربط هيك فيجن مش شغال", "The Hikvision link is not working");
+    if (/offline|EVZ2000[37]|EVZ60001/i.test(e)) return T("الكاميرا مش أونلاين", "Camera offline");
+    return T("اللايف مش راضي يشتغل", "Live would not start");
+  };
+  async function startOne(cam) {
+    if (!can() || !onPage() || st.idle || P.has(cam.id) || !cam.online) return;
+    if (!tileOf(cam.id)) return;
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.crossOrigin = "anonymous";
+    const p = { v, hls: null }; P.set(cam.id, p);
+    setMsg(cam.id, LS.get(frameKey(cam.id)) ? "" : T("بنفتح اللايف…", "Opening live…"));
+    let r = null;
+    try { const x = await S.sb.functions.invoke("hik", { body: { action: "live", id: cam.id, serial: cam.serial, protocol: 2, quality: 2 } }); r = x && x.data; } catch (e) { r = null; }
+    if (P.get(cam.id) !== p) return;
+    if (!r || !r.ok || !r.url) { P.delete(cam.id); setMsg(cam.id, errText(r || { err: "network" })); return; }
+    const url = String(r.url).replace(/^http:\/\//i, "https://");
+    const tile = tileOf(cam.id); if (!tile) { P.delete(cam.id); return; }
+    tile.querySelector(".nfcw-box").appendChild(v);
+    const fail = () => {
+      if (P.get(cam.id) !== p) return;
+      stopOne(cam.id, true);
+      const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
+      if (n <= 2 && onPage() && !st.idle && !document.hidden) setTimeout(() => { if (!P.has(cam.id) && visible().some((c) => c.id === cam.id)) startOne(cam); }, 1500);
+      else setMsg(cam.id, T("اللايف وقف — دوس على الكاميرا تاني", "Live stopped — tap the camera again"));
+    };
+    v.addEventListener("playing", () => { TRIES.set(cam.id, 0); setMsg(cam.id, ""); const tl = tileOf(cam.id); if (tl) tl.classList.add("live"); });
+    try {
+      const native = v.canPlayType("application/vnd.apple.mpegurl");
+      if (native && (/iPhone|iPad|iPod/.test(navigator.userAgent) || !(window.Hls && window.Hls.isSupported && window.Hls.isSupported()))) { v.src = url; v.addEventListener("error", fail, { once: true }); }
+      else {
+        const Hls = await loadHls();
+        if (P.get(cam.id) !== p) return;
+        if (!Hls.isSupported()) { if (native) { v.src = url; v.addEventListener("error", fail, { once: true }); } else { stopOne(cam.id, false); setMsg(cam.id, T("المتصفح ده مش بيشغّل اللايف", "This browser can't play live")); return; } }
+        else { const h = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 8 }); p.hls = h; h.on(Hls.Events.ERROR, (_, d) => { if (d && d.fatal) fail(); }); h.loadSource(url); h.attachMedia(v); }
+      }
+      const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {});
+    } catch (e) { fail(); return; }
+    if (!st.snapT) st.snapT = setInterval(() => P.forEach((_, id) => saveFrame(id)), 10000);
+    foot();
+  }
+
+  /* ---- which cameras + smart sizing ---- */
+  const visible = () => {
+    const cams = st.cams || [], n = per();
+    if (n === 1) { const f = cams.find((c) => c.id === st.focus) || cams[0]; return f ? [f] : []; }
+    const pages = Math.max(1, Math.ceil(cams.length / n)); if (st.page >= pages) st.page = pages - 1; if (st.page < 0) st.page = 0;
+    return cams.slice(st.page * n, st.page * n + n);
+  };
+  // biggest 16:9 tiles that fit k cameras in W×H (gap g) → { cols, w }
+  function fit(k, W, H, g) {
+    let best = { cols: 1, w: 0 };
+    for (let c = 1; c <= Math.max(1, k); c++) {
+      const rows = Math.ceil(k / c);
+      const w = Math.min((W - g * (c - 1)) / c, ((H - g * (rows - 1)) / rows) * 16 / 9);
+      if (w > best.w + 0.5) best = { cols: c, w };
+    }
+    best.w = Math.max(60, Math.floor(best.w));
+    return best;
+  }
+  function layout() {
+    const grid = document.querySelector(".nfcw-grid"); if (!grid) return;
+    const k = grid.children.length; if (!k) return;
+    const r = grid.getBoundingClientRect();
+    const full = st.mode !== "off";
+    const W = Math.max(120, r.width);
+    let H, W2 = W;
+    if (full) { // offsetWidth/Height are pre-rotation sizes, so the same maths works for the rotated iPhone view
+      const root = document.getElementById("nfcwroot"), oh = (sel) => { const e = root.querySelector(sel); return e && e.offsetHeight ? e.offsetHeight + 6 : 0; };
+      W2 = root.clientWidth - 12; H = root.clientHeight - 12 - oh(".nfcw-bar") - oh(".nfcw-chips") - oh(".nfcw-pages") - oh("#nfcwfoot") - 4;
+    }
+    else {
+      const tab = document.querySelector("nav.tabbar"); const tabH = tab && getComputedStyle(tab).display !== "none" ? tab.getBoundingClientRect().height + 16 : 0;
+      const pages = document.querySelector(".nfcw-pages"); const foot = document.getElementById("nfcwfoot");
+      H = window.innerHeight - r.top - tabH - (pages ? pages.offsetHeight + 10 : 0) - (foot ? 34 : 0) - 8;
+      H = Math.max(H, 160);
+    }
+    const g = 6, f = fit(k, W2, H, g);
+    grid.style.gridTemplateColumns = `repeat(${f.cols}, ${f.w}px)`;
+    grid.style.justifyContent = "center";
+  }
+
+  /* ---- html ---- */
+  function tileHtml(c) {
+    const fr = LS.get(frameKey(c.id));
+    return `<div class="nfcw-tile ${P.has(c.id) ? "live" : ""}" data-cwcam="${H(c.id)}"><div class="nfcw-box" ${fr ? `style="background-image:url('${H(fr)}')"` : ""}>
+      <div class="nfcw-msg" ${c.online ? 'style="display:none"' : ""}>${c.online ? "" : H(T("الكاميرا مش أونلاين", "Camera offline"))}</div></div>
+      <div class="nfcw-name"><span class="dot ${c.online ? "on" : ""}"></span><span class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</span></div></div>`;
+  }
+  function bodyHtml() {
+    if (!st.cams) return `<div class="muted small">${H(st.err || T("بنجيب الكاميرات…", "Loading cameras…"))}</div>`;
+    if (!st.cams.length) return `<div class="banner info"><span>${H(T("مفيش كاميرات في الـ Team لسه.", "No cameras in the Team yet."))}</span></div>`;
+    const vis = visible(), cams = st.cams, n = per();
+    const pages = n === 1 ? cams.length : Math.max(1, Math.ceil(cams.length / n));
+    const cur = n === 1 ? Math.max(0, cams.findIndex((c) => c.id === (vis[0] || {}).id)) : st.page;
+    const nav = pages > 1 ? `<div class="nfcw-pages"><button type="button" class="btn sm" data-cwpage="-1" aria-label="${H(T("السابق", "Previous"))}">›</button><span class="small">${cur + 1} / ${pages}</span><button type="button" class="btn sm" data-cwpage="1" aria-label="${H(T("التالي", "Next"))}">‹</button></div>` : "";
+    const chips = n === 1 ? `<div class="nfcw-chips">${cams.map((c) => `<button type="button" class="chip notr ${vis[0] && vis[0].id === c.id ? "on" : ""}" data-cwfocus="${H(c.id)}">${H(c.name || c.no)}</button>`).join("")}</div>` : "";
+    return `${chips}<div class="nfcw-grid">${vis.map(tileHtml).join("")}</div>${nav}`;
+  }
+  const sizeBtns = () => SIZES().map((n) => `<button type="button" class="chip ${per() === n ? "on" : ""}" data-cwn="${n}" aria-label="${H(n === 1 ? T("كاميرا واحدة", "1 camera") : T(`${n} كاميرات`, `${n} cameras`))}">${n === 1 ? H(T("واحدة", "1")) : n}</button>`).join("");
+  const landLabel = () => (phone() ? "⟲ " + T("بالعرض", "Landscape") : "⛶ " + T("ملء الشاشة", "Full screen"));
+  function foot() {
+    const f = document.getElementById("nfcwfoot"); if (!f) return;
+    const n = P.size;
+    f.innerHTML = st.idle
+      ? `<button type="button" class="btn p" data-cwresume>${H(T("اللايف وقف عشان مالمستش الشاشة 10 دقايق — دوس هنا يكمل", "Live paused after 10 minutes without a touch — tap to continue"))}</button>`
+      : `<span class="small muted">${n ? H(T(`لايف ${n} ${n === 1 ? "كاميرا" : "كاميرات"} · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${n} camera${n === 1 ? "" : "s"} · about ${n}–${n * 2} MB a minute of the factory SIM`)) : H(T("بيقف لوحده لما تخرج من الصفحة", "Stops by itself when you leave the page"))}</span>`;
+  }
+  function paint() {
+    const b = document.getElementById("nfcwbody"); if (!b) return;
+    const keep = new Map(); P.forEach((p, id) => { if (p.v && p.v.parentNode) { keep.set(id, p.v); p.v.parentNode.removeChild(p.v); } });
+    b.innerHTML = bodyHtml();
+    const l = document.getElementById("nfcwsizes"); if (l) l.innerHTML = sizeBtns();
+    const vis = visible(), ids = new Set(vis.map((c) => c.id));
+    [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
+    keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcw-box").appendChild(v); t.classList.add("live"); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
+    applyMode(); layout();
+    if (onPage() && !document.hidden && !st.idle) vis.forEach((c, i) => { if (!P.has(c.id)) setTimeout(() => startOne(c), i * 250); });
+    foot();
+  }
+  async function loadCams(force) {
+    if (!can() || st.loading) return;
+    if (!force && st.cams && Date.now() - st.camsAt < 60000) { paint(); return; }
+    st.loading = true;
+    try {
+      const x = await S.sb.functions.invoke("hik", { body: { action: "cameras" } }); const r = x && x.data;
+      if (r && r.ok) { st.cams = (r.cameras || []).filter((c) => c && c.id && c.serial).sort((a, b) => Number(a.no || 0) - Number(b.no || 0)); st.camsAt = Date.now(); st.err = ""; }
+      else st.err = errText(r || { err: "network" });
+    } catch (e) { st.err = T("تعذّر الوصول للسيرفر", "Could not reach the server"); }
+    finally { st.loading = false; }
+    paint();
+  }
+  function poke() { clearTimeout(st.idleT); if (!onPage()) return; st.idleT = setTimeout(() => { if (!onPage() || !P.size) return; st.idle = true; stopAll(); foot(); }, IDLE_MS); }
+
+  /* ---- landscape / full screen ---- */
+  function applyMode() {
+    const r = document.getElementById("nfcwroot");
+    if (r) { r.classList.toggle("full", st.mode !== "off"); r.classList.toggle("rot", st.mode === "rot"); }
+    try { document.documentElement.classList.toggle("nfcw-lock", st.mode !== "off"); } catch (e) {}
+  }
+  async function enterFull() {
+    st.forced = true;
+    if (phone() && LAND.matches) { st.mode = "full"; applyMode(); layout(); return; }
+    let native = false;
+    try { const el = document.documentElement; if (el.requestFullscreen && !document.fullscreenElement) { await el.requestFullscreen({ navigationUI: "hide" }); native = true; } } catch (e) { native = false; }
+    if (native && phone()) { try { await screen.orientation.lock("landscape"); } catch (e) { try { await document.exitFullscreen(); } catch (x) {} native = false; } }
+    st.mode = !phone() || native ? "full" : "rot"; // iPhone (no full screen / no lock) → rotate the view ourselves
+    applyMode(); setTimeout(layout, 60);
+  }
+  async function exitFull() {
+    st.forced = false; st.mode = "off"; applyMode();
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+    try { if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen(); } catch (e) {}
+    setTimeout(layout, 60);
+  }
+  function onOrient() {
+    if (!onPage() || !document.getElementById("nfcwroot")) return;
+    if (phone() && LAND.matches) st.mode = "full";          // turned sideways → fill the screen (a rotated view would be double-turned)
+    else if (st.mode === "full" && phone() && !st.forced) st.mode = "off"; // upright again → normal page
+    else if (st.mode === "full" && phone() && st.forced && !document.fullscreenElement) st.mode = "rot";
+    applyMode(); setTimeout(layout, 80);
+  }
+  try { LAND.addEventListener("change", onOrient); } catch (e) { try { LAND.addListener(onOrient); } catch (x) {} }
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && st.mode === "full" && !(phone() && LAND.matches)) exitFull(); });
+  let rz = null; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (onPage()) layout(); }, 120); });
+
+  /* ---- styles ---- */
+  if (!document.getElementById("nfcw-css")) {
+    const s = document.createElement("style"); s.id = "nfcw-css";
+    s.textContent = `.nfcw-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.nfcw-bar .chips,.nfcw-chips{display:flex;gap:6px;flex-wrap:wrap}.nfcw-chips{margin-bottom:8px}.nfcw-tools{display:flex;gap:6px;align-items:center}
+.nfcw-bar .chip,.nfcw-chips .chip{border:1px solid var(--line,#ddd);border-radius:999px;padding:5px 12px;font-size:13px;background:transparent;cursor:pointer;color:inherit;min-width:38px}
+.nfcw-bar .chip.on,.nfcw-chips .chip.on{background:var(--ink,#222);color:var(--bg,#fff);border-color:transparent}
+.nfcw-grid{display:grid;gap:6px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.nfcw-tile{border-radius:10px;overflow:hidden;background:#000;position:relative;cursor:pointer}
+.nfcw-box{position:relative;aspect-ratio:16/9;background:#111 center/cover no-repeat;display:flex;align-items:center;justify-content:center}
+.nfcw-box video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent}
+.nfcw-msg{position:relative;z-index:2;color:#eee;font-size:11px;text-align:center;padding:4px 8px;background:rgba(0,0,0,.45);border-radius:8px;margin:6px}
+.nfcw-name{position:absolute;z-index:3;inset-inline-start:6px;bottom:4px;display:flex;align-items:center;gap:5px;color:#fff;font-size:11px;text-shadow:0 1px 2px #000;max-width:calc(100% - 12px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.nfcw-name .dot{width:7px;height:7px;border-radius:50%;background:#999;flex:0 0 auto}.nfcw-name .dot.on{background:#f59e0b}.nfcw-tile.live .nfcw-name .dot{background:#e11d48;box-shadow:0 0 0 3px rgba(225,29,72,.25)}
+.nfcw-pages{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px}#nfcwfoot{margin-top:8px;min-height:24px}
+.nfcw-exit{display:none}html.nfcw-lock,html.nfcw-lock body{overflow:hidden!important}
+.nfcw-root.full{position:fixed;inset:0;z-index:10000;background:#000;color:#fff;margin:0;padding:6px;display:flex;flex-direction:column;gap:6px;box-sizing:border-box}
+.nfcw-root.full.rot{inset:auto;top:0;left:100vw;width:100vh;width:100dvh;height:100vw;transform:rotate(90deg);transform-origin:top left}
+.nfcw-root.full .nfcw-exit{display:inline-flex}.nfcw-root.full [data-cwland],.nfcw-root.full [data-cwrefresh],.nfcw-root.full #nfcwfoot .muted{display:none}
+.nfcw-root.full .nfcw-bar{flex-wrap:nowrap}.nfcw-root.full .nfcw-bar .chips,.nfcw-root.full .nfcw-chips{flex-wrap:nowrap;overflow-x:auto}
+.nfcw-root.full .chip{color:#fff;border-color:#555}.nfcw-root.full .chip.on{background:#fff;color:#000}.nfcw-root.full .btn{background:#222;color:#fff;border-color:#444}
+.nfcw-root.full #nfcwbody{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}.nfcw-root.full .nfcw-grid{align-content:center}
+.nfcw-root.full .nfcw-pages{margin:4px 0 0}.nfcw-root.full #nfcwfoot{margin:0;min-height:0}`;
+    document.head.appendChild(s);
+  }
+
+  /* ---- page ---- */
+  if (typeof EXTRA_TITLES !== "undefined") EXTRA_TITLES.cams = () => ({ title: T("الكاميرات", "Cameras"), sub: T("لايف من سحابة هيك فيجن — للمالك بس", "Live through the Hikvision cloud — owner only") });
+  if (typeof VIEW_TITLES !== "undefined") VIEW_TITLES.cams = VIEW_TITLES.cams || "الكاميرات لايف";
+  try { if (window.__nfCamGrid && window.__nfCamGrid.stopAll) window.__nfCamGrid.stopAll(); } catch (e) {}
+  EXTRA_VIEWS.cams = () => {
+    if (!can()) return `<div class="card"><p class="small ink2">${H(T("الصفحة دي للمالك بس.", "This page is for the owner only."))}</p></div>`;
+    if (phone() && LAND.matches) st.mode = "full";
+    setTimeout(() => { if (!st.here) { st.here = true; st.idle = false; TRIES.clear(); poke(); } loadCams(false); }, 0);
+    return `<div class="stack nfcw-root ${st.mode === "off" ? "" : st.mode === "rot" ? "full rot" : "full"}" id="nfcwroot"><div class="nfcw-bar">
+      <button type="button" class="btn sm nfcw-exit" data-cwexit aria-label="${H(T("خروج", "Exit"))}">✕</button>
+      <div class="chips" id="nfcwsizes">${sizeBtns()}</div>
+      <span class="nfcw-tools"><button type="button" class="btn sm" data-cwland>${H(landLabel())}</button><button type="button" class="btn sm" data-cwrefresh aria-label="${H(T("تحديث", "Refresh"))}">${typeof icon === "function" ? icon("refresh") : "↻"}</button></span></div>
+      <div id="nfcwbody">${bodyHtml()}</div><div id="nfcwfoot"></div></div>`;
+  };
+
+  /* ---- events ---- */
+  document.addEventListener("click", (ev) => {
+    if (!onPage()) return;
+    const t = ev.target && ev.target.closest ? ev.target : null; if (!t || !t.closest("#nfcwroot")) return;
+    poke();
+    const sz = t.closest("[data-cwn]");
+    if (sz) { ev.preventDefault(); const n = Number(sz.getAttribute("data-cwn")); if (n !== per()) { st.n = n; LS.set("nf_camwall_n", String(n)); st.page = 0; paint(); } return; }
+    const pg = t.closest("[data-cwpage]");
+    if (pg) {
+      ev.preventDefault(); const d = Number(pg.getAttribute("data-cwpage")); const cams = st.cams || [], n = per();
+      if (n === 1 && cams.length) { const i = Math.max(0, cams.findIndex((c) => c.id === (visible()[0] || {}).id)); st.focus = cams[(i + d + cams.length) % cams.length].id; LS.set("nf_cams_focus", st.focus); }
+      else { const pages = Math.max(1, Math.ceil(cams.length / n)); st.page = (st.page + d + pages) % pages; }
+      paint(); return;
+    }
+    const fc = t.closest("[data-cwfocus]"); if (fc) { ev.preventDefault(); st.focus = fc.getAttribute("data-cwfocus"); LS.set("nf_cams_focus", st.focus); paint(); return; }
+    if (t.closest("[data-cwresume]")) { ev.preventDefault(); st.idle = false; poke(); paint(); return; }
+    if (t.closest("[data-cwrefresh]")) { ev.preventDefault(); stopAll(); loadCams(true); return; }
+    if (t.closest("[data-cwland]")) { ev.preventDefault(); enterFull(); return; }
+    if (t.closest("[data-cwexit]")) { ev.preventDefault(); exitFull(); return; }
+    const tile = t.closest(".nfcw-tile[data-cwcam]");
+    if (tile) {
+      ev.preventDefault(); const id = tile.getAttribute("data-cwcam"); const cam = (st.cams || []).find((c) => c.id === id);
+      if (per() !== 1) { st.focus = id; LS.set("nf_cams_focus", id); st.n = 1; LS.set("nf_camwall_n", "1"); paint(); return; }
+      if (cam && !P.has(id)) { TRIES.set(id, 0); startOne(cam); return; }
+      if (st.mode === "off") enterFull(); // one camera already live → show it as big as possible
+    }
+  }, true);
+  document.addEventListener("touchstart", () => { if (onPage()) poke(); }, { passive: true });
+  window.addEventListener("hashchange", () => { if (!onPage()) { st.here = false; stopAll(); clearTimeout(st.idleT); if (st.mode !== "off") exitFull(); } });
+  function onVis() {
+    if (document.hidden) { stopAll(); return; }
+    if (onPage() && can() && document.getElementById("nfcwbody")) { st.idle = false; TRIES.clear(); poke(); paint(); }
+  }
+  document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("pagehide", () => stopAll());
+  window.__nfCamWall = { st, P, stopAll, paint, onVis, onOrient, enterFull, exitFull, fit, layout }; // for tests
+})();
