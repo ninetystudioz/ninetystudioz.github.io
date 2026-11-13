@@ -6333,6 +6333,16 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.42 (المصنع بس) — «الكاميرات» نسخة 10 (محمود 13/11 10:54: «دايمًا بيلاج ودايمًا بيعلّق، والزوم، واللايف دايمًا مش شغال — راجع الكود ونشوف هنطوره إزاي»). المراجعة لقت:
+   1) السيستم بيعيد رسم الصفحة المفتوحة مع أي تغيير في أي حتة (مهمة، بصمة، إشعار — كذا مرة في الدقيقة). نص صفحة الكاميرات كان بيتغيّر كل مرة (علامة «لايف» + صورة محفوظة كل 10 ث)
+      فالصفحة كانت بتتهد وتتبني والفيديوهات بتتشال وتتحط: تعليقة/شاشة سودة، والزوم بيموت في نص الحركة (الصباع بيبقى على عنصر اتشال).
+      ← نص الصفحة بقى ثابت (هيكل بس) وكل اللي جواها بيترسم من paint()، فالسيستم بيسيبها في حالها. و paint() نفسها مابقتش تلمس الكاميرات اللي لسه في مكانها.
+   2) اللايف لو وقع كان بيتعاد مرتين بس وبعدين يقف، ومفيش حاجة بتاخد بالها لو الصورة وقفت من غير خطأ ← مراقب كل 2 ث (وقفة 7 ث = زقّة، 14 ث = إعادة فتح) + إعادة محاولة بمهلة بتزيد لحد 8 مرات.
+   3) حفظ صورة من كل كاميرا كل 10 ث كان بيهنّج الشاشة لحظة ← بقى بعد أول تشغيل، وعند الوقف، وكل دقيقة لو مفيش لمس.
+   4) وقفة الـ10 دقايق: أي لمسة بترجّع اللايف (مش لازم الزرار). الأقسام: الكاميرا اللي خرجت من الشاشة بتستنى 6 ث قبل ما تقف (كانت 1.5).
+   5) وهو بيفتح أو بيرجّع الكاميرا بيبان خط بيتحرك فوق الصورة (قبل كده كانت صورة ثابتة من غير أي علامة فتبان إنها معلّقة). ولو الموبايل رفض يشغّل الفيديو لوحده (وضع توفير البطارية) بيقول «دوس على الشاشة».
+   6) قياس خفيف (كام ثانية لحد أول صورة، كام وقفة) بيتبعت لسجل السيرفر عشان نعرف اللي بيحصل على الموبايل فعلًا.
+   الباقي زي v11.41: */
 /* v11.41 (المصنع بس) — «الكاميرات» نسخة 9 (محمود 13/11 10:09: «لما أفتح كاميرا تفتح على نفس الوضع… تقلب لاندسكيب لو قلبت الموبايل أو دوست زرار بالعرض»):
    - دوسة على الكاميرا على الموبايل وهو واقف مابقتش تقلب العرض لوحدها (كانت بتفتح ملء الشاشة بالعرض). بالعرض = لفّ الموبايل أو زرار «بالعرض» بس.
    - الدبل تاب (تكبير) زي ما هو، وعلى الكمبيوتر الدوسة لسه بتفتح ملء الشاشة.
@@ -6394,7 +6404,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null, hintZ: false };
   try { const l = JSON.parse(LS.get("nf_camlay") || "null"); if (l && l.map) st.lay = l; } catch (e) {}
   const Z = { id: "", s: 1, x: 0, y: 0, end: 0, pinchEnd: 0 }; // zoom of the single camera (local px of its box)
-  const P = new Map(), TRIES = new Map(); // camId → { v, hls, q } / automatic restarts in a row
+  const P = new Map(), TRIES = new Map(), RT = new Map(); // camId → { v, hls, q, … } / failures in a row / pending retry timers
+  const CFG = { tick: 2000, soft: 7000, hard: 14000, slow: 25000, retry: [1500, 3000, 6000, 12000, 15000], maxTries: 8, slowRetry: 30000, lazyOff: 6000, snap: 60000, camsEvery: 120000 }; // tests change these
   const per = () => { const s = SIZES(); return s.includes(st.n) ? st.n : s.filter((x) => x <= st.n).pop() || 4; };
   const full = () => st.mode !== "off";
   const lazy = () => per() === 4 && !full(); // departments stacked on the page → live only for what is on screen
@@ -6412,7 +6423,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     return out;
   }
 
-  /* ---- player (same as v11.31) ---- */
+  /* ---- player — v11.42: looks after itself (watchdog + retries while the camera is on screen), no picture grab every 10 s ---- */
+  function tryPlay(p, id) {
+    try { const pr = p.v.play(); if (pr && pr.catch) pr.catch((e) => { if (e && e.name === "NotAllowedError" && P.get(id) === p && p.v.paused) { p.blocked = true; setWait(id, false); setMsg(id, T("دوس على الشاشة عشان اللايف يشتغل", "Tap the screen to start the live")); } }); } catch (e) {}
+  }
+  function unblock() { // called from a real touch / click — the only moment a phone that blocks autoplay lets a video start
+    P.forEach((p, id) => { if (p.blocked) { p.blocked = false; p.t0 = p.lastAdv = Date.now(); setMsg(id, ""); setWait(id, !p.started); tryPlay(p, id); } });
+  }
   let hlsP = null;
   const loadHls = () => window.Hls ? Promise.resolve(window.Hls) : (hlsP = hlsP || new Promise((ok, no) => {
     const s = document.createElement("script"); s.src = HLS_SRC; s.async = true;
@@ -6425,17 +6442,29 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const p = P.get(id); if (!p || !p.v || p.v.readyState < 2 || !p.v.videoWidth) return;
     try { const w = 320, h = Math.round((p.v.videoHeight / p.v.videoWidth) * w) || 180; const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(p.v, 0, 0, w, h); LS.set(frameKey(id), c.toDataURL("image/jpeg", 0.6)); } catch (e) {}
   }
+  const setWait = (id, on) => { const t = tileOf(id); if (t) t.classList.toggle("wait", !!on); };
+  const waiting = (id) => { const p = P.get(id); return (!!p && !p.started && !p.blocked) || RT.has(id); };
   function setMsg(id, msg) { const t = tileOf(id); const m = t && t.querySelector(".nfcw-msg"); if (m) { m.textContent = msg || ""; m.style.display = msg ? "" : "none"; } }
+  // light measuring → the server log (how long to the first picture, how many drops) so we know what really happens on the phone
+  const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false };
+  const tel = (k) => { TEL[k] = (TEL[k] || 0) + 1; TEL.dirty = true; };
+  function telSend(force) {
+    if (!TEL.dirty || !can() || (!force && Date.now() - TEL.sent < 60000)) return;
+    const t = TEL.ttff.slice().sort((a, b) => a - b);
+    const d = { v: "11.42", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
+    TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = 0; TEL.ttff = [];
+    try { const x = S.sb.functions.invoke("hiktele", { body: d }); if (x && x.catch) x.catch(() => {}); } catch (e) {}
+  }
   function stopOne(id, keepFrame) {
     const p = P.get(id); if (!p) return;
     if (keepFrame !== false) saveFrame(id);
-    P.delete(id);
+    P.delete(id); clearTimeout(p.ft);
     try { if (p.hls) p.hls.destroy(); } catch (e) {}
     try { p.v.pause(); p.v.removeAttribute("src"); p.v.load(); } catch (e) {}
     try { p.v.remove(); } catch (e) {}
-    const t = tileOf(id); if (t) t.classList.remove("live");
+    const t = tileOf(id); if (t) { t.classList.remove("live", "wait"); const fr = LS.get(frameKey(id)), bx = t.querySelector(".nfcw-box"); if (fr && bx) bx.style.backgroundImage = `url('${fr}')`; }
   }
-  function stopAll() { [...P.keys()].forEach((id) => stopOne(id)); clearInterval(st.snapT); st.snapT = null; foot(); }
+  function stopAll() { RT.forEach((t) => clearTimeout(t)); RT.clear(); [...P.keys()].forEach((id) => stopOne(id)); foot(); telSend(true); }
   const errText = (r) => {
     const e = String((r && (r.err || r.error)) || "");
     if (/EVZ60019|Encryption/i.test(e)) return T("تشفير الفيديو شغال على الريكوردر", "Video encryption is on for the recorder");
@@ -6444,51 +6473,112 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (/main_not_h264/.test(e)) return T("الكاميرا دي بتسجّل H.265 — المتصفح مابيعرضهاش بأعلى جودة", "This camera records in H.265 — the browser can't show it at top quality");
     return T("اللايف مش راضي يشتغل", "Live would not start");
   };
+  const wanted = (cam) => onPage() && !st.idle && !st.arr && !document.hidden && visible().some((c) => c.id === cam.id) && (!lazy() || seen.has(cam.id));
+  function retry(cam) { // the stream dropped or never came → again, slower each time, as long as this camera is on the screen
+    const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
+    if (n >= 2) setMsg(cam.id, n > CFG.maxTries ? T("النت ضعيف — بنجرّب تاني كل نص دقيقة", "Weak connection — trying again every half minute") : T("اللايف بيقطّع — بنرجّعه…", "Live dropped — reconnecting…"));
+    clearTimeout(RT.get(cam.id));
+    setWait(cam.id, true);
+    RT.set(cam.id, setTimeout(() => { RT.delete(cam.id); if (!P.has(cam.id) && wanted(cam)) startOne(cam); else if (!P.has(cam.id)) setWait(cam.id, false); }, n > CFG.maxTries ? CFG.slowRetry : CFG.retry[Math.min(n, CFG.retry.length) - 1]));
+  }
   async function startOne(cam) {
     if (!can() || !onPage() || st.idle || st.arr || P.has(cam.id) || !cam.online) return;
     if (!tileOf(cam.id)) return;
+    clearTimeout(RT.get(cam.id)); RT.delete(cam.id);
     const v = document.createElement("video");
     v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.crossOrigin = "anonymous";
     const q = per() === 1 && st.q.max && st.q.cam === cam.id ? 1 : 2; // 1 = main stream («أعلى جودة»)
-    const p = { v, hls: null, q }; P.set(cam.id, p);
-    setMsg(cam.id, LS.get(frameKey(cam.id)) ? "" : T("بنفتح اللايف…", "Opening live…"));
+    const p = { v, hls: null, q, t0: Date.now(), started: 0, lastT: -1, lastAdv: Date.now(), soft: false, rec: 0, fail: null, ft: null, blocked: false }; P.set(cam.id, p);
+    tel("open"); watchOn(); setWait(cam.id, true);
+    if (!(TRIES.get(cam.id) > 1)) setMsg(cam.id, LS.get(frameKey(cam.id)) ? "" : T("بنفتح اللايف…", "Opening live…"));
     let r = null;
     try { const x = await S.sb.functions.invoke("hik", { body: { action: "live", id: cam.id, serial: cam.serial, protocol: 2, quality: q } }); r = x && x.data; } catch (e) { r = null; }
     if (P.get(cam.id) !== p) return;
     if (q === 1 && (!r || !r.ok || !r.url)) { P.delete(cam.id); backToSd(cam, r); return; }
-    if (!r || !r.ok || !r.url) { P.delete(cam.id); setMsg(cam.id, errText(r || { err: "network" })); return; }
+    if (!r || !r.ok || !r.url) {
+      P.delete(cam.id); tel("addrFail");
+      const hard = !!r && /EVZ60019|Encryption|no_token|no_keys|offline|EVZ2000[37]|EVZ60001|bad_camera|forbidden/i.test(String(r.err || r.error || ""));
+      if (!hard && wanted(cam)) { if ((TRIES.get(cam.id) || 0) >= 2) setMsg(cam.id, errText(r || { err: "network" })); retry(cam); } // a network blip on mobile data: keep trying
+      else { setWait(cam.id, false); setMsg(cam.id, errText(r || { err: "network" })); }
+      return;
+    }
     const url = String(r.url).replace(/^http:\/\//i, "https://");
     const tile = tileOf(cam.id); if (!tile) { P.delete(cam.id); return; }
     tile.querySelector(".nfcw-box").appendChild(v); applyZ();
     const fail = () => {
       if (P.get(cam.id) !== p) return;
-      stopOne(cam.id, true);
+      stopOne(cam.id, true); tel("playFail");
       if (p.q === 1) { backToSd(cam, { err: "player" }); return; }
-      const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
-      if (n <= 2 && onPage() && !st.idle && !document.hidden) setTimeout(() => { if (!P.has(cam.id) && visible().some((c) => c.id === cam.id) && (!lazy() || seen.has(cam.id))) startOne(cam); }, 1500);
-      else setMsg(cam.id, T("اللايف وقف — دوس على الكاميرا تاني", "Live stopped — tap the camera again"));
+      if (wanted(cam)) retry(cam);
     };
-    v.addEventListener("playing", () => { TRIES.set(cam.id, 0); setMsg(cam.id, ""); const tl = tileOf(cam.id); if (tl) tl.classList.add("live"); if (p.q === 1) { note(qLine(cam), 6000); foot(); } });
+    p.fail = fail;
+    v.addEventListener("playing", () => {
+      if (P.get(cam.id) !== p) return;
+      if (!p.started) { p.started = Date.now(); TEL.ttff.push(p.started - p.t0); tel("ok"); p.ft = setTimeout(() => { if (P.get(cam.id) === p) saveFrame(cam.id); }, 4000); }
+      p.lastAdv = Date.now(); p.rec = 0; p.blocked = false; TRIES.set(cam.id, 0); setMsg(cam.id, ""); setWait(cam.id, false); const tl = tileOf(cam.id); if (tl) tl.classList.add("live"); if (p.q === 1) { note(qLine(cam), 6000); foot(); }
+    });
     try {
       const native = v.canPlayType("application/vnd.apple.mpegurl");
-      if (native && (/iPhone|iPad|iPod/.test(navigator.userAgent) || !(window.Hls && window.Hls.isSupported && window.Hls.isSupported()))) { v.src = url; v.addEventListener("error", fail, { once: true }); }
+      if (native && (/iPhone|iPad|iPod/.test(navigator.userAgent) || !(window.Hls && window.Hls.isSupported && window.Hls.isSupported()))) { TEL.nat = 1; v.src = url; v.addEventListener("error", fail, { once: true }); }
       else {
         const Hls = await loadHls();
         if (P.get(cam.id) !== p) return;
-        if (!Hls.isSupported()) { if (native) { v.src = url; v.addEventListener("error", fail, { once: true }); } else { stopOne(cam.id, false); setMsg(cam.id, T("المتصفح ده مش بيشغّل اللايف", "This browser can't play live")); return; } }
-        else { const h = new Hls({ liveSyncDurationCount: 2, maxBufferLength: q === 1 ? 6 : 8 }); p.hls = h; h.on(Hls.Events.ERROR, (_, d) => { if (d && d.fatal) fail(); }); h.loadSource(url); h.attachMedia(v); }
+        if (!Hls.isSupported()) { if (native) { TEL.nat = 1; v.src = url; v.addEventListener("error", fail, { once: true }); } else { stopOne(cam.id, false); setMsg(cam.id, T("المتصفح ده مش بيشغّل اللايف", "This browser can't play live")); return; } }
+        else {
+          const h = new Hls({ liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 6, maxLiveSyncPlaybackRate: 1.15, maxBufferLength: q === 1 ? 6 : 8, backBufferLength: 10 }); p.hls = h;
+          h.on(Hls.Events.ERROR, (_, d) => {
+            if (!d || !d.fatal) return;
+            // one or two gentle recoveries before a full restart
+            try { if (p.rec < 2 && d.type === Hls.ErrorTypes.NETWORK_ERROR) { p.rec++; h.startLoad(); return; } if (p.rec < 2 && d.type === Hls.ErrorTypes.MEDIA_ERROR) { p.rec++; h.recoverMediaError(); return; } } catch (e) {}
+            fail();
+          });
+          h.loadSource(url); h.attachMedia(v);
+        }
       }
-      const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {});
+      tryPlay(p, cam.id);
     } catch (e) { fail(); return; }
-    if (!st.snapT) st.snapT = setInterval(() => P.forEach((_, id) => saveFrame(id)), 10000);
     foot();
+  }
+  // watchdog: a picture that stopped moving without any error (very common on mobile data) is nudged, then reopened
+  let WD = null, snapAt = Date.now(), wdAt = 0;
+  function watchOn() { if (!WD) WD = setTimeout(watchTick, CFG.tick); }
+  function watchTick() { WD = null; try { watch(); } catch (e) {} if (P.size || RT.size) watchOn(); else telSend(false); }
+  function watch() {
+    if (!P.size && !RT.size) return;
+    if (!onPage() || document.hidden || st.idle) { wdAt = 0; return; }
+    const now = Date.now();
+    if (!wdAt || now - wdAt > CFG.tick * 4) P.forEach((p) => { p.lastAdv = now; if (!p.started) p.t0 = Math.max(p.t0, now - CFG.slow / 2); }); // timers were asleep: start counting again
+    wdAt = now;
+    P.forEach((p, id) => {
+      const v = p.v, cam = (st.cams || []).find((c) => c.id === id); if (!v || !cam || p.blocked) return;
+      if (!p.started) { // never showed a picture
+        if (now - p.t0 > CFG.slow) { tel("slow"); if (p.fail) p.fail(); else { P.delete(id); if (wanted(cam)) retry(cam); else setWait(id, false); } }
+        return;
+      }
+      if (v.paused && !v.ended) tryPlay(p, id);
+      const t = v.currentTime || 0;
+      if (Math.abs(t - p.lastT) > 0.03) { p.lastT = t; p.lastAdv = now; p.soft = false; return; } // moving (a jump by the player to catch up counts too)
+      const stuck = now - p.lastAdv;
+      if (stuck > CFG.hard) { tel("stall"); if (p.fail) p.fail(); }
+      else if (stuck > CFG.soft && !p.soft) {
+        p.soft = true; tel("nudge");
+        try { if (p.hls) p.hls.startLoad(); else { const sk = v.seekable; if (sk && sk.length) { v.currentTime = Math.max(0, sk.end(sk.length - 1) - 4); p.lastT = v.currentTime || 0; } } tryPlay(p, id); } catch (e) {} // our own jump is not «moving»
+      }
+    });
+    // a picture for next time's first paint — only when nobody is touching the screen (it costs a hiccup)
+    if (now - snapAt > CFG.snap && now - lastTouch > 5000 && !G && !ZA) { snapAt = now; P.forEach((p, id) => { if (p.started) saveFrame(id); }); }
+    telSend(false);
   }
 
   /* ---- live only for the tiles on screen (departments stacked on the page) ---- */
   let IO = null; const seen = new Set(), stopT = new Map();
   function startSeen() {
     if (!lazy() || !onPage() || document.hidden || st.idle || st.arr) return;
-    let k = 0; ordered().forEach((c) => { if (seen.has(c.id) && !P.has(c.id) && c.online && P.size + k < MAX_LAZY) { const d = k++ * 250; setTimeout(() => { if (seen.has(c.id) && lazy()) startOne(c); }, d); } });
+    const want = ordered().filter((c) => seen.has(c.id) && !P.has(c.id) && c.online && !RT.has(c.id));
+    // no room for a camera that just came on screen → the ones that already left go now (they were only kept for a quick scroll back)
+    let over = P.size + want.length - MAX_LAZY;
+    if (over > 0) [...P.keys()].forEach((id) => { if (over > 0 && !seen.has(id)) { clearTimeout(stopT.get(id)); stopOne(id); over--; } });
+    let k = 0; want.forEach((c) => { if (P.size + k < MAX_LAZY) { const d = k++ * 250; setTimeout(() => { if (seen.has(c.id) && lazy()) startOne(c); }, d); } });
   }
   function observe() {
     if (IO) { IO.disconnect(); IO = null; } seen.clear();
@@ -6501,7 +6591,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
         if (en.isIntersecting && en.intersectionRatio >= 0.3) { seen.add(id); clearTimeout(stopT.get(id)); }
         else {
           seen.delete(id);
-          if (P.has(id)) { clearTimeout(stopT.get(id)); stopT.set(id, setTimeout(() => { if (!seen.has(id) && lazy()) { stopOne(id); foot(); startSeen(); } }, 1500)); }
+          if (P.has(id)) { clearTimeout(stopT.get(id)); stopT.set(id, setTimeout(() => { if (!seen.has(id) && lazy()) { stopOne(id); foot(); startSeen(); } }, CFG.lazyOff)); }
         }
       });
       startSeen();
@@ -6814,7 +6904,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   /* ---- html ---- */
   function tileHtml(c) {
     const fr = LS.get(frameKey(c.id));
-    return `<div class="nfcw-tile ${P.has(c.id) ? "live" : ""}" data-cwcam="${H(c.id)}"><div class="nfcw-box" ${fr ? `style="background-image:url('${H(fr)}')"` : ""}>
+    return `<div class="nfcw-tile ${P.has(c.id) ? "live" : ""} ${waiting(c.id) ? "wait" : ""}" data-cwcam="${H(c.id)}"><div class="nfcw-box" ${fr ? `style="background-image:url('${H(fr)}')"` : ""}>
       <div class="nfcw-msg" ${c.online ? 'style="display:none"' : ""}>${c.online ? "" : H(T("الكاميرا مش أونلاين", "Camera offline"))}</div></div>
       <div class="nfcw-name"><span class="dot ${c.online ? "on" : ""}"></span><span class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</span></div>${per() === 1 && c.online ? qHtml(c) : ""}</div>`;
   }
@@ -6834,19 +6924,36 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (n === 4) { const S2 = secs(); const s = S2[st.page]; return s ? `${s.name} · ${st.page + 1} / ${S2.length}` : ""; }
     return `${st.page + 1} / ${Math.max(1, Math.ceil(cams.length / n))}`;
   }
-  function bodyHtml() {
-    if (!st.cams) return `<div class="muted small">${H(st.err || T("بنجيب الكاميرات…", "Loading cameras…"))}</div>`;
-    if (!st.cams.length) return `<div class="banner info"><span>${H(T("مفيش كاميرات في الـ Team لسه.", "No cameras in the Team yet."))}</span></div>`;
-    const n = per();
-    if (n === 4 && !full()) return secsHtml();
-    const vis = visible(), cams = ordered();
+  function partsHtml() { // what is around the grid (chips above; pages / label / arrows below)
+    const n = per(), vis = visible(), cams = ordered();
     const pages = n === 1 ? cams.length : n === 4 ? secs().length : Math.max(1, Math.ceil(cams.length / n));
     const cur = n === 1 ? Math.max(0, cams.findIndex((c) => c.id === (vis[0] || {}).id)) : st.page;
     const nav = pages > 1 && !full() ? `<div class="nfcw-pages"><button type="button" class="btn sm" data-cwpage="-1" aria-label="${H(T("السابق", "Previous"))}">›</button><span class="small">${cur + 1} / ${pages}</span><button type="button" class="btn sm" data-cwpage="1" aria-label="${H(T("التالي", "Next"))}">‹</button></div>` : "";
     const chips = n === 1 && !full() ? `<div class="nfcw-chips">${cams.map((c) => `<button type="button" class="chip notr ${vis[0] && vis[0].id === c.id ? "on" : ""}" data-cwfocus="${H(c.id)}">${H(c.name || c.no)}</button>`).join("")}</div>` : "";
     const lab = full() ? `<div class="nfcw-plabel notr" dir="auto">${H(labelText())}${pages > 1 ? ` <span aria-hidden="true">⇆</span>` : ""}</div>` : "";
     const arrows = full() && n !== 1 ? navHtml() : ""; // one camera has its arrows on the picture itself
-    return `${chips}<div class="nfcw-grid ${n === 1 ? "one" : ""}">${vis.map(tileHtml).join("")}</div>${nav}${lab}${arrows}`;
+    return { pre: chips, post: nav + lab + arrows };
+  }
+  function bodyHtml() {
+    if (!st.cams) return `<div class="muted small">${H(st.err || T("بنجيب الكاميرات…", "Loading cameras…"))}</div>`;
+    if (!st.cams.length) return `<div class="banner info"><span>${H(T("مفيش كاميرات في الـ Team لسه.", "No cameras in the Team yet."))}</span></div>`;
+    const n = per();
+    if (n === 4 && !full()) return secsHtml();
+    const pp = partsHtml();
+    return `${pp.pre}<div class="nfcw-grid ${n === 1 ? "one" : ""}">${visible().map(tileHtml).join("")}</div>${pp.post}`;
+  }
+  // which cameras sit in which boxes right now — while this stays the same, paint() leaves the boxes (and their videos) alone
+  function sigOf() {
+    if (!st.cams || !st.cams.length) return "";
+    const tag = (c) => c.id + (c.online ? "" : "!") + ":" + (c.name || ""), lang = EN() ? "en" : "ar";
+    if (per() === 4 && !full()) return "S|" + lang + "|" + secs().map((s) => s.id + "=" + s.cams.map(tag).join(",")).join(";");
+    return (per() === 1 ? "1" : "G") + "|" + lang + "|" + visible().map(tag).join(",");
+  }
+  const ovHtml = (c) => (per() === 1 && c.online ? qHtml(c) : "");
+  function refreshTile(c) { // the buttons over one camera (quality, zoom, arrows) without touching its picture
+    const t = tileOf(c.id); if (!t) return; const ov = ovHtml(c);
+    if (t.__ov !== ov) { const nm = t.querySelector(".nfcw-name"); while (nm && nm.nextSibling) nm.nextSibling.remove(); if (nm) nm.insertAdjacentHTML("afterend", ov); t.__ov = ov; }
+    if (!P.has(c.id)) { const fr = LS.get(frameKey(c.id)), bx = t.querySelector(".nfcw-box"); if (fr && bx) bx.style.backgroundImage = `url('${fr}')`; }
   }
   const sizeBtns = () => SIZES().map((n) => `<button type="button" class="chip ${per() === n ? "on" : ""}" data-cwn="${n}" aria-label="${H(n === 1 ? T("كاميرا واحدة", "1 camera") : n === 4 ? T("الأقسام", "Departments") : T(`${n} كاميرات`, `${n} cameras`))}">${n === 1 ? H(T("واحدة", "1")) : n === 4 ? H(T("أقسام", "Depts")) : n}</button>`).join("");
   const landLabel = () => (phone() ? "⟲ " + T("بالعرض", "Landscape") : "⛶ " + T("ملء الشاشة", "Full screen"));
@@ -6863,16 +6970,30 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const v0 = visible(), oneId = per() === 1 && v0[0] ? v0[0].id : "";
     if (st.q.cam !== oneId) { const was = st.q.cam && P.get(st.q.cam); if (was && was.q === 1) stopOne(st.q.cam); st.q.max = false; st.q.cam = oneId; }
     if (Z.id !== oneId) zReset(oneId);
-    const keep = new Map(); P.forEach((p, id) => { if (p.v && p.v.parentNode) { keep.set(id, p.v); p.v.parentNode.removeChild(p.v); } });
-    b.style.transform = ""; b.innerHTML = bodyHtml();
-    const l = document.getElementById("nfcwsizes"); if (l) l.innerHTML = sizeBtns();
+    const sig = sigOf(), grid0 = b.querySelector(":scope > .nfcw-grid");
     const vis = visible(), ids = new Set(vis.map((c) => c.id));
+    let rebuilt = false;
+    if (sig && b.__sig === sig && (sig[0] === "S" ? !!b.querySelector(":scope > .nfcw-sec") : !!grid0)) {
+      // the same cameras in the same boxes: nothing is torn out (a video that leaves the page for an instant freezes on the iPhone, and a finger on it loses its zoom)
+      if (sig[0] !== "S") {
+        [...b.children].forEach((el) => { if (el !== grid0) el.remove(); });
+        const pp = partsHtml(); grid0.insertAdjacentHTML("beforebegin", pp.pre); grid0.insertAdjacentHTML("afterend", pp.post);
+        vis.forEach(refreshTile);
+      }
+    } else {
+      rebuilt = true;
+      const keep = new Map(); P.forEach((p, id) => { if (p.v && p.v.parentNode) { keep.set(id, p.v); p.v.parentNode.removeChild(p.v); } });
+      b.style.transform = ""; b.innerHTML = bodyHtml(); b.__sig = sig;
+      [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
+      keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcw-box").appendChild(v); t.classList.add("live"); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
+      vis.forEach((c) => { const t = tileOf(c.id); if (t) t.__ov = ovHtml(c); });
+    }
     [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
-    keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcw-box").appendChild(v); t.classList.add("live"); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
+    const l = document.getElementById("nfcwsizes"); if (l) { const sb = sizeBtns(); if (l.__h !== sb) { l.__h = sb; l.innerHTML = sb; } }
     applyMode(); layout(); applyZ();
     if (oneId) loadQ(v0[0]);
-    if (lazy()) observe();
-    else { if (IO) { IO.disconnect(); IO = null; } if (onPage() && !document.hidden && !st.idle && !st.arr) vis.forEach((c, i) => { if (!P.has(c.id)) setTimeout(() => startOne(c), i * 250); }); }
+    if (lazy()) { if (rebuilt || !IO) observe(); else startSeen(); }
+    else { if (IO) { IO.disconnect(); IO = null; } if (onPage() && !document.hidden && !st.idle && !st.arr) vis.forEach((c, i) => { if (!P.has(c.id) && !RT.has(c.id)) setTimeout(() => startOne(c), i * 250); }); }
     foot();
   }
   async function loadCams(force) {
@@ -6890,7 +7011,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     finally { st.loading = false; }
     paint();
   }
-  function poke() { clearTimeout(st.idleT); if (!onPage()) return; st.idleT = setTimeout(() => { if (!onPage() || !P.size) return; st.idle = true; stopAll(); foot(); }, IDLE_MS); }
+  function poke() {
+    clearTimeout(st.idleT); if (!onPage()) return;
+    if (st.idle) { st.idle = false; TRIES.clear(); setTimeout(() => { if (onPage()) paint(); }, 0); } // any touch brings the live back (no need to find the button)
+    st.idleT = setTimeout(() => { if (!onPage() || !P.size) return; st.idle = true; stopAll(); foot(); }, IDLE_MS);
+  }
+  // the camera list (who is online, new cameras) used to refresh as a side effect of the app redrawing this page; now on its own quiet timer
+  setInterval(() => { if (st.here && onPage() && !document.hidden && !st.idle && !st.loading && !st.arr && !G && Date.now() - st.camsAt > CFG.camsEvery) loadCams(true); }, 20000);
 
   /* ---- «ترتيب»: which camera in which department (owner) ---- */
   function arrRows() {
@@ -6997,6 +7124,9 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .nfcw-tile{border-radius:10px;overflow:hidden;background:#000;position:relative;cursor:pointer;min-width:0;min-height:0}
 .nfcw-box{position:relative;aspect-ratio:16/9;background:#111 center/cover no-repeat;display:flex;align-items:center;justify-content:center}
 .nfcw-box video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent;will-change:transform}
+.nfcw-tile.wait .nfcw-box::after{content:"";position:absolute;z-index:3;left:0;right:0;top:0;height:3px;pointer-events:none;background:linear-gradient(90deg,transparent,#f59e0b,transparent) no-repeat;background-size:45% 100%;animation:nfcwwait 1.1s linear infinite}
+@keyframes nfcwwait{from{background-position:-80% 0}to{background-position:180% 0}}
+@media (prefers-reduced-motion:reduce){.nfcw-tile.wait .nfcw-box::after{animation:none;background:#f59e0b;opacity:.75}}
 .nfcw-msg{position:relative;z-index:2;color:#eee;font-size:11px;text-align:center;padding:4px 8px;background:rgba(0,0,0,.45);border-radius:8px;margin:6px}
 .nfcw-name{position:absolute;z-index:3;inset-inline-start:6px;bottom:4px;display:flex;align-items:center;gap:5px;color:#fff;font-size:11px;text-shadow:0 1px 2px #000;max-width:calc(100% - 12px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .nfcw-name .dot{width:7px;height:7px;border-radius:50%;background:#999;flex:0 0 auto}.nfcw-name .dot.on{background:#f59e0b}.nfcw-tile.live .nfcw-name .dot{background:#e11d48;box-shadow:0 0 0 3px rgba(225,29,72,.25)}
@@ -7041,15 +7171,24 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   if (typeof EXTRA_TITLES !== "undefined") EXTRA_TITLES.cams = () => ({ title: T("الكاميرات", "Cameras"), sub: T("لايف من سحابة هيك فيجن — للمالك بس", "Live through the Hikvision cloud — owner only") });
   if (typeof VIEW_TITLES !== "undefined") VIEW_TITLES.cams = VIEW_TITLES.cams || "الكاميرات لايف";
   try { if (window.__nfCamGrid && window.__nfCamGrid.stopAll) window.__nfCamGrid.stopAll(); } catch (e) {}
+  // The app redraws the open page every time anything changes anywhere, and skips the redraw when the page text is the same as last time.
+  // So this text is a fixed skeleton — everything inside it is filled in by paint() — and the app leaves the cameras alone while they play.
+  function mount() {
+    const r = rootEl(); if (!r) return;
+    if (r === st.root && st.here) return;
+    st.root = r;
+    if (phone() && LAND.matches) st.mode = "full";
+    if (!st.here) { st.here = true; st.idle = false; TRIES.clear(); poke(); }
+    applyMode(); loadCams(false); arrPaint(); if (full()) showUi();
+  }
   EXTRA_VIEWS.cams = () => {
     if (!can()) return `<div class="card"><p class="small ink2">${H(T("الصفحة دي للمالك بس.", "This page is for the owner only."))}</p></div>`;
-    if (phone() && LAND.matches) st.mode = "full";
-    setTimeout(() => { if (!st.here) { st.here = true; st.idle = false; TRIES.clear(); poke(); } loadCams(false); arrPaint(); if (full()) showUi(); }, 0);
-    return `<div class="stack nfcw-root ${!full() ? "" : st.mode === "rot" ? "full rot" : "full"}" id="nfcwroot"><div class="nfcw-bar">
+    setTimeout(mount, 0); // costs nothing when this same page is already up (see mount)
+    return `<div class="stack nfcw-root" id="nfcwroot"><div class="nfcw-bar">
       <button type="button" class="btn sm nfcw-exit" data-cwexit>${H(T("→ رجوع", "← Back"))}</button>
-      <div class="chips" id="nfcwsizes">${sizeBtns()}</div>
+      <div class="chips" id="nfcwsizes"></div>
       <span class="nfcw-tools"><button type="button" class="btn sm" data-cwarr>${H(T("ترتيب", "Arrange"))}</button><button type="button" class="btn sm" data-cwland>${H(landLabel())}</button><button type="button" class="btn sm" data-cwrefresh aria-label="${H(T("تحديث", "Refresh"))}">${typeof icon === "function" ? icon("refresh") : "↻"}</button></span></div>
-      <div id="nfcwbody">${bodyHtml()}</div><div id="nfcwfoot"></div><div id="nfcwarrbox"></div></div>`;
+      <div id="nfcwbody"><div class="muted small">${H(T("بنجيب الكاميرات…", "Loading cameras…"))}</div></div><div id="nfcwfoot"></div><div id="nfcwarrbox"></div></div>`;
   };
 
   /* ---- events ---- */
@@ -7100,15 +7239,16 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       tapLive(ev); // one tap → as big as possible / buttons; two taps → zoom
     }
   }, true);
-  document.addEventListener("touchstart", () => { if (onPage()) poke(); }, { passive: true });
-  window.addEventListener("hashchange", () => { if (!onPage()) { st.here = false; st.q.max = false; if (st.arr) { st.arr = null; } stopAll(); if (IO) { IO.disconnect(); IO = null; } clearTimeout(st.idleT); if (st.mode !== "off") exitFull(); } });
+  document.addEventListener("touchstart", (ev) => { if (!onPage()) return; if (st.idle && !(ev.target && ev.target.closest && ev.target.closest("#nfcwroot"))) return; poke(); }, { passive: true });
+  ["touchend", "click"].forEach((k) => document.addEventListener(k, () => { if (onPage() && P.size) unblock(); }, { capture: true, passive: true }));
+  window.addEventListener("hashchange", () => { if (!onPage()) { st.here = false; st.root = null; st.q.max = false; if (st.arr) { st.arr = null; } stopAll(); if (IO) { IO.disconnect(); IO = null; } clearTimeout(st.idleT); if (st.mode !== "off") exitFull(); } });
   function onVis() {
     if (document.hidden) { st.q.max = false; stopAll(); return; }
     if (onPage() && can() && document.getElementById("nfcwbody")) { st.idle = false; TRIES.clear(); poke(); paint(); }
   }
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("pagehide", () => stopAll());
-  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy }; // for tests
+  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy, CFG, TEL, RT, TRIES, watch, mount, sigOf, telSend, startOne, stopOne, unblock, loadCams, view: () => EXTRA_VIEWS.cams() }; // for tests
 })();;
 (function(){if(window.__NF_A1136__)return;window.__NF_A1136__=1;const r="nf.rfb.back",y=12e4,i={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,n)=>{try{n==null?localStorage.removeItem(t):localStorage.setItem(t,n)}catch{}}},c=()=>{try{return sessionStorage.getItem("nf.ninety.co")||""}catch{return""}},s=t=>{try{typeof ninetySet=="function"?ninetySet(t):sessionStorage.setItem("nf.ninety.co",t)}catch{}},a=t=>["","ninety","dashboard"].includes(String(t||"").replace(/^#\/?/,"").split("/")[0])||String(t||"").replace(/^#\/?/,"")==="";function l(){const t=String(location.hash||"");i.set(r,JSON.stringify({h:t,co:c(),at:Date.now()}))}try{window.addEventListener("click",t=>{t.target&&t.target.closest&&t.target.closest("button.nfrfb")&&l()},!0)}catch{}let e=null;try{const t=JSON.parse(i.get(r)||"null");t&&Date.now()-(+t.at||0)<y&&(e=t)}catch{e=null}if(i.set(r,null),window.nfRefreshStay={remember:l,last:()=>e},!e)return;e.co&&!c()&&s(e.co);const o=String(e.h||""),f=()=>{try{const t=String(location.hash||"");if(o&&o!=="#/ninety"&&t!==o&&a(t)){const n=o.replace(/^#\/?/,"").split("/");typeof S=="object"&&S&&(S.route={view:n[0]||"dashboard",id:n[1]||null,sub:n[2]||null}),location.hash=o}e.co&&!c()&&s(e.co),typeof render=="function"&&render(!0)}catch{}};let u=0;const h=()=>{u++;try{e.co&&!c()&&s(e.co);const t=String(location.hash||"");o&&t!==o&&a(t)&&o!=="#/ninety"&&f()}catch{}u<12&&setTimeout(h,500)};setTimeout(h,0);try{document.addEventListener("nf:login",()=>setTimeout(f,60),{once:!0})}catch{}})();;
 (function(){if(window.__NF_A1137__||(window.__NF_A1137__=1,typeof isStudioz=="function"&&isStudioz()||typeof isConstruction=="function"&&isConstruction()||typeof isStuSys=="function"&&isStuSys())||typeof vMe!="function")return;const w=()=>typeof I18N!="undefined"&&I18N.lang==="en",i=(t,e)=>w()?e:t,o=t=>typeof esc=="function"?esc(String(t==null?"":t)):String(t==null?"":t),c={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,e)=>{try{e==null?localStorage.removeItem(t):localStorage.setItem(t,e)}catch{}}},l=()=>{try{return/Android/i.test(navigator.userAgent||"")}catch{return!1}},u=()=>{try{return!!(S.session&&S.session.workerId)&&!(typeof isAdmin=="function"&&isAdmin())}catch{return!1}},s=()=>"nf.pt.done."+(S.session&&S.session.workerId||""),n={checked:!1,busy:!1,email:"",justSaved:!1,err:""},m=async t=>{if(!S.sb||!S.sb.functions)throw new Error("offline");const e=await S.sb.functions.invoke("play-testers",{body:t});if(e.error){let r="error";try{r=(await e.error.context.json()).error||r}catch{}throw new Error(r)}return e.data||{}},f=()=>{try{S.route&&S.route.view==="me"&&typeof rerender=="function"&&rerender()}catch{}};async function y(){if(!(n.checked||n.busy||!u()||!l()||c.get(s()))){n.busy=!0;try{const t=await m({action:"get"});n.checked=!0,t&&t.email?(c.set(s(),"1"),n.email=t.email):f()}catch{}finally{n.busy=!1}}}function g(){return!u()||!l()?"":n.justSaved?`<div class="card ptc ok" id="ptc"><div class="ptc-h">\u2713 ${o(i("\u0627\u062A\u0633\u062C\u0651\u0644","Saved"))}</div><div class="tiny muted">${o(i(`${n.email} \u2014 \u0647\u064A\u0648\u0635\u0644\u0643 \u0644\u064A\u0646\u0643 \u0645\u0646 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A \u062A\u0646\u0632\u0651\u0644 \u0645\u0646\u0647 \u0627\u0644\u0623\u0628\u0644\u0643\u064A\u0634\u0646.`,`${n.email} \u2014 you will get a Google Play link to install the app.`))}</div></div>`:c.get(s())||!n.checked?"":`<div class="card ptc" id="ptc"><div class="ptc-h">${o(i("\u0623\u0628\u0644\u0643\u064A\u0634\u0646 Ninety \u0639\u0644\u0649 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A","Ninety app on Google Play"))}</div>
