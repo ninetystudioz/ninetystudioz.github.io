@@ -6333,6 +6333,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.33 (المصنع بس) — «الكاميرات» نسخة 4 (محمود 13/11 06:16–06:18: «زرار HD … أو أعلّي على كاميرا وأشوف أكبر»، «في رزليوشن أكتر من HD؟»):
+   - لما تفتح كاميرا واحدة: «عادي / أعلى جودة» فوق الصورة. «أعلى جودة» = الستريم الرئيسي (اللي بيتسجل) — كاميرا المدخل 3200×1800.
+     الكاميرات اللي تسجيلها H.265 المتصفح مابيعرضهاش بالجودة دي، فالزرار بيقول كده ومابيشغّلش. بيرجع «عادي» لوحده لما تغيّر الكاميرا أو تخرج أو الأبليكيشن يروح الخلفية.
+     (الستريم الصغير مابيطلعش 1280×720 — الريكوردر رفضه، فمفيش HD وسط.)
+   - تكبير: بصباعين (pinch) + سحب بصباع واحد وانت مكبّر، دبل تاب يكبّر على المكان ده (ودبل تاب تاني يرجّع)، وعلى الكمبيوتر عجلة الماوس + سحب.
+     تاب واحد لسه بيفتح الشاشة الكاملة زي الأول. زرار «1×» يرجّع التكبير.
+   الباقي زي v11.32: */
 /* v11.32 (المصنع بس) — «الكاميرات» نسخة 3 (محمود 13/11 06:04–06:06):
    - الكاميرات بتتوزّع لوحدها على المساحة الفاضية كلها (من غير فراغ تحت ومن غير سكرول) — الحجم بيتحسب حسب عدد الكاميرات والشاشة.
    - العدد: كاميرا واحدة / 4 / 9 / 16 / 32 (32 على الكمبيوتر بس — الموبايل مابيستحملش 32 فيديو مع بعض). بيتفتكر.
@@ -6355,7 +6362,9 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const IDLE_MS = 10 * 60 * 1000;
   const LS = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
   const SIZES = () => (phone() ? [1, 4, 9, 16] : [1, 4, 9, 16, 32]);
-  const st = { here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false };
+  const st = { here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
+    q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null };
+  const Z = { id: "", s: 1, x: 0, y: 0, end: 0 }; // zoom of the single camera (local px of its box)
   const P = new Map(), TRIES = new Map(); // camId → { v, hls } / automatic restarts in a row
   const per = () => { const s = SIZES(); return s.includes(st.n) ? st.n : s.filter((x) => x <= st.n).pop() || 4; };
 
@@ -6387,6 +6396,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (/EVZ60019|Encryption/i.test(e)) return T("تشفير الفيديو شغال على الريكوردر", "Video encryption is on for the recorder");
     if (/no_token|no_keys/.test(e)) return T("ربط هيك فيجن مش شغال", "The Hikvision link is not working");
     if (/offline|EVZ2000[37]|EVZ60001/i.test(e)) return T("الكاميرا مش أونلاين", "Camera offline");
+    if (/main_not_h264/.test(e)) return T("الكاميرا دي بتسجّل H.265 — المتصفح مابيعرضهاش بأعلى جودة", "This camera records in H.265 — the browser can't show it at top quality");
     return T("اللايف مش راضي يشتغل", "Live would not start");
   };
   async function startOne(cam) {
@@ -6394,23 +6404,26 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (!tileOf(cam.id)) return;
     const v = document.createElement("video");
     v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.crossOrigin = "anonymous";
-    const p = { v, hls: null }; P.set(cam.id, p);
+    const q = per() === 1 && st.q.max && st.q.cam === cam.id ? 1 : 2; // 1 = main stream («أعلى جودة»)
+    const p = { v, hls: null, q }; P.set(cam.id, p);
     setMsg(cam.id, LS.get(frameKey(cam.id)) ? "" : T("بنفتح اللايف…", "Opening live…"));
     let r = null;
-    try { const x = await S.sb.functions.invoke("hik", { body: { action: "live", id: cam.id, serial: cam.serial, protocol: 2, quality: 2 } }); r = x && x.data; } catch (e) { r = null; }
+    try { const x = await S.sb.functions.invoke("hik", { body: { action: "live", id: cam.id, serial: cam.serial, protocol: 2, quality: q } }); r = x && x.data; } catch (e) { r = null; }
     if (P.get(cam.id) !== p) return;
+    if (q === 1 && (!r || !r.ok || !r.url)) { P.delete(cam.id); backToSd(cam, r); return; }
     if (!r || !r.ok || !r.url) { P.delete(cam.id); setMsg(cam.id, errText(r || { err: "network" })); return; }
     const url = String(r.url).replace(/^http:\/\//i, "https://");
     const tile = tileOf(cam.id); if (!tile) { P.delete(cam.id); return; }
-    tile.querySelector(".nfcw-box").appendChild(v);
+    tile.querySelector(".nfcw-box").appendChild(v); applyZ();
     const fail = () => {
       if (P.get(cam.id) !== p) return;
       stopOne(cam.id, true);
+      if (p.q === 1) { backToSd(cam, { err: "player" }); return; }
       const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
       if (n <= 2 && onPage() && !st.idle && !document.hidden) setTimeout(() => { if (!P.has(cam.id) && visible().some((c) => c.id === cam.id)) startOne(cam); }, 1500);
       else setMsg(cam.id, T("اللايف وقف — دوس على الكاميرا تاني", "Live stopped — tap the camera again"));
     };
-    v.addEventListener("playing", () => { TRIES.set(cam.id, 0); setMsg(cam.id, ""); const tl = tileOf(cam.id); if (tl) tl.classList.add("live"); });
+    v.addEventListener("playing", () => { TRIES.set(cam.id, 0); setMsg(cam.id, ""); const tl = tileOf(cam.id); if (tl) tl.classList.add("live"); if (p.q === 1) { note(qLine(cam), 6000); foot(); } });
     try {
       const native = v.canPlayType("application/vnd.apple.mpegurl");
       if (native && (/iPhone|iPad|iPod/.test(navigator.userAgent) || !(window.Hls && window.Hls.isSupported && window.Hls.isSupported()))) { v.src = url; v.addEventListener("error", fail, { once: true }); }
@@ -6418,12 +6431,120 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
         const Hls = await loadHls();
         if (P.get(cam.id) !== p) return;
         if (!Hls.isSupported()) { if (native) { v.src = url; v.addEventListener("error", fail, { once: true }); } else { stopOne(cam.id, false); setMsg(cam.id, T("المتصفح ده مش بيشغّل اللايف", "This browser can't play live")); return; } }
-        else { const h = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 8 }); p.hls = h; h.on(Hls.Events.ERROR, (_, d) => { if (d && d.fatal) fail(); }); h.loadSource(url); h.attachMedia(v); }
+        else { const h = new Hls({ liveSyncDurationCount: 2, maxBufferLength: q === 1 ? 6 : 8 }); p.hls = h; h.on(Hls.Events.ERROR, (_, d) => { if (d && d.fatal) fail(); }); h.loadSource(url); h.attachMedia(v); }
       }
       const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {});
     } catch (e) { fail(); return; }
     if (!st.snapT) st.snapT = setInterval(() => P.forEach((_, id) => saveFrame(id)), 10000);
     foot();
+  }
+
+  /* ---- v11.33: quality (عادي / أعلى جودة) for the one open camera ---- */
+  const qInfo = (c) => {
+    if (!c) return null; if (st.qi[c.id]) return st.qi[c.id];
+    try { const j = JSON.parse(LS.get("nf_camq_" + c.id) || "null"); if (j && j.main && Date.now() - (j.at || 0) < 12 * 3600e3) return (st.qi[c.id] = j); } catch (e) {}
+    return null;
+  };
+  async function loadQ(c) {
+    if (!c || !c.no || qInfo(c) || st.qBusy[c.id] || !can() || Date.now() - (st.qFail[c.id] || 0) < 60000) return; st.qBusy[c.id] = 1; st.qFail[c.id] = Date.now();
+    try {
+      const x = await S.sb.functions.invoke("hik", { body: { action: "qinfo", ch: Number(c.no) } }); const r = x && x.data;
+      if (r && r.ok && r.main && r.main.codec) { const j = { main: r.main.codec, w: r.main.w, h: r.main.h, sw: r.sub ? r.sub.w : null, sh: r.sub ? r.sub.h : null, at: Date.now() }; st.qi[c.id] = j; LS.set("nf_camq_" + c.id, JSON.stringify(j)); delete st.qFail[c.id]; qPaint(); }
+    } catch (e) {} finally { delete st.qBusy[c.id]; }
+  }
+  const maxOk = (c) => { const i = qInfo(c); return !i || i.main === "H.264"; };
+  const qLine = (c) => { const i = qInfo(c); const res = i && i.w ? ` ${i.w}×${i.h}` : ""; return T(`أعلى جودة${res} · حوالي 40 ميجا في الدقيقة من شريحة المصنع`, `Top quality${res} · about 40 MB a minute of the factory SIM`); };
+  function note(msg, ms) {
+    const c = visible()[0]; const t = c && tileOf(c.id); const n = t && t.querySelector(".nfcw-qn"); if (!n) return;
+    n.textContent = msg || ""; n.style.display = msg ? "" : "none"; clearTimeout(st.noteT); if (msg && ms) st.noteT = setTimeout(() => { n.style.display = "none"; }, ms);
+  }
+  function backToSd(cam, r) { // top quality could not start → normal stream again, and say why
+    st.q.max = false; TRIES.set(cam.id, 0);
+    if (r && /main_not_h264/.test(String(r.err || ""))) { const i = qInfo(cam) || {}; i.main = "H.265"; i.at = Date.now(); st.qi[cam.id] = i; LS.set("nf_camq_" + cam.id, JSON.stringify(i)); }
+    qPaint();
+    note(r && /main_not_h264/.test(String(r.err || "")) ? errText(r) : T("أعلى جودة مافتحتش (ممكن النت ضعيف) — رجعنا للعادي", "Top quality would not open (the connection may be weak) — back to normal"), 7000);
+    if (onPage() && !st.idle && !document.hidden) setTimeout(() => { if (!P.has(cam.id) && visible().some((c) => c.id === cam.id)) startOne(cam); }, 200);
+  }
+  function qHtml(c) {
+    const mx = st.q.max && st.q.cam === c.id;
+    return `<div class="nfcw-q" role="group" aria-label="${H(T("الجودة", "Quality"))}"><button type="button" class="${mx ? "" : "on"}" data-cwq="sd">${H(T("عادي", "Normal"))}</button><button type="button" class="${mx ? "on" : ""} ${maxOk(c) ? "" : "na"}" data-cwq="max">${H(T("أعلى جودة", "Top quality"))}</button></div>
+      <button type="button" class="nfcw-zr" data-cwzr style="display:none" aria-label="${H(T("رجّع التكبير", "Reset zoom"))}">1×</button><div class="nfcw-qn" style="display:none"></div>`;
+  }
+  function qPaint() {
+    const c = visible()[0]; if (per() !== 1 || !c) return; const t = tileOf(c.id); const b = t && t.querySelector(".nfcw-q"); if (!b) return;
+    const mx = st.q.max && st.q.cam === c.id;
+    b.querySelector('[data-cwq="sd"]').classList.toggle("on", !mx);
+    const m = b.querySelector('[data-cwq="max"]'); m.classList.toggle("on", mx); m.classList.toggle("na", !maxOk(c));
+  }
+  function setQ(max) {
+    const c = visible()[0]; if (per() !== 1 || !c) return;
+    if (max && !maxOk(c)) { note(T("الكاميرا دي بتسجّل H.265 — المتصفح مابيعرضهاش بأعلى جودة. لو عايزها، تسجيلها لازم يتحوّل H.264 (الهارد ممكن يشيل أيام أقل).", "This camera records in H.265 — the browser can't show it at top quality. For that its recording must switch to H.264 (the disk may hold fewer days)."), 9000); return; }
+    if (!!max === (st.q.max && st.q.cam === c.id)) return;
+    st.q.cam = c.id; st.q.max = !!max; TRIES.set(c.id, 0);
+    if (P.has(c.id)) stopOne(c.id);
+    paint();
+    if (max) note(T("بنفتح أعلى جودة…", "Opening top quality…"), 0);
+  }
+  /* ---- v11.33: zoom (pinch / drag / double tap / mouse wheel) on the one open camera ---- */
+  const one = () => { if (per() !== 1) return null; const c = visible()[0]; const p = c && P.get(c.id); const t = c && tileOf(c.id); const el = t && t.querySelector(".nfcw-box"); return p && el ? { id: c.id, el, v: p.v } : null; };
+  function local(el, px, py) { // screen point → point inside the box (the iPhone «rot» view is turned 90° clockwise)
+    const R = el.getBoundingClientRect();
+    return st.mode === "rot" ? { x: py - R.top, y: R.right - px } : { x: px - R.left, y: py - R.top };
+  }
+  function zReset(id) { Z.id = id || ""; Z.s = 1; Z.x = 0; Z.y = 0; }
+  function applyZ() {
+    const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
+    const W = b.el.offsetWidth, Hh = b.el.offsetHeight;
+    Z.s = Math.min(6, Math.max(1, Z.s)); if (Z.s < 1.02) { Z.s = 1; Z.x = 0; Z.y = 0; }
+    Z.x = Math.min(0, Math.max(W - W * Z.s, Z.x)); Z.y = Math.min(0, Math.max(Hh - Hh * Z.s, Z.y));
+    b.v.style.transformOrigin = "0 0"; b.v.style.transform = Z.s > 1 ? `translate(${Z.x}px,${Z.y}px) scale(${Z.s})` : "";
+    const zr = b.el.parentNode && b.el.parentNode.querySelector("[data-cwzr]"); if (zr) { zr.style.display = Z.s > 1 ? "" : "none"; zr.textContent = Z.s > 1 ? `${Z.s.toFixed(1).replace(/\.0$/, "")}× ↺` : "1×"; }
+  }
+  function zoomAt(lx, ly, s) { const cx = (lx - Z.x) / Z.s, cy = (ly - Z.y) / Z.s; Z.s = s; Z.x = lx - s * cx; Z.y = ly - s * cy; }
+  let G = null, tapT = null, tapAt = 0;
+  const pt = (b, t) => local(b.el, t.clientX, t.clientY);
+  document.addEventListener("touchstart", (e) => {
+    if (!onPage()) return; const b = one(); if (!b || !b.el.contains(e.target) || (e.target.closest && e.target.closest("[data-cwq],[data-cwzr]"))) return;
+    if (Z.id !== b.id) zReset(b.id);
+    if (e.touches.length >= 2) { const a = pt(b, e.touches[0]), c = pt(b, e.touches[1]); G = { k: "pinch", d: Math.hypot(a.x - c.x, a.y - c.y) || 1, s: Z.s, cx: (a.x + c.x) / 2, cy: (a.y + c.y) / 2, x: Z.x, y: Z.y }; e.preventDefault(); }
+    else if (e.touches.length === 1 && Z.s > 1) { const a = pt(b, e.touches[0]); G = { k: "pan", px: a.x, py: a.y, x: Z.x, y: Z.y, moved: false }; }
+  }, { passive: false });
+  document.addEventListener("touchmove", (e) => {
+    if (!G) return; const b = one(); if (!b) { G = null; return; }
+    if (G.k === "pinch" && e.touches.length >= 2) {
+      e.preventDefault(); const a = pt(b, e.touches[0]), c = pt(b, e.touches[1]);
+      const s = Math.min(6, Math.max(1, (G.s * Math.hypot(a.x - c.x, a.y - c.y)) / G.d)), ccx = (G.cx - G.x) / G.s, ccy = (G.cy - G.y) / G.s;
+      Z.s = s; Z.x = (a.x + c.x) / 2 - s * ccx; Z.y = (a.y + c.y) / 2 - s * ccy; applyZ();
+    } else if (G.k === "pan" && e.touches.length === 1) {
+      e.preventDefault(); const a = pt(b, e.touches[0]); if (Math.abs(a.x - G.px) + Math.abs(a.y - G.py) > 6) G.moved = true;
+      Z.x = G.x + (a.x - G.px); Z.y = G.y + (a.y - G.py); applyZ();
+    }
+  }, { passive: false });
+  document.addEventListener("touchend", (e) => {
+    if (!G) return; const b = one();
+    if (G.k === "pinch" || G.moved) Z.end = Date.now();
+    if (b && e.touches.length === 1 && Z.s > 1) { const a = pt(b, e.touches[0]); G = { k: "pan", px: a.x, py: a.y, x: Z.x, y: Z.y, moved: true }; return; }
+    if (!e.touches.length) G = null;
+  }, { passive: true });
+  document.addEventListener("wheel", (e) => {
+    if (!onPage()) return; const b = one(); if (!b || !b.el.contains(e.target)) return;
+    e.preventDefault(); if (Z.id !== b.id) zReset(b.id);
+    const a = local(b.el, e.clientX, e.clientY); zoomAt(a.x, a.y, Math.min(6, Math.max(1, Z.s * (e.deltaY < 0 ? 1.25 : 0.8)))); applyZ(); poke();
+  }, { passive: false });
+  let M = null; // mouse drag while zoomed (computer)
+  document.addEventListener("mousedown", (e) => { if (!onPage() || e.button !== 0) return; const b = one(); if (!b || Z.s <= 1 || !b.el.contains(e.target) || (e.target.closest && e.target.closest("[data-cwq],[data-cwzr]"))) return; const a = local(b.el, e.clientX, e.clientY); M = { px: a.x, py: a.y, x: Z.x, y: Z.y, moved: false }; e.preventDefault(); });
+  document.addEventListener("mousemove", (e) => { if (!M) return; const b = one(); if (!b) { M = null; return; } const a = local(b.el, e.clientX, e.clientY); if (Math.abs(a.x - M.px) + Math.abs(a.y - M.py) > 4) M.moved = true; Z.x = M.x + (a.x - M.px); Z.y = M.y + (a.y - M.py); applyZ(); });
+  document.addEventListener("mouseup", () => { if (M && M.moved) Z.end = Date.now(); M = null; });
+  function tapLive(ev) { // one camera, live: one tap → full screen (as before), two taps → zoom in there / back out
+    if (Date.now() - Z.end < 350) return;
+    const now = Date.now();
+    if (tapT && now - tapAt < 330) {
+      clearTimeout(tapT); tapT = null; const b = one(); if (!b) return; if (Z.id !== b.id) zReset(b.id);
+      if (Z.s > 1) zReset(b.id); else { const a = local(b.el, ev.clientX, ev.clientY); zoomAt(a.x, a.y, 2.5); }
+      applyZ(); return;
+    }
+    tapAt = now; clearTimeout(tapT);
+    tapT = setTimeout(() => { tapT = null; if (st.mode === "off" && Z.s <= 1) enterFull(); }, 330);
   }
 
   /* ---- which cameras + smart sizing ---- */
@@ -6471,7 +6592,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const fr = LS.get(frameKey(c.id));
     return `<div class="nfcw-tile ${P.has(c.id) ? "live" : ""}" data-cwcam="${H(c.id)}"><div class="nfcw-box" ${fr ? `style="background-image:url('${H(fr)}')"` : ""}>
       <div class="nfcw-msg" ${c.online ? 'style="display:none"' : ""}>${c.online ? "" : H(T("الكاميرا مش أونلاين", "Camera offline"))}</div></div>
-      <div class="nfcw-name"><span class="dot ${c.online ? "on" : ""}"></span><span class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</span></div></div>`;
+      <div class="nfcw-name"><span class="dot ${c.online ? "on" : ""}"></span><span class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</span></div>${per() === 1 && c.online ? qHtml(c) : ""}</div>`;
   }
   function bodyHtml() {
     if (!st.cams) return `<div class="muted small">${H(st.err || T("بنجيب الكاميرات…", "Loading cameras…"))}</div>`;
@@ -6481,26 +6602,31 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const cur = n === 1 ? Math.max(0, cams.findIndex((c) => c.id === (vis[0] || {}).id)) : st.page;
     const nav = pages > 1 ? `<div class="nfcw-pages"><button type="button" class="btn sm" data-cwpage="-1" aria-label="${H(T("السابق", "Previous"))}">›</button><span class="small">${cur + 1} / ${pages}</span><button type="button" class="btn sm" data-cwpage="1" aria-label="${H(T("التالي", "Next"))}">‹</button></div>` : "";
     const chips = n === 1 ? `<div class="nfcw-chips">${cams.map((c) => `<button type="button" class="chip notr ${vis[0] && vis[0].id === c.id ? "on" : ""}" data-cwfocus="${H(c.id)}">${H(c.name || c.no)}</button>`).join("")}</div>` : "";
-    return `${chips}<div class="nfcw-grid">${vis.map(tileHtml).join("")}</div>${nav}`;
+    return `${chips}<div class="nfcw-grid ${n === 1 ? "one" : ""}">${vis.map(tileHtml).join("")}</div>${nav}`;
   }
   const sizeBtns = () => SIZES().map((n) => `<button type="button" class="chip ${per() === n ? "on" : ""}" data-cwn="${n}" aria-label="${H(n === 1 ? T("كاميرا واحدة", "1 camera") : T(`${n} كاميرات`, `${n} cameras`))}">${n === 1 ? H(T("واحدة", "1")) : n}</button>`).join("");
   const landLabel = () => (phone() ? "⟲ " + T("بالعرض", "Landscape") : "⛶ " + T("ملء الشاشة", "Full screen"));
   function foot() {
     const f = document.getElementById("nfcwfoot"); if (!f) return;
-    const n = P.size;
+    const n = P.size; const mx = [...P.values()].some((p) => p.q === 1);
     f.innerHTML = st.idle
       ? `<button type="button" class="btn p" data-cwresume>${H(T("اللايف وقف عشان مالمستش الشاشة 10 دقايق — دوس هنا يكمل", "Live paused after 10 minutes without a touch — tap to continue"))}</button>`
+      : mx ? `<span class="small muted">${H(T("لايف بأعلى جودة · حوالي 40 ميجا في الدقيقة من شريحة المصنع — رجّعها «عادي» لما تخلص", "Live at top quality · about 40 MB a minute of the factory SIM — switch back to «Normal» when done"))}</span>`
       : `<span class="small muted">${n ? H(T(`لايف ${n} ${n === 1 ? "كاميرا" : "كاميرات"} · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${n} camera${n === 1 ? "" : "s"} · about ${n}–${n * 2} MB a minute of the factory SIM`)) : H(T("بيقف لوحده لما تخرج من الصفحة", "Stops by itself when you leave the page"))}</span>`;
   }
   function paint() {
     const b = document.getElementById("nfcwbody"); if (!b) return;
+    const v0 = visible(), oneId = per() === 1 && v0[0] ? v0[0].id : "";
+    if (st.q.cam !== oneId) { const was = st.q.cam && P.get(st.q.cam); if (was && was.q === 1) stopOne(st.q.cam); st.q.max = false; st.q.cam = oneId; }
+    if (Z.id !== oneId) zReset(oneId);
     const keep = new Map(); P.forEach((p, id) => { if (p.v && p.v.parentNode) { keep.set(id, p.v); p.v.parentNode.removeChild(p.v); } });
     b.innerHTML = bodyHtml();
     const l = document.getElementById("nfcwsizes"); if (l) l.innerHTML = sizeBtns();
     const vis = visible(), ids = new Set(vis.map((c) => c.id));
     [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
     keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcw-box").appendChild(v); t.classList.add("live"); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
-    applyMode(); layout();
+    applyMode(); layout(); applyZ();
+    if (oneId) loadQ(v0[0]);
     if (onPage() && !document.hidden && !st.idle) vis.forEach((c, i) => { if (!P.has(c.id)) setTimeout(() => startOne(c), i * 250); });
     foot();
   }
@@ -6565,6 +6691,11 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .nfcw-name{position:absolute;z-index:3;inset-inline-start:6px;bottom:4px;display:flex;align-items:center;gap:5px;color:#fff;font-size:11px;text-shadow:0 1px 2px #000;max-width:calc(100% - 12px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .nfcw-name .dot{width:7px;height:7px;border-radius:50%;background:#999;flex:0 0 auto}.nfcw-name .dot.on{background:#f59e0b}.nfcw-tile.live .nfcw-name .dot{background:#e11d48;box-shadow:0 0 0 3px rgba(225,29,72,.25)}
 .nfcw-pages{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px}#nfcwfoot{margin-top:8px;min-height:24px}
+.nfcw-grid.one .nfcw-box{touch-action:none}.nfcw-box video{will-change:transform}
+.nfcw-q{position:absolute;z-index:4;top:6px;inset-inline-end:6px;display:flex;border-radius:999px;overflow:hidden;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25)}
+.nfcw-q button{all:unset;cursor:pointer;color:#fff;font-size:12px;padding:5px 10px;line-height:1.2;white-space:nowrap}.nfcw-q button.on{background:#fff;color:#000;font-weight:600}.nfcw-q button.na{opacity:.55}
+.nfcw-zr{all:unset;cursor:pointer;position:absolute;z-index:4;top:6px;inset-inline-start:6px;color:#fff;font-size:12px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25)}
+.nfcw-qn{position:absolute;z-index:4;inset-inline:8px;bottom:26px;margin:auto;max-width:520px;color:#fff;font-size:12px;line-height:1.5;text-align:center;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.7)}
 .nfcw-exit{display:none}html.nfcw-lock,html.nfcw-lock body{overflow:hidden!important}
 .nfcw-root.full{position:fixed;inset:0;z-index:10000;background:#000;color:#fff;margin:0;padding:6px;display:flex;flex-direction:column;gap:6px;box-sizing:border-box}
 .nfcw-root.full.rot{inset:auto;top:0;left:100vw;width:100vh;width:100dvh;height:100vw;transform:rotate(90deg);transform-origin:top left}
@@ -6610,21 +6741,23 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (t.closest("[data-cwrefresh]")) { ev.preventDefault(); stopAll(); loadCams(true); return; }
     if (t.closest("[data-cwland]")) { ev.preventDefault(); enterFull(); return; }
     if (t.closest("[data-cwexit]")) { ev.preventDefault(); exitFull(); return; }
+    const qb = t.closest("[data-cwq]"); if (qb) { ev.preventDefault(); setQ(qb.getAttribute("data-cwq") === "max"); return; }
+    if (t.closest("[data-cwzr]")) { ev.preventDefault(); zReset(Z.id); applyZ(); return; }
     const tile = t.closest(".nfcw-tile[data-cwcam]");
     if (tile) {
       ev.preventDefault(); const id = tile.getAttribute("data-cwcam"); const cam = (st.cams || []).find((c) => c.id === id);
       if (per() !== 1) { st.focus = id; LS.set("nf_cams_focus", id); st.n = 1; LS.set("nf_camwall_n", "1"); paint(); return; }
       if (cam && !P.has(id)) { TRIES.set(id, 0); startOne(cam); return; }
-      if (st.mode === "off") enterFull(); // one camera already live → show it as big as possible
+      tapLive(ev); // one tap → as big as possible (as before); two taps → zoom
     }
   }, true);
   document.addEventListener("touchstart", () => { if (onPage()) poke(); }, { passive: true });
-  window.addEventListener("hashchange", () => { if (!onPage()) { st.here = false; stopAll(); clearTimeout(st.idleT); if (st.mode !== "off") exitFull(); } });
+  window.addEventListener("hashchange", () => { if (!onPage()) { st.here = false; st.q.max = false; stopAll(); clearTimeout(st.idleT); if (st.mode !== "off") exitFull(); } });
   function onVis() {
-    if (document.hidden) { stopAll(); return; }
+    if (document.hidden) { st.q.max = false; stopAll(); return; }
     if (onPage() && can() && document.getElementById("nfcwbody")) { st.idle = false; TRIES.clear(); poke(); paint(); }
   }
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("pagehide", () => stopAll());
-  window.__nfCamWall = { st, P, stopAll, paint, onVis, onOrient, enterFull, exitFull, fit, layout }; // for tests
+  window.__nfCamWall = { st, P, Z, stopAll, paint, onVis, onOrient, enterFull, exitFull, fit, layout, setQ, applyZ, zoomAt, local, qInfo }; // for tests
 })();
