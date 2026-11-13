@@ -6111,3 +6111,225 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     }
   } catch (e) { console.warn("cams routes", e); }
 })();
+/* v11.31 (المصنع بس) — «الكاميرات» نسخة 2 (محمود 13/11 05:51): عرض كاميرا واحدة / 4 / 8 (بيتفتكر)، صفحات لو الكاميرات أكتر،
+   اللايف بيبدأ لوحده أول ما تفتح الصفحة للكاميرات اللي قدامك، وآخر صورة كانت ظاهرة بتظهر فورًا لحد ما اللايف يشتغل،
+   وكله بيقف في ساعتها لما تسيب الصفحة أو الأبليكيشن يروح الخلفية. أمان للشريحة: لو مالمستش الشاشة 10 دقايق بيقف ويستناك.
+   بيحل محل عرض v11.27 (نفس الرابط #/cams ونفس Edge hik: cameras + live). */
+;(function(){
+  if (window.__NF_CAMGRID__ || typeof EXTRA_VIEWS === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_CAMGRID__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s));
+  const can = () => !!(S && S.sb && S.sb.functions) && typeof isAdmin === "function" && isAdmin() && !S.viewOrig && !S.demoOrig;
+  const onPage = () => /^#\/cams(\/|$)/.test(location.hash);
+  const HLS_SRC = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
+  const IDLE_MS = 10 * 60 * 1000;
+  const LS = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const st = { here: false, cams: null, camsAt: 0, loading: false, err: "", layout: Number(LS.get("nf_cams_layout")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null };
+  if (![1, 4, 8].includes(st.layout)) st.layout = 4;
+  const P = new Map(); // camId → { v, hls }
+  const TRIES = new Map(); // camId → automatic restarts in a row
+
+  /* ---- player ---- */
+  let hlsP = null;
+  const loadHls = () => window.Hls ? Promise.resolve(window.Hls) : (hlsP = hlsP || new Promise((ok, no) => {
+    const s = document.createElement("script"); s.src = HLS_SRC; s.async = true;
+    s.onload = () => (window.Hls ? ok(window.Hls) : no(new Error("hls"))); s.onerror = () => { hlsP = null; no(new Error("hls")); };
+    document.head.appendChild(s);
+  }));
+  const tileOf = (id) => document.querySelector(`.nfcg-tile[data-cgcam="${CSS.escape(id)}"]`);
+  const frameKey = (id) => "nf_camframe_" + id;
+  function saveFrame(id) {
+    const p = P.get(id); if (!p || !p.v || p.v.readyState < 2 || !p.v.videoWidth) return;
+    try {
+      const w = 320, h = Math.round((p.v.videoHeight / p.v.videoWidth) * w) || 180;
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(p.v, 0, 0, w, h);
+      LS.set(frameKey(id), c.toDataURL("image/jpeg", 0.6));
+    } catch (e) { /* cross-origin frame — skip */ }
+  }
+  function setMsg(id, msg) { const t = tileOf(id); const m = t && t.querySelector(".nfcg-msg"); if (m) { m.textContent = msg || ""; m.style.display = msg ? "" : "none"; } }
+  function stopOne(id, keepFrame) {
+    const p = P.get(id); if (!p) return;
+    if (keepFrame !== false) saveFrame(id);
+    P.delete(id);
+    try { if (p.hls) p.hls.destroy(); } catch (e) {}
+    try { p.v.pause(); p.v.removeAttribute("src"); p.v.load(); } catch (e) {}
+    try { p.v.remove(); } catch (e) {}
+  }
+  function stopAll() { [...P.keys()].forEach((id) => stopOne(id)); clearInterval(st.snapT); st.snapT = null; foot(); }
+  const errText = (r) => {
+    const e = String((r && (r.err || r.error)) || "");
+    if (/EVZ60019|Encryption/i.test(e)) return T("تشفير الفيديو شغال على الريكوردر", "Video encryption is on for the recorder");
+    if (/no_token|no_keys/.test(e)) return T("ربط هيك فيجن مش شغال", "The Hikvision link is not working");
+    if (/offline|EVZ2000[37]|EVZ60001/i.test(e)) return T("الكاميرا مش أونلاين", "Camera offline");
+    return T("اللايف مش راضي يشتغل", "Live would not start");
+  };
+  async function startOne(cam) {
+    if (!can() || !onPage() || st.idle || P.has(cam.id) || !cam.online) return;
+    const t = tileOf(cam.id); if (!t) return;
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.crossOrigin = "anonymous";
+    const p = { v, hls: null }; P.set(cam.id, p);
+    setMsg(cam.id, LS.get(frameKey(cam.id)) ? "" : T("بنفتح اللايف…", "Opening live…"));
+    let r = null;
+    try { const x = await S.sb.functions.invoke("hik", { body: { action: "live", id: cam.id, serial: cam.serial, protocol: 2, quality: 2 } }); r = x && x.data; } catch (e) { r = null; }
+    if (P.get(cam.id) !== p) return; // stopped meanwhile
+    if (!r || !r.ok || !r.url) { P.delete(cam.id); setMsg(cam.id, errText(r || { err: "network" })); return; }
+    const url = String(r.url).replace(/^http:\/\//i, "https://");
+    const tile = tileOf(cam.id); if (!tile) { P.delete(cam.id); return; }
+    tile.querySelector(".nfcg-box").appendChild(v);
+    const fail = () => {
+      if (P.get(cam.id) !== p) return;
+      stopOne(cam.id, true);
+      const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
+      if (n <= 2 && onPage() && !st.idle && !document.hidden) setTimeout(() => { if (!P.has(cam.id) && visible().some((c) => c.id === cam.id)) startOne(cam); }, 1500);
+      else setMsg(cam.id, T("اللايف وقف — دوس على الكاميرا تاني", "Live stopped — tap the camera again"));
+    };
+    v.addEventListener("playing", () => { TRIES.set(cam.id, 0); setMsg(cam.id, ""); const tl = tileOf(cam.id); if (tl) tl.classList.add("live"); });
+    try {
+      const native = v.canPlayType("application/vnd.apple.mpegurl");
+      if (native && (/iPhone|iPad|iPod/.test(navigator.userAgent) || !(window.Hls && window.Hls.isSupported && window.Hls.isSupported()))) {
+        v.src = url; v.addEventListener("error", fail, { once: true });
+      } else {
+        const Hls = await loadHls();
+        if (P.get(cam.id) !== p) return;
+        if (!Hls.isSupported()) { if (native) { v.src = url; v.addEventListener("error", fail, { once: true }); } else { stopOne(cam.id, false); setMsg(cam.id, T("المتصفح ده مش بيشغّل اللايف", "This browser can't play live")); return; } }
+        else { const h = new Hls({ liveSyncDurationCount: 2, maxBufferLength: 8 }); p.hls = h; h.on(Hls.Events.ERROR, (_, d) => { if (d && d.fatal) fail(); }); h.loadSource(url); h.attachMedia(v); }
+      }
+      const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {});
+    } catch (e) { fail(); return; }
+    if (!st.snapT) st.snapT = setInterval(() => P.forEach((_, id) => saveFrame(id)), 10000);
+    foot();
+  }
+
+  /* ---- layout ---- */
+  const visible = () => {
+    const cams = st.cams || [];
+    if (st.layout === 1) { const f = cams.find((c) => c.id === st.focus) || cams[0]; return f ? [f] : []; }
+    const pages = Math.max(1, Math.ceil(cams.length / st.layout)); if (st.page >= pages) st.page = pages - 1; if (st.page < 0) st.page = 0;
+    return cams.slice(st.page * st.layout, st.page * st.layout + st.layout);
+  };
+  function tileHtml(c) {
+    const fr = LS.get(frameKey(c.id));
+    return `<div class="nfcg-tile ${P.has(c.id) ? "live" : ""}" data-cgcam="${H(c.id)}"><div class="nfcg-box" ${fr ? `style="background-image:url('${H(fr)}')"` : ""}>
+      <div class="nfcg-msg" ${c.online ? 'style="display:none"' : ""}>${c.online ? "" : H(T("الكاميرا مش أونلاين", "Camera offline"))}</div></div>
+      <div class="nfcg-name"><span class="dot ${c.online ? "on" : ""}"></span><span class="notr" dir="auto">${H(c.name || T("كاميرا", "Camera") + " " + (c.no || ""))}</span></div></div>`;
+  }
+  function bodyHtml() {
+    if (!st.cams) return `<div class="muted small">${H(st.err || T("بنجيب الكاميرات…", "Loading cameras…"))}</div>`;
+    if (!st.cams.length) return `<div class="banner info"><span>${H(T("مفيش كاميرات في الـ Team لسه.", "No cameras in the Team yet."))}</span></div>`;
+    const vis = visible(), cams = st.cams;
+    const pages = st.layout === 1 ? cams.length : Math.max(1, Math.ceil(cams.length / st.layout));
+    const cur = st.layout === 1 ? Math.max(0, cams.findIndex((c) => c.id === (vis[0] || {}).id)) : st.page;
+    const nav = pages > 1 ? `<div class="nfcg-pages"><button type="button" class="btn sm" data-cgpage="-1" aria-label="${H(T("السابق", "Previous"))}">›</button><span class="small">${cur + 1} / ${pages}</span><button type="button" class="btn sm" data-cgpage="1" aria-label="${H(T("التالي", "Next"))}">‹</button></div>` : "";
+    const chips = st.layout === 1 ? `<div class="nfcg-chips">${cams.map((c) => `<button type="button" class="chip notr ${vis[0] && vis[0].id === c.id ? "on" : ""}" data-cgfocus="${H(c.id)}">${H(c.name || c.no)}</button>`).join("")}</div>` : "";
+    return `${chips}<div class="nfcg-grid g${st.layout}">${vis.map(tileHtml).join("")}</div>${nav}`;
+  }
+  const layoutBtns = () => [1, 4, 8].map((n) => `<button type="button" class="chip ${st.layout === n ? "on" : ""}" data-cglayout="${n}">${H(n === 1 ? T("كاميرا واحدة", "1 camera") : T(`${n} كاميرات`, `${n} cameras`))}</button>`).join("");
+  function foot() {
+    const f = document.getElementById("nfcgfoot"); if (!f) return;
+    const n = P.size;
+    f.innerHTML = st.idle
+      ? `<button type="button" class="btn p" data-cgresume>${H(T("اللايف وقف عشان مالمستش الشاشة 10 دقايق — دوس هنا يكمل", "Live paused after 10 minutes without a touch — tap to continue"))}</button>`
+      : `<span class="small muted">${n ? H(T(`لايف ${n} ${n === 1 ? "كاميرا" : "كاميرات"} · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${n} camera${n === 1 ? "" : "s"} · about ${n}–${n * 2} MB a minute of the factory SIM`)) : H(T("بيقف لوحده لما تخرج من الصفحة", "Stops by itself when you leave the page"))}</span>`;
+  }
+  function paint() {
+    const b = document.getElementById("nfcgbody"); if (!b) return;
+    // keep running videos: detach before repaint, put back after
+    const keep = new Map(); P.forEach((p, id) => { if (p.v && p.v.parentNode) { keep.set(id, p.v); p.v.parentNode.removeChild(p.v); } });
+    b.innerHTML = bodyHtml();
+    const l = document.getElementById("nfcglayout"); if (l) l.innerHTML = layoutBtns();
+    const vis = visible(), ids = new Set(vis.map((c) => c.id));
+    [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
+    keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcg-box").appendChild(v); t.classList.add("live"); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
+    if (onPage() && !document.hidden && !st.idle) vis.forEach((c, i) => { if (!P.has(c.id)) setTimeout(() => startOne(c), i * 250); });
+    foot();
+  }
+  async function loadCams(force) {
+    if (!can() || st.loading) return;
+    if (!force && st.cams && Date.now() - st.camsAt < 60000) { paint(); return; }
+    st.loading = true;
+    try {
+      const x = await S.sb.functions.invoke("hik", { body: { action: "cameras" } }); const r = x && x.data;
+      if (r && r.ok) { st.cams = (r.cameras || []).filter((c) => c && c.id && c.serial).sort((a, b) => Number(a.no || 0) - Number(b.no || 0)); st.camsAt = Date.now(); st.err = ""; }
+      else st.err = errText(r || { err: "network" });
+    } catch (e) { st.err = T("تعذّر الوصول للسيرفر", "Could not reach the server"); }
+    finally { st.loading = false; }
+    paint();
+  }
+  function poke() {
+    clearTimeout(st.idleT);
+    if (!onPage()) return;
+    st.idleT = setTimeout(() => { if (!onPage() || !P.size) return; st.idle = true; stopAll(); foot(); }, IDLE_MS);
+  }
+
+  /* ---- styles ---- */
+  if (!document.getElementById("nfcg-css")) {
+    const s = document.createElement("style"); s.id = "nfcg-css";
+    s.textContent = `.nfcg-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.nfcg-bar .chips,.nfcg-chips{display:flex;gap:6px;flex-wrap:wrap}.nfcg-chips{margin-bottom:10px}
+.nfcg-bar .chip,.nfcg-chips .chip{border:1px solid var(--line,#ddd);border-radius:999px;padding:5px 12px;font-size:13px;background:transparent;cursor:pointer;color:inherit}
+.nfcg-bar .chip.on,.nfcg-chips .chip.on{background:var(--ink,#222);color:var(--bg,#fff);border-color:transparent}
+.nfcg-grid{display:grid;gap:8px}.nfcg-grid.g1{grid-template-columns:1fr}.nfcg-grid.g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+.nfcg-grid.g8{grid-template-columns:repeat(2,minmax(0,1fr))}@media(min-width:900px){.nfcg-grid.g8{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.nfcg-tile{border-radius:12px;overflow:hidden;background:#000;position:relative;cursor:pointer}
+.nfcg-box{position:relative;aspect-ratio:16/9;background:#111 center/cover no-repeat;display:flex;align-items:center;justify-content:center}
+.nfcg-box video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent}
+.nfcg-msg{position:relative;z-index:2;color:#eee;font-size:12px;text-align:center;padding:6px 10px;background:rgba(0,0,0,.45);border-radius:8px;margin:8px}
+.nfcg-name{position:absolute;z-index:3;inset-inline-start:8px;bottom:6px;display:flex;align-items:center;gap:6px;color:#fff;font-size:12px;text-shadow:0 1px 2px #000;max-width:calc(100% - 16px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.nfcg-name .dot{width:8px;height:8px;border-radius:50%;background:#999;flex:0 0 auto}.nfcg-name .dot.on{background:#f59e0b}.nfcg-tile.live .nfcg-name .dot{background:#e11d48;box-shadow:0 0 0 3px rgba(225,29,72,.25)}
+.nfcg-pages{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:10px}#nfcgfoot{margin-top:10px;min-height:28px}`;
+    document.head.appendChild(s);
+  }
+
+  /* ---- page ---- */
+  if (typeof EXTRA_TITLES !== "undefined") EXTRA_TITLES.cams = () => ({ title: T("الكاميرات", "Cameras"), sub: T("لايف من سحابة هيك فيجن — للمالك بس", "Live through the Hikvision cloud — owner only") });
+  if (typeof VIEW_TITLES !== "undefined") VIEW_TITLES.cams = VIEW_TITLES.cams || "الكاميرات لايف";
+  EXTRA_VIEWS.cams = () => {
+    if (!can()) return `<div class="card"><p class="small ink2">${H(T("الصفحة دي للمالك بس.", "This page is for the owner only."))}</p></div>`;
+    setTimeout(() => { if (!st.here) { st.here = true; st.idle = false; TRIES.clear(); poke(); } loadCams(false); }, 0); // re-renders of the app don't reset the idle stop
+    return `<div class="stack"><div class="nfcg-bar"><div class="chips" id="nfcglayout">${layoutBtns()}</div><button type="button" class="btn sm" data-cgrefresh>${typeof icon === "function" ? icon("refresh") : ""}<span>${H(T("تحديث", "Refresh"))}</span></button></div>
+      <div id="nfcgbody">${bodyHtml()}</div><div id="nfcgfoot"></div></div>`;
+  };
+
+  /* ---- events ---- */
+  document.addEventListener("click", (ev) => {
+    if (!onPage()) return;
+    const t = ev.target && ev.target.closest ? ev.target : null; if (!t) return;
+    poke();
+    const lay = t.closest("[data-cglayout]");
+    if (lay) { ev.preventDefault(); const n = Number(lay.getAttribute("data-cglayout")); if (n !== st.layout) { st.layout = n; LS.set("nf_cams_layout", String(n)); st.page = 0; paint(); } return; }
+    const pg = t.closest("[data-cgpage]");
+    if (pg) {
+      ev.preventDefault(); const d = Number(pg.getAttribute("data-cgpage")); const cams = st.cams || [];
+      if (st.layout === 1 && cams.length) { const i = Math.max(0, cams.findIndex((c) => c.id === (visible()[0] || {}).id)); st.focus = cams[(i + d + cams.length) % cams.length].id; LS.set("nf_cams_focus", st.focus); }
+      else { const pages = Math.max(1, Math.ceil(cams.length / st.layout)); st.page = (st.page + d + pages) % pages; }
+      paint(); return;
+    }
+    const fc = t.closest("[data-cgfocus]");
+    if (fc) { ev.preventDefault(); st.focus = fc.getAttribute("data-cgfocus"); LS.set("nf_cams_focus", st.focus); paint(); return; }
+    if (t.closest("[data-cgresume]")) { ev.preventDefault(); st.idle = false; poke(); paint(); return; }
+    if (t.closest("[data-cgrefresh]")) { ev.preventDefault(); stopAll(); loadCams(true); return; }
+    const tile = t.closest(".nfcg-tile[data-cgcam]");
+    if (tile) {
+      ev.preventDefault(); const id = tile.getAttribute("data-cgcam");
+      const cam = (st.cams || []).find((c) => c.id === id);
+      if (st.layout !== 1) { st.focus = id; LS.set("nf_cams_focus", id); st.layout = 1; LS.set("nf_cams_layout", "1"); paint(); return; }
+      if (cam && !P.has(id)) { TRIES.set(id, 0); startOne(cam); return; }
+      const p = P.get(id); // 1 camera + already live → full screen
+      if (p && p.v) { try { if (p.v.webkitEnterFullscreen) p.v.webkitEnterFullscreen(); else if (tile.requestFullscreen) tile.requestFullscreen(); } catch (e) {} }
+    }
+  }, true);
+  document.addEventListener("touchstart", () => { if (onPage()) poke(); }, { passive: true });
+  window.addEventListener("hashchange", () => { if (!onPage()) { st.here = false; stopAll(); clearTimeout(st.idleT); } });
+  function onVis() {
+    if (document.hidden) { stopAll(); return; }
+    if (onPage() && can() && document.getElementById("nfcgbody")) { st.idle = false; TRIES.clear(); poke(); paint(); }
+  }
+  document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("pagehide", () => stopAll());
+  window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
+})();
