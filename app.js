@@ -480,3 +480,131 @@
   setInterval(mount, 700); window.addEventListener("hashchange", () => setTimeout(mount, 60)); apply();
   window.__nfCamFx = { get lv() { return lv; }, mount, apply };
 })();
+
+/* v11.56 (المصنع بس، المالك بس) — «حركة العمالة» #/moves + «سمّيه» في «مين اتشاف فين»
+   محمود 13/11 19:38 «ابدأ» (سيستم تتبع سمارت): - صفحة «حركة العمالة»: مين قدام أنهي كاميرا دلوقتي + خط يوم أي شخص (من جدول stays اللي بيملاه كمبيوتر التحليل).
+   - زرار «سمّيه» على كل التقاط: تختار العامل ⇒ rpc vision_name ⇒ كل التقاطات ووقفات نفس المجهول تبقى باسمه، والكمبيوتر يعرفه بعدها.
+   صفحة جديدة للمالك بس؛ مفيش صلاحية اتغيّرت لحد. */
+;(function () {
+  if (window.__NF_MOVES__ || typeof EXTRA_VIEWS === "undefined" || typeof NAV === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_MOVES__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]));
+  const can = () => !!(S && S.sb && S.sb.from) && typeof isAdmin === "function" && isAdmin() && !S.viewOrig && !S.demoOrig;
+  const st = { day: "", rows: null, err: "", busy: false, at: 0, who: "", timer: null };
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const hm = (iso) => { try { return new Date(iso).toLocaleTimeString(EN() ? "en-GB" : "ar-EG", { hour: "numeric", minute: "2-digit" }); } catch (e) { return ""; } };
+  const workers = () => { try { return (typeof list === "function" ? list("workers") : []).filter((w) => w && w.name && !w.leftAt); } catch (e) { return []; } };
+  const nameOf = (label) => {
+    const l = String(label || "");
+    if (l.startsWith("w:")) { let w = null; try { w = typeof byId === "function" ? byId("workers", l.slice(2)) : null; } catch (e) {} return (w && w.name) || T("عامل", "Worker") + " " + l.slice(2); }
+    if (l.startsWith("u:")) return T("مجهول ", "Unknown ") + l.slice(2);
+    return T("من غير وش ", "No face ") + l.slice(2);
+  };
+  const dur = (a, b) => { const m = Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000)); return m < 1 ? T("أقل من دقيقة", "under a minute") : m < 60 ? T(`${m} د`, `${m} min`) : T(`${Math.floor(m / 60)} س ${m % 60} د`, `${Math.floor(m / 60)} h ${m % 60} min`); };
+
+  if (typeof canSee === "function") canSee = ((f) => function (v) { return v === "moves" ? can() : f.apply(this, arguments); })(canSee);
+  try {
+    if (Array.isArray(NAV) && !NAV.some((n) => n && n.id === "moves")) {
+      const item = { id: "moves", label: () => T("حركة العمالة", "Staff movement"), icon: "map" };
+      const i = NAV.findIndex((n) => n && n.id === "faces"), j = i >= 0 ? i + 1 : NAV.findIndex((n) => n && n.id === "settings");
+      if (j >= 0) NAV.splice(j, 0, item); else NAV.push(item);
+    }
+    if (typeof VIEW_TITLES !== "undefined" && !VIEW_TITLES.moves) VIEW_TITLES.moves = "حركة العمالة";
+    if (/^#\/moves(\/|$)/.test(location.hash) && typeof parseRoute === "function" && S && S.route && S.route.view !== "moves") { parseRoute(); if (typeof rerender === "function") rerender(); }
+  } catch (e) { console.warn("moves nav", e); }
+  if (typeof EXTRA_TITLES !== "undefined") EXTRA_TITLES.moves = () => ({ title: T("حركة العمالة", "Staff movement"), sub: T("مين كان فين وإمتى — من كمبيوتر التحليل، للمالك بس", "Who was where and when — from the analysis computer, owner only") });
+  const s = document.createElement("style"); s.id = "nfmv-css";
+  s.textContent = `.nfmv-cam{display:flex;flex-direction:column;gap:6px}.nfmv-cam h4{margin:0;font-size:14px}
+.nfmv-p{display:flex;gap:8px;align-items:center;justify-content:space-between;border:0;background:rgba(0,0,0,.04);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;cursor:pointer;width:100%;text-align:start}
+.nfmv-p small{color:var(--ink2,#666)}.nfmv-p .b{font-size:11px;background:rgba(240,170,0,.18);color:#8a5a00;border-radius:6px;padding:1px 6px}
+.nfmv-tl{display:flex;flex-direction:column;gap:4px;font-size:13px}.nfmv-tl div{display:grid;grid-template-columns:120px 1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.06)}
+.nfface .f2name{width:100%;justify-content:center}
+#nfnamer{position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
+#nfnamer .sh{background:var(--card,#fff);color:inherit;width:min(520px,100%);max-height:80vh;border-radius:16px 16px 0 0;padding:14px;display:flex;flex-direction:column;gap:8px}
+#nfnamer .ls{overflow:auto;display:flex;flex-direction:column;gap:4px}#nfnamer .ls button{border:0;background:rgba(0,0,0,.05);border-radius:8px;padding:10px;font:inherit;text-align:start;cursor:pointer}`;
+  document.head.appendChild(s);
+
+  async function load() {
+    if (!can() || st.busy) return; st.busy = true;
+    const day = st.day || today(), a = new Date(day + "T00:00:00"), b = new Date(a.getTime() + 86400000);
+    try {
+      const { data, error } = await S.sb.from("stays").select("id,label,cam_id,cam_name,t0,t1,how,score,n").gte("t1", a.toISOString()).lt("t0", b.toISOString()).order("t0", { ascending: true }).limit(3000);
+      if (error) throw error; st.rows = data || []; st.err = ""; st.at = Date.now();
+    } catch (e) { st.err = String((e && e.message) || e || "").slice(0, 120); if (!st.rows) st.rows = []; }
+    finally { st.busy = false; }
+    paint();
+  }
+  function bodyHtml() {
+    if (!st.rows) return `<div class="muted small">${H(T("بنجيب الحركة…", "Loading movement…"))}</div>`;
+    if (st.err) return `<div class="banner warn"><span>${H(T("تعذّر التحميل: ", "Could not load: ") + st.err)}</span></div>`;
+    if (!st.rows.length) return `<div class="banner info"><span>${H(T("مفيش حركة متسجّلة في اليوم ده. الحركة بتتسجّل لما كمبيوتر التحليل يشتغل على الكاميرات.", "No movement recorded on this day. Movement is recorded once the analysis computer is running on the cameras."))}</span></div>`;
+    if (st.who) { // one person's day
+      const r = st.rows.filter((x) => x.label === st.who);
+      return `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b class="notr" dir="auto">${H(nameOf(st.who))}</b><button type="button" class="btn sm" data-mv="back"><span>${H(T("رجوع", "Back"))}</span></button></div>
+        <div class="nfmv-tl" style="margin-top:8px">${r.map((x) => `<div><span>${H(hm(x.t0))} – ${H(hm(x.t1))}</span><span class="notr" dir="auto">${H(x.cam_name || x.cam_id)}</span><small>${H(dur(x.t0, x.t1))}${x.how === "body" ? " · " + H(T("بشكل الجسم", "by body")) : ""}</small></div>`).join("")}</div></div>`;
+    }
+    const isToday = (st.day || today()) === today(), now = Date.now(), last = {};
+    st.rows.forEach((x) => { if (!last[x.label] || x.t1 > last[x.label].t1) last[x.label] = x; });
+    let ppl = Object.values(last); if (isToday) ppl = ppl.filter((x) => now - Date.parse(x.t1) < 10 * 60000);
+    const cams = {}; ppl.forEach((x) => { (cams[x.cam_name || x.cam_id] = cams[x.cam_name || x.cam_id] || []).push(x); });
+    const head = isToday ? T(`دلوقتي (آخر 10 دقايق): ${ppl.length} شخص`, `Now (last 10 minutes): ${ppl.length} people`) : T(`آخر مكان لكل شخص في اليوم ده: ${ppl.length}`, `Last place of each person that day: ${ppl.length}`);
+    const all = [...new Set(st.rows.map((x) => x.label))];
+    return `<div class="small muted" style="margin:2px 0 8px">${H(head)}</div>${Object.keys(cams).sort().map((c) => `<div class="card nfmv-cam"><h4 class="notr" dir="auto">${H(c)} · ${cams[c].length}</h4>${cams[c].sort((a, b) => (a.t1 < b.t1 ? 1 : -1)).map(pHtml).join("")}</div>`).join("") || `<div class="banner info"><span>${H(T("محدش قدام أي كاميرا دلوقتي.", "Nobody in front of any camera right now."))}</span></div>`}
+      <div class="card nfmv-cam"><h4>${H(T(`كل اللي اتشافوا في اليوم (${all.length}) — دوس على حد تشوف يومه`, `Everyone seen that day (${all.length}) — tap someone to see their day`))}</h4>${all.sort((a, b) => nameOf(a).localeCompare(nameOf(b), "ar")).map((l) => pHtml(last[l])).join("")}</div>`;
+  }
+  const pHtml = (x) => `<button type="button" class="nfmv-p" data-mv="who" data-l="${H(x.label)}"><span class="notr" dir="auto">${H(nameOf(x.label))}${x.how === "body" ? ` <span class="b">${H(T("بشكل الجسم", "by body"))}</span>` : ""}</span><small>${H(x.cam_name || "")} · ${H(hm(x.t1))}</small></button>`;
+  function paint() { const b = document.getElementById("nfmvbody"); if (b) b.innerHTML = bodyHtml(); const d = document.querySelector("[data-mvday]"); if (d && !d.value) d.value = st.day || today(); }
+  EXTRA_VIEWS.moves = () => {
+    if (!can()) return `<div class="card"><p class="small ink2">${H(T("الصفحة دي للمالك بس.", "This page is for the owner only."))}</p></div>`;
+    setTimeout(() => { paint(); if (!st.rows || Date.now() - st.at > 20000) load(); }, 30);
+    clearInterval(st.timer); st.timer = setInterval(() => { if (!/^#\/moves(\/|$)/.test(location.hash) || document.hidden) return; if ((st.day || today()) === today()) load(); }, 30000);
+    return `<div class="stack"><div class="small ink2">${H(T("مين قدام أنهي كاميرا، وخط يوم كل شخص. «بشكل الجسم» = وشه مابانش واتعرف من شكله وهدومه (أقل دقة).", "Who is in front of which camera, and each person's day. “By body” = the face was not seen; recognised by look and clothes (less exact)."))}</div>
+      <div class="nffbar"><input type="date" class="input" data-mvday max="${H(today())}" style="max-width:170px"><button type="button" class="btn sm" data-mv="refresh">${typeof icon === "function" ? icon("refresh") : ""}<span>${H(T("تحديث", "Refresh"))}</span></button></div><div id="nfmvbody"></div></div>`;
+  };
+
+  /* ---- «سمّيه» on «مين اتشاف فين» ---- */
+  function addNameButtons() {
+    if (!can() || !/^#\/faces(\/|$)/.test(location.hash)) return;
+    document.querySelectorAll("#nff2list .nfface").forEach((tile) => {
+      if (tile.querySelector(".f2name")) return; const r = tile.querySelector("[data-f2rec]"); if (!r) return;
+      const b = document.createElement("button"); b.type = "button"; b.className = "btn sm f2name"; b.setAttribute("data-mvname", r.getAttribute("data-f2rec")); b.innerHTML = `<span>${H(T("سمّيه", "Name"))}</span>`; tile.appendChild(b);
+    });
+  }
+  function closeNamer() { const o = document.getElementById("nfnamer"); if (o) o.remove(); }
+  function openNamer(evId) {
+    closeNamer(); const o = document.createElement("div"); o.id = "nfnamer"; o.setAttribute("data-ev", evId);
+    o.innerHTML = `<div class="sh"><b>${H(T("ده مين؟", "Who is this?"))}</b><input class="input" data-mvq placeholder="${H(T("اكتب اسم العامل", "Type the worker's name"))}"><div class="ls"></div><div class="small" data-mvmsg style="min-height:18px"></div><button type="button" class="btn" data-mv="nclose"><span>${H(T("إلغاء", "Cancel"))}</span></button></div>`;
+    document.body.appendChild(o); fillNamer("");
+  }
+  function fillNamer(q) {
+    const ls = document.querySelector("#nfnamer .ls"); if (!ls) return; q = String(q || "").trim().toLowerCase();
+    const w = workers().filter((x) => !q || String(x.name).toLowerCase().includes(q) || String(x.code || "").toLowerCase().includes(q)).sort((a, b) => String(a.name).localeCompare(String(b.name), "ar")).slice(0, 60);
+    ls.innerHTML = w.map((x) => `<button type="button" class="notr" dir="auto" data-mv="pick" data-w="${H(x.id)}">${H(x.name)}</button>`).join("") || `<div class="muted small">${H(T("مفيش عامل بالاسم ده", "No worker with that name"))}</div>`;
+  }
+  async function pick(wid) {
+    const o = document.getElementById("nfnamer"); if (!o) return; const m = o.querySelector("[data-mvmsg]"); m.textContent = T("بنسجّل…", "Saving…");
+    let r = null, er = "";
+    try { const x = await S.sb.rpc("vision_name", { p_event: Number(o.getAttribute("data-ev")), p_worker: wid }); r = x && x.data; er = x && x.error ? String(x.error.message || "error") : ""; } catch (e) { er = "net"; }
+    if (r && r.ok) { closeNamer(); try { window.__nfFaces2 && window.__nfFaces2.load(); } catch (e) {} if (typeof toast === "function") { try { toast(T(`اتسمّى ✓ — ${r.captures} التقاط`, `Named ✓ — ${r.captures} captures`)); } catch (e) {} } }
+    else m.textContent = T("ماتسجّلش: ", "Not saved: ") + (er || "server");
+  }
+  document.addEventListener("click", (ev) => {
+    const t = ev.target && ev.target.closest ? ev.target : null; if (!t) return;
+    const nb = t.closest("[data-mvname]"); if (nb) { ev.preventDefault(); ev.stopPropagation(); return openNamer(nb.getAttribute("data-mvname")); }
+    const b = t.closest("[data-mv]"); if (!b) { if (t.id === "nfnamer") closeNamer(); return; }
+    ev.preventDefault(); const k = b.getAttribute("data-mv");
+    if (k === "who") { st.who = b.getAttribute("data-l") || ""; return paint(); }
+    if (k === "back") { st.who = ""; return paint(); }
+    if (k === "refresh") return void load();
+    if (k === "nclose") return closeNamer();
+    if (k === "pick") return void pick(b.getAttribute("data-w"));
+  }, true);
+  document.addEventListener("input", (ev) => { const t = ev.target; if (t && t.matches && t.matches("[data-mvq]")) fillNamer(t.value); });
+  document.addEventListener("change", (ev) => { const t = ev.target; if (t && t.matches && t.matches("[data-mvday]")) { st.day = t.value || today(); st.rows = null; st.who = ""; paint(); load(); } });
+  window.addEventListener("hashchange", closeNamer);
+  setInterval(addNameButtons, 800);
+  window.__nfMoves = { st, load, paint, addNameButtons, openNamer };
+})();
