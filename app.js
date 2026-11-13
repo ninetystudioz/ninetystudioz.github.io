@@ -7548,3 +7548,83 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       <div class="ptc-r"><input id="ptc-in" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="name@gmail.com" dir="ltr"><button class="btn primary" data-ptc="save">${o(i("\u0633\u062C\u0651\u0644","Save"))}</button></div>
       <div class="tiny ${n.err?"ptc-e":"muted"}" id="ptc-m">${o(n.err||i("\u0627\u0644\u0625\u064A\u0645\u064A\u0644 \u0628\u064A\u0648\u0635\u0644 \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u0628\u0633.","Only the management sees it."))}</div></div>`}async function h(t){const e=document.getElementById("ptc-in"),r=String(e&&e.value||"").trim().toLowerCase();if(!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(r)){n.err=i("\u0627\u0643\u062A\u0628 \u0627\u0644\u0625\u064A\u0645\u064A\u0644 \u0635\u062D \u2014 \u0645\u062B\u0627\u0644: name@gmail.com","Type a valid email \u2014 e.g. name@gmail.com");const a=document.getElementById("ptc-m");a&&(a.textContent=n.err,a.className="tiny ptc-e");return}t.disabled=!0;try{await m({action:"set",email:r}),n.err="",n.email=r,n.justSaved=!0,c.set(s(),"1");try{toast(i("\u0627\u062A\u0633\u062C\u0651\u0644 \u2713","Saved \u2713"))}catch{}f()}catch{t.disabled=!1,n.err=i("\u0645\u0627\u062A\u0633\u062C\u0651\u0644\u0634 \u2014 \u062C\u0631\u0651\u0628 \u062A\u0627\u0646\u064A","Not saved \u2014 try again");const p=document.getElementById("ptc-m");p&&(p.textContent=n.err,p.className="tiny ptc-e")}}document.addEventListener("click",t=>{const e=t.target&&t.target.closest&&t.target.closest('[data-ptc="save"]');e&&(t.preventDefault(),h(e))}),document.addEventListener("keydown",t=>{if(t.key==="Enter"&&t.target&&t.target.id==="ptc-in"){t.preventDefault();const e=document.querySelector('[data-ptc="save"]');e&&h(e)}});const b=vMe,v=function(){let t=b.apply(this,arguments);try{if(typeof t!="string")return t;setTimeout(()=>{y()},50);const e=g();if(!e)return t;t=e+t}catch{}return t};try{vMe=v}catch{}try{window.vMe=v}catch{}const d=()=>{try{const t=document.getElementById("ptc"),e=document.getElementById("view");if(!t||!e||t.parentElement!==e)return;const r=e.querySelector(":scope > .ah-top");(r?r.nextElementSibling:e.firstElementChild)!==t&&(r?r.after(t):e.prepend(t))}catch{}};try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(()=>{d(),setTimeout(d,0),setTimeout(d,300)})}catch{}window.nfPlayTesters={check:y,state:()=>Object.assign({},n),android:l,card:g};try{const t=document.createElement("style");t.textContent=".ptc{border-inline-start:3px solid #1a73e8}.ptc.ok{border-inline-start-color:#16a34a}.ptc-h{font-weight:700;font-size:15px;margin-bottom:4px}.ptc-p{font-size:13px;line-height:1.6;margin-bottom:10px}.ptc-r{display:flex;gap:8px;align-items:stretch}.ptc-r input{flex:1;min-width:0;font-size:16px;padding:10px 12px;border:1px solid var(--line,#d9d4c9);border-radius:10px;background:var(--surface,#fff);color:inherit}.ptc-r .btn{white-space:nowrap}.ptc-e{color:#b91c1c;margin-top:6px}#ptc-m{margin-top:6px}",document.head.appendChild(t)}catch{}})();;
 (function(){if(window.__NF_A1140__||(window.__NF_A1140__=1,typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction()||typeof isOffDay!="function"))return;const R=()=>typeof I18N!="undefined"&&I18N.lang==="en",b=(e,t)=>R()?t:e,l="2026-11-01",D=()=>+(S.settings&&S.settings.hoursPerDay)||8,y=(e,t)=>{try{return t>=l&&(!!isHoliday(t)||isOffDay(e,t))}catch{return!1}},O=e=>{try{return new Date(new Date(e).getTime()+2*36e5).toISOString().slice(0,10)}catch{return""}},d=(e,t)=>`rw_${e}_${t}`,h=["manager","vice","admin"],E=["head","fleet"];function _(e){const t=[];return e.assigneeId&&t.push(String(e.assigneeId)),(Array.isArray(e.assigneeIds)?e.assigneeIds:[]).forEach(r=>r&&t.push(String(r))),(Array.isArray(e.participants)?e.participants:[]).forEach(r=>{r&&r.id&&(!r.addedBy||r.addedBy===e.createdBy)&&t.push(String(r.id))}),t}function A(e,t){const r=String(e.createdBy||"");if(r==="owner"||r.startsWith("sb:"))return"owner";if(r.startsWith("w:")){const n=r.slice(2);if(n===t.id)return null;const s=typeof byId=="function"&&byId("workers",n)||null;return s&&(h.includes(s.role)||E.includes(s.role)&&s.deptId&&s.deptId===t.deptId)?"lead":null}if(r.startsWith("s:")){const n=typeof byId=="function"&&byId("staff",r.slice(2))||null;if(n&&n.role==="admin")return"owner";if(n&&h.includes(n.role))return"lead"}return null}const M=(e,t)=>e.dueDate===t||String(e.startAt||"").slice(0,10)===t||!e.dueDate&&!e.startAt&&O(e.createdAt)===t;function p(e,t){try{if(!e||!e.id||(t=t||todayISO(),!y(e,t)))return null;let r=null;return list("tasks").forEach(n=>{if(!n||n.status==="cancelled"||n.ot||n.sm||!(n.kind==="task"||!n.kind)||!M(n,t)||!_(n).includes(e.id))return;const s=A(n,e);s&&(!r||s==="owner"&&r.k!=="owner")&&(r={t:n,k:s})}),r?{id:r.t.id,title:r.t.title||"",by:r.t.createdByName||"",owner:r.k==="owner"}:null}catch{return null}}window.nfRestTaskFor=p;function N(e,t){try{if(typeof window.nfOtTaskFor=="function"&&window.nfOtTaskFor(t,e.id))return!0}catch{}try{if(typeof window.nfOtNightOf=="function"&&window.nfOtNightOf(t,e.id))return!0}catch{}try{if(typeof assignmentsFor=="function"&&assignmentsFor(e,t).length)return!0}catch{}return!1}try{typeof REQ_TYPES=="object"&&!REQ_TYPES.restwork&&(REQ_TYPES.restwork="\u0634\u063A\u0644 \u064A\u0648\u0645 \u0631\u0627\u062D\u0629")}catch{}const H={"\u0634\u063A\u0644 \u064A\u0648\u0645 \u0631\u0627\u062D\u0629":"Rest-day work"},m=()=>{try{I18N&&I18N.exact&&Object.entries(H).forEach(([e,t])=>{I18N.exact.get(e)!==t&&I18N.exact.set(e,t)})}catch{}};m();try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(m)}catch{}async function x(e,t,r){const n=d(t,e.id);if(typeof byId=="function"&&byId("requests",n))return;const s=S.session||{},o=nowISO(),a=`${e.name} \u0628\u0635\u0645 \u062D\u0636\u0648\u0631 \u064A\u0648\u0645 \u0631\u0627\u062D\u0629 (${fmtDate(t)}) \u2014 \u0645\u0647\u0645\u0629 \xAB${r.title}\xBB${r.by?" \u0645\u0646 "+r.by:""}. \u0627\u0644\u064A\u0648\u0645 \u0628\u064A\u062A\u062D\u0633\u0628 \u0628\u0639\u062F \u0645\u0648\u0627\u0641\u0642\u0629 \u0627\u0644\u0625\u062F\u0627\u0631\u0629.`,c={id:n,type:"restwork",workerId:e.id,deptId:e.deptId||null,from:t,to:t,taskId:r.id,reason:`\u0634\u063A\u0644 \u064A\u0648\u0645 \u0631\u0627\u062D\u0629 \u2014 \u0645\u0647\u0645\u0629 \xAB${r.title}\xBB${r.by?" \u0645\u0646 "+r.by:""}`,status:"pending",chain:["admin"],step:0,stepAt:o,createdBy:s.id||"w:"+e.id,createdByName:e.name||"",createdAt:o,thread:[{id:uid(),at:o,by:null,byName:"\u0627\u0644\u0633\u064A\u0633\u062A\u0645",role:"system",kind:"system",text:a}]};await Store.save("requests",c,{silent:!0});try{typeof pushSend=="function"&&pushSend(["role:admin"],`\u{1F5D3}\uFE0F \u0634\u063A\u0644 \u064A\u0648\u0645 \u0631\u0627\u062D\u0629 \u2014 ${e.name}`,`\u0645\u0647\u0645\u0629 \xAB${r.title}\xBB${r.by?" \u0645\u0646 "+r.by:""} \u2014 \u0648\u0627\u0641\u0642 \u0623\u0648 \u0627\u0631\u0641\u0636 \u0645\u0646 \xAB\u0627\u0644\u0637\u0644\u0628\u0627\u062A\xBB`,"/#/requests/"+n,"rw-"+n)}catch{}}typeof kioskPunch=="function"&&(kioskPunch=(e=>async function(t,r){let n=null;try{const o=todayISO();if(t&&t.id&&y(t,o)&&!((attendanceFor(o)||{})[t.id]||{}).in&&!N(t,o)){const a=p(t,o);a&&(n={d:o,rt:a})}}catch{n=null}const s=await e.apply(this,arguments);if(n&&!(s&&s.blocked))try{((attendanceFor(n.d)||{})[t.id]||{}).in&&!n.rt.owner&&(await x(t,n.d,n.rt),r&&r.silent||setTimeout(()=>{try{toast(b("\u064A\u0648\u0645 \u0631\u0627\u062D\u0629 \u2014 \u0628\u0635\u0645\u062A\u0643 \u0627\u062A\u0633\u062C\u0651\u0644\u062A\u060C \u0648\u0627\u0644\u064A\u0648\u0645 \u0647\u064A\u062A\u062D\u0633\u0628 \u0628\u0639\u062F \u0645\u0648\u0627\u0641\u0642\u0629 \u0627\u0644\u0625\u062F\u0627\u0631\u0629","Rest day \u2014 your punch is saved; the day counts once the management approves"))}catch{}},400))}catch(o){console.warn("rest task req",o)}return s})(kioskPunch));const g=(e,t)=>{try{return byId("requests",d(t,e))||null}catch{return null}};window.nfRestHeld=(e,t)=>{const r=g(e.id,t);return r?r.status:null},typeof hrMonthSummary=="function"&&(hrMonthSummary=(e=>function(t,r){const n=e.apply(this,arguments);try{if(isStuSys()||!t||!n)return n;const s=attMonthRows(t,r);let o=0,a=0;monthDates(r).forEach(c=>{if(c<l)return;const i=s[c];if(!i)return;const k=classifyDay(t,c,i);if(!k||k.kind!=="offwork")return;const u=+i.hrs||0||+i.ot||0,w=g(t.id,c),f=w?w.status:"approved",F=f==="approved"?Math.min(D(),u):0;f==="rejected"||f==="cancelled"?a+=u:f!=="approved"&&(o+=u),n.otHoliday=Math.max(0,(+n.otHoliday||0)+F-u);const I=typeof excused=="function"?excused(i):{};i.late&&!I.late&&(n.late=Math.max(0,(+n.late||0)-+i.late),n.lateCount=Math.max(0,(+n.lateCount||0)-1)),i.early&&!I.early&&(n.early=Math.max(0,(+n.early||0)-+i.early),n.earlyCount=Math.max(0,(+n.earlyCount||0)-1))}),n.otHoliday=Math.round(n.otHoliday*100)/100,n.restHeld=Math.round(o*100)/100,n.restRejected=Math.round(a*100)/100}catch(s){console.warn("rest hrs",s)}return n})(hrMonthSummary)),typeof missingPunchDays=="function"&&(missingPunchDays=(e=>function(t,r){const n=e.apply(this,arguments);try{if(isStuSys()||!Array.isArray(n)||!n.length)return n;const s=attMonthRows(t,r);return n.filter(o=>!(o>=l&&classifyDay(t,o,s[o]).kind==="offwork"))}catch{return n}})(missingPunchDays)),typeof payrollRowReg=="function"&&(payrollRowReg=(e=>function(t,r){const n=e.apply(this,arguments);try{if(n&&!isStuSys()){const s=hrMonthSummary(t,r);n.restHeld=+s.restHeld||0}}catch{}return n})(payrollRowReg))})();
+
+/* v11.47 (المصنع بس) — صفحة «المراقبة (كاميرات)» التجريبية اتشالت + فتح صورة الوش كبيرة في «مين اتشاف فين»
+   محمود 13/11 14:32 «اه شيلها» (بالرقم السري، قبل/بعد اتعرض 14:31):
+   - قبل: «المراقبة (كاميرات)» #/cctv (موديول v4.15 بأرقام وهمية «وضع تجريبي») ظاهرة في القايمة للمالك ومحمود البحيري ومحمد جابر وسعيد،
+     وخانة «كاميرات المراقبة» في الإعدادات، ومربع «المراقبة · 24 كاميرا» في صفحة Ninety الرئيسية بيفتحها.
+   - بعد: الصفحة مش في القايمة عند حد ومحدش يقدر يفتحها؛ الرابط القديم #/cctv بيودّي المالك لـ«الكاميرات لايف» والباقيين للرئيسية؛
+     خانة الإعدادات القديمة اتشالت؛ عدّاد الموديول القديم (كل 5 دقايق) وقف. محدش خد صلاحية جديدة.
+   محمود 14:33 «مش عارف افتح الصورة»: دوسة على صورة الوش بتفتحها على الشاشة كلها؛ دوسة على الصورة = حجمها الحقيقي (تقدر تسحب)، دوسة تانية = ترجع، و× أو بره الصورة = قفل. */
+;(function () {
+  if (window.__NF_CCTV_OFF__ || typeof NAV === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_CCTV_OFF__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const H = (s) => (typeof esc === "function" ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]));
+
+  /* ---- 1) the old demo page is gone for everybody ---- */
+  try { const i = NAV.findIndex((n) => n && n.id === "cctv"); if (i >= 0) NAV.splice(i, 1); } catch (e) {}
+  try { if (typeof canSee === "function") canSee = ((f) => function (v) { return v === "cctv" ? false : f.apply(this, arguments); })(canSee); } catch (e) {}
+  try { if (typeof VIEW_TITLES !== "undefined") delete VIEW_TITLES.cctv; } catch (e) {}
+  try { if (typeof EXTRA_SETTINGS !== "undefined") delete EXTRA_SETTINGS.cctv; } catch (e) {}
+  try { if (S && S.ui && S.ui.tab && S.ui.tab.settings === "cctv") S.ui.tab.settings = "staff"; } catch (e) {}
+  try { if (typeof _cctvTick !== "undefined") _cctvTick = Infinity; } catch (e) {} // its every-5-minutes check never runs again
+  try { if (S) S.cctvAlerts = []; } catch (e) {}
+  const oldLink = () => /^#\/?cctv(\/|$)/.test(location.hash || "");
+  const away = () => { // the old link (also old notifications and the «المراقبة» box on the Ninety home): the owner goes to the live cameras, everyone else home
+    let to = "#/";
+    try { if (typeof canSee === "function" && canSee("cams")) to = "#/cams"; } catch (e) {}
+    try { history.replaceState(null, "", to); } catch (e) { location.hash = to; }
+  };
+  try { if (typeof parseRoute === "function") parseRoute = ((f) => function () { if (oldLink()) away(); return f.apply(this, arguments); })(parseRoute); } catch (e) {}
+  try { if (oldLink() || (S && S.route && S.route.view === "cctv")) { if (oldLink()) away(); if (typeof parseRoute === "function") parseRoute(); if (typeof rerender === "function") rerender(); } } catch (e) {}
+
+  /* ---- 2) «مين اتشاف فين»: a tap on a face picture opens it big ---- */
+  const css = () => {
+    if (document.getElementById("nfpicv-css")) return;
+    const s = document.createElement("style"); s.id = "nfpicv-css";
+    s.textContent = `.nfface .ph[style*="background-image"]{cursor:zoom-in}
+#nfpicv{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.94);display:flex;flex-direction:column;color:#fff;touch-action:manipulation}
+#nfpicv .bar{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;font-size:14px}
+#nfpicv .bar .cap{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.9}
+#nfpicv .x{width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:22px;line-height:40px;cursor:pointer;flex:none}
+#nfpicv .box{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;display:flex;align-items:center;justify-content:center}
+#nfpicv .box img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in;display:block}
+#nfpicv .box.full{display:block}
+#nfpicv .box.full img{max-width:none;max-height:none;width:auto;cursor:zoom-out;margin:auto}
+#nfpicv .hint{padding:8px 14px calc(12px + env(safe-area-inset-bottom));font-size:12px;opacity:.7;text-align:center}`;
+    document.head.appendChild(s);
+  };
+  function closePic() { const o = document.getElementById("nfpicv"); if (o) o.remove(); document.removeEventListener("keydown", onKey, true); }
+  function onKey(e) { if (e.key === "Escape") { e.preventDefault(); closePic(); } }
+  function openPic(url, cap) {
+    css(); closePic();
+    const o = document.createElement("div"); o.id = "nfpicv"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true");
+    o.innerHTML = `<div class="bar"><span class="cap notr" dir="auto">${H(cap)}</span><button type="button" class="x" data-picx aria-label="${H(T("قفل", "Close"))}">×</button></div>
+      <div class="box" dir="ltr"><img alt="${H(T("صورة الوش", "Face picture"))}" src="${H(url)}"></div>
+      <div class="hint">${H(T("دوس على الصورة تشوفها بحجمها الحقيقي — ودوس تاني ترجع", "Tap the picture for its real size — tap again to fit"))}</div>`;
+    document.body.appendChild(o);
+    const box = o.querySelector(".box"), img = o.querySelector("img");
+    o.addEventListener("click", (e) => {
+      if (e.target.closest("[data-picx]") || e.target === o || e.target === box) { e.preventDefault(); closePic(); return; }
+      if (e.target === img) {
+        e.preventDefault();
+        const full = !box.classList.contains("full"); box.classList.toggle("full", full);
+        if (full) { const w = Math.max(img.naturalWidth || 0, Math.round(box.clientWidth * 2.5)); img.style.width = w + "px"; requestAnimationFrame(() => { box.scrollLeft = (box.scrollWidth - box.clientWidth) / 2; box.scrollTop = (box.scrollHeight - box.clientHeight) / 2; }); }
+        else img.style.width = "";
+      }
+    });
+    document.addEventListener("keydown", onKey, true);
+  }
+  document.addEventListener("click", (ev) => {
+    const ph = ev.target && ev.target.closest && ev.target.closest(".nfface .ph"); if (!ph) return;
+    const m = /url\(\s*["']?(.*?)["']?\s*\)/.exec(ph.style.backgroundImage || ""); if (!m || !m[1]) return;
+    ev.preventDefault();
+    const card = ph.closest(".nfface"), who = card && card.querySelector(".who"), meta = card && card.querySelector(".meta");
+    openPic(m[1], [who && who.textContent, meta && meta.textContent].filter(Boolean).map((x) => x.replace(/\s+/g, " ").trim()).join(" · "));
+  });
+  window.addEventListener("hashchange", closePic);
+  window.__nfPicView = { openPic, closePic }; // for tests
+})();
