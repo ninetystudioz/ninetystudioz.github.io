@@ -6333,6 +6333,15 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   window.addEventListener("pagehide", () => stopAll());
   window.__nfCamGrid = { st, P, stopAll, paint, onVis }; // for tests
 })();
+/* v11.45 (المصنع بس) — «الكاميرات» نسخة 13 (محمود 13/11 12:40: «لما أفتح الكاميرات تلوّد كل الكاميرات في الباك جراوند» + 12:24 «عايز أول ما أفتح اللايف يبقى قدامي»):
+   - الكاميرا الواحدة مع «لايف سريع»: بعد ما الكاميرا اللي قدامك تفتح، باقي الكاميرات (لحد 3، الأقرب الأول) بتفتح في الخلفية واحدة واحدة وتفضل جاهزة — لما تقلّب عليها بتلاقيها لايف على طول.
+     بتقف كلها مع وقفة الـ10 دقايق / الخروج من الصفحة / «أعلى جودة». السطر اللي تحت بيقول كام واحدة جاهزة في الخلفية والاستهلاك.
+   - قائمة الكاميرات بتتحفظ على الموبايل: الصفحة بتفتح بالصناديق وآخر صور على طول من غير «بنجيب الكاميرات…»، والقائمة الجديدة بتيجي وراها.
+   - **المشغّل السريع بقى هو طريقة الكاميرات كلها، من غير زرار** (محمود 12:44 «ألطف من الأولاني وبيقلّب بسرعة» + 12:49 «بلاش خانة اسمها لايف سريع — الكونسبت ده يبقى بتاع الكاميرات كلها»؛ من موبايله: 7 من 7 فتحوا، أول صورة 2.4 ث بدل 13–18).
+     الزرار اتشال. HLS فضل احتياطي بس: أي كاميرا السريع مايفتحهاش بترجعله لوحدها 10 دقايق؛ ولو الصفحة اتقفلت والسريع شغال بتفتح المرة الجاية بس بالاحتياطي. (مخرج يدوي: localStorage `nf_cam_way` = "hls".)
+   - **تصليح النغمشة (محمود 12:44 «ليه الكاميرا دي منغمشة؟»):** المشغّل السريع كان بيرسم بمقاس المربع على الشاشة (371 بكسل) مش بمقاس الكاميرا — مع الزوم و«أعلى جودة» الصورة كانت بتتكبّر وهي صغيرة. دلوقتي بيرسم بدقة الشاشة في «عادي» وبمقاس الكاميرا الحقيقي في «أعلى جودة» (اختيار `dpr` بتاع المشغّل).
+   - لو «لايف سريع» شغال: المشغّل والتوكن بيتجهّزوا أول ما الأبليكيشن يفتح (للمالك بس)، فصفحة الكاميرات ماتستناش حاجة. التوكن في الذاكرة 3 ساعات (كان 20 دقيقة).
+   الباقي زي v11.44: */
 /* v11.44 (المصنع بس) — «الكاميرات» نسخة 12 (محمود 13/11 11:42 «اعمل الاتنين» + 11:50 «عايز أول ما أفتح اللايف يبقى قدامي زي يوفي»):
    القياس من موبايله (v11.42): أول صورة بتاخد 13–18 ث — الآيفون بيستنى 3 قطع HLS (كل قطعة 3.3 ث) قبل ما يبدأ.
    - زرار «⚡ لايف سريع (تجربة)» تحت الكاميرات: بيشغّل الكاميرات بمشغّل هيك فيجن نفسه (EZUIKit / EZOPEN) بدل HLS — المفروض أول صورة في ثانيتين–تلاتة وتأخير أقل.
@@ -6414,13 +6423,15 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     { id: "paint", ar: "الدهانات", en: "Painting" },
     { id: "upholstery", ar: "التنجيد والقشرة", en: "Upholstery & veneer" },
   ];
-  const ezDied = (() => { try { if (localStorage.getItem("nf_cam_ezrun")) { localStorage.setItem("nf_cam_ezrun", ""); localStorage.setItem("nf_cam_engine", "hls"); return true; } } catch (e) {} return false; })(); // the page was killed while «لايف سريع» was playing → it comes back switched off
-  const st = { ezDied, eng: (() => { try { return localStorage.getItem("nf_cam_engine") === "ez" ? "ez" : "hls"; } catch (e) { return "hls"; } })(), here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
+  const ezDied = (() => { try { if (localStorage.getItem("nf_cam_ezrun")) { localStorage.setItem("nf_cam_ezrun", ""); return true; } } catch (e) {} return false; })(); // the page was killed while the fast player was on screen → this one time the cameras open the backup (HLS) way
+  // eng — v11.45: the fast player is simply how cameras open (no switch); "hls" only after a crash under it (once) or by the manual escape key nf_cam_way
+  const st = { ezDied, eng: (() => { try { return ezDied || localStorage.getItem("nf_cam_way") === "hls" ? "hls" : "ez"; } catch (e) { return "hls"; } })(), here: false, cams: null, camsAt: 0, loading: false, err: "", n: Number(LS.get("nf_camwall_n")) || 4, page: 0, focus: LS.get("nf_cams_focus") || "", idle: false, idleT: null, snapT: null, mode: "off", forced: false,
     q: { cam: "", max: false }, qi: {}, qBusy: {}, qFail: {}, noteT: null, lay: null, back: null, uiT: null, uiWas: true, arr: null, hintZ: false };
   try { const l = JSON.parse(LS.get("nf_camlay") || "null"); if (l && l.map) st.lay = l; } catch (e) {}
+  try { const c = JSON.parse(LS.get("nf_camlist") || "null"); if (c && Array.isArray(c.cams) && c.cams.length && c.cams.every((x) => x && x.id && x.serial)) st.cams = c.cams; } catch (e) {} // last time's list: the boxes show at once (v11.45); the fresh list follows
   const Z = { id: "", s: 1, x: 0, y: 0, end: 0, pinchEnd: 0 }; // zoom of the single camera (local px of its box)
   const P = new Map(), TRIES = new Map(), RT = new Map(); // camId → { v, hls, q, … } / failures in a row / pending retry timers
-  const CFG = { tick: 2000, soft: 7000, hard: 14000, slow: 25000, ezSlow: 12000, ezLoad: 45000, ezStall: 20000, ezMax: 4, ezBadFor: 10 * 60000, retry: [1500, 3000, 6000, 12000, 15000], maxTries: 8, slowRetry: 30000, lazyOff: 6000, snap: 60000, camsEvery: 120000 }; // tests change these
+  const CFG = { tick: 2000, soft: 7000, hard: 14000, slow: 25000, ezSlow: 12000, ezLoad: 45000, ezStall: 20000, ezMax: 4, ezBadFor: 10 * 60000, warmMax: 3, warmAfter: 8000, retry: [1500, 3000, 6000, 12000, 15000], maxTries: 8, slowRetry: 30000, lazyOff: 6000, snap: 60000, camsEvery: 120000 }; // tests change these
   const per = () => { const s = SIZES(); return s.includes(st.n) ? st.n : s.filter((x) => x <= st.n).pop() || 4; };
   const full = () => st.mode !== "off";
   const lazy = () => per() === 4 && !full(); // departments stacked on the page → live only for what is on screen
@@ -6474,13 +6485,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const setWait = (id) => mark(id);
   function setMsg(id, msg) { const t = tileOf(id); const m = t && t.querySelector(".nfcw-msg"); if (m) { m.textContent = msg || ""; m.style.display = msg ? "" : "none"; } }
   // light measuring → the server log (how long to the first picture, how many drops) so we know what really happens on the phone
-  const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false, ezOpen: 0, ezOk: 0, ezFail: 0, ezStall: 0, ezTtff: [], ezErr: "" };
+  const TEL = { open: 0, ok: 0, addrFail: 0, playFail: 0, stall: 0, slow: 0, nudge: 0, ttff: [], nat: 0, sent: 0, dirty: false, ezOpen: 0, ezOk: 0, ezFail: 0, ezStall: 0, ezTtff: [], ezErr: "", bg: 0, hit: 0, miss: 0 };
   const tel = (k) => { TEL[k] = (TEL[k] || 0) + 1; TEL.dirty = true; };
   function telSend(force) {
     if (!TEL.dirty || !can() || (!force && Date.now() - TEL.sent < 60000)) return;
     const t = TEL.ttff.slice().sort((a, b) => a - b), e = TEL.ezTtff.slice().sort((a, b) => a - b);
-    const d = { eng: st.eng, ezOpen: TEL.ezOpen, ezOk: TEL.ezOk, ezFail: TEL.ezFail, ezStall: TEL.ezStall, ezTtffMed: e.length ? e[Math.floor(e.length / 2)] : null, ezTtffMax: e.length ? e[e.length - 1] : null, ezErr: TEL.ezErr, v: "11.44", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
-    TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = TEL.ezOpen = TEL.ezOk = TEL.ezFail = TEL.ezStall = 0; TEL.ttff = []; TEL.ezTtff = []; TEL.ezErr = "";
+    const d = { bg: TEL.bg, hit: TEL.hit, miss: TEL.miss, eng: st.eng, ezOpen: TEL.ezOpen, ezOk: TEL.ezOk, ezFail: TEL.ezFail, ezStall: TEL.ezStall, ezTtffMed: e.length ? e[Math.floor(e.length / 2)] : null, ezTtffMax: e.length ? e[e.length - 1] : null, ezErr: TEL.ezErr, v: "11.45", dev: phone() ? "phone" : "pc", nat: TEL.nat, open: TEL.open, ok: TEL.ok, addrFail: TEL.addrFail, playFail: TEL.playFail, stall: TEL.stall, slow: TEL.slow, nudge: TEL.nudge, ttffMed: t.length ? t[Math.floor(t.length / 2)] : null, ttffMax: t.length ? t[t.length - 1] : null, n: per(), mode: st.mode };
+    TEL.sent = Date.now(); TEL.dirty = false; TEL.open = TEL.ok = TEL.addrFail = TEL.playFail = TEL.stall = TEL.slow = TEL.nudge = TEL.ezOpen = TEL.ezOk = TEL.ezFail = TEL.ezStall = TEL.bg = TEL.hit = TEL.miss = 0; TEL.ttff = []; TEL.ezTtff = []; TEL.ezErr = "";
     try { const x = S.sb.functions.invoke("hiktele", { body: d }); if (x && x.catch) x.catch(() => {}); } catch (e) {}
   }
   function stopOne(id, keepFrame) {
@@ -6517,17 +6528,24 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const ezBad = (id) => { const t = EZBAD.get(id); return !!t && Date.now() - t < CFG.ezBadFor; };
   const ezCount = () => [...P.values()].filter((p) => p.kind === "ez").length;
   const ezWanted = (cam, q) => st.eng === "ez" && !ezBad(cam.id) && ezCount() < CFG.ezMax && !!cam.no && typeof Promise !== "undefined";
-  async function ezInfo(cam, q) { // the viewing token (kept in memory only, 20 minutes) + the camera's address for the fast player
+  async function ezInfo(cam, q) { // the viewing token (kept in memory only, 3 hours) + the camera's address for the fast player
     const mk = (b) => `${b}/${cam.no}${q === 1 ? ".hd" : ""}.live`;
-    if (EZT && EZT.serial === cam.serial && Date.now() - EZT.at < 20 * 60000) return { token: EZT.token, domain: EZT.domain, url: mk(EZT.base) };
+    if (EZT && EZT.serial === cam.serial && Date.now() - EZT.at < 3 * 3600000) return { token: EZT.token, domain: EZT.domain, url: mk(EZT.base) };
     let r = null; try { const x = await S.sb.functions.invoke("hikez", { body: { id: cam.id, serial: cam.serial, quality: q } }); r = x && x.data; } catch (e) { r = null; }
     if (!r || !r.ok || !r.token || !/^ezopen:\/\//.test(String(r.url || ""))) return null;
     const m = String(r.url).match(/^(ezopen:\/\/[^/]+\/[^/]+)\/\d+(?:\.hd)?\.live/);
     if (m) EZT = { token: r.token, domain: r.domain, base: m[1], serial: cam.serial, at: Date.now() };
     return { token: r.token, domain: r.domain, url: r.url };
   }
+  function ezDpr(cam, q, W) { // how many picture dots per screen dot the fast player draws: enough for the screen in «عادي», the camera's full size in «أعلى جودة» (it used to draw at the box size → blurry when zoomed)
+    const d = Math.min(3, Math.max(1, window.devicePixelRatio || 1)); W = Math.max(1, W || 1);
+    if (q !== 1) return Math.max(1, Math.min(d, 1600 / W));
+    const i = qInfo(cam), sw = (i && Number(i.w)) || 2688;
+    return Math.max(d, Math.min(8, sw / W));
+  }
   function ezFit(p) { // the player's own box covers the camera box like object-fit: cover (16:9 picture)
-    try { const o = p.v, inr = o && o.firstElementChild, bx = o && o.parentNode; if (!inr || !bx) return; const bw = bx.clientWidth, bh = bx.clientHeight; if (!bw || !bh) return;
+    try { const o = p.v, inr = o && o.firstElementChild; let bx = o && o.parentNode; if (bx && bx.id === "nfcwpark") bx = document.querySelector("#nfcwbody .nfcw-box"); // waiting in the background: sized like the box on screen, so nothing jumps when it comes forward
+      if (!inr || !bx) return; const bw = bx.clientWidth, bh = bx.clientHeight; if (!bw || !bh) return;
       const W = Math.ceil(Math.max(bw, bh * 16 / 9)), Hh = Math.ceil(W * 9 / 16);
       if (p.fw === W && p.fh === Hh && p.bw === bw && p.bh === bh) return; p.fw = W; p.fh = Hh; p.bw = bw; p.bh = bh;
       inr.style.width = W + "px"; inr.style.height = Hh + "px"; inr.style.left = Math.round((bw - W) / 2) + "px"; inr.style.top = Math.round((bh - Hh) / 2) + "px";
@@ -6555,22 +6573,25 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (!p.started) { p.started = Date.now(); TEL.ezTtff.push(p.started - p.t0); tel("ezOk"); p.ft = setTimeout(() => { if (P.get(cam.id) === p) saveFrame(cam.id); }, 4000); }
     p.lastAdv = Date.now(); p.soft = false; TRIES.set(cam.id, 0); setMsg(cam.id, ""); mark(cam.id); ezFit(p);
     if (p.q === 1) { note(qLine(cam), 6000); foot(); }
+    if (p.bg) foot(); else setTimeout(warmTick, 250);
   }
   async function startEz(cam, p) {
     const cold = !(window.EZUIKit && window.EZUIKit.EZUIKitPlayer);
-    if (cold) setMsg(cam.id, T("بننزّل المشغّل السريع — أول مرة بس…", "Downloading the fast player — first time only…"));
+    if (cold) setMsg(cam.id, T("بنجهّز اللايف — أول مرة بس…", "Getting live ready — first time only…"));
     const got = await Promise.all([loadEz().catch(() => null), ezInfo(cam, p.q).catch(() => null)]);
     if (P.get(cam.id) !== p) return;
     if (cold) setMsg(cam.id, "");
     const lib = got[0], info = got[1];
     if (!lib || !info) { ezGiveUp(cam, p, lib ? "info" : "lib"); return; }
     p.tEz = Date.now(); // the 12-second «no picture» rule counts from here (and again from the moment its decoder has arrived), not from the download
-    const tile = tileOf(cam.id), box = tile && tile.querySelector(".nfcw-box"); if (!box) { P.delete(cam.id); mark(cam.id); return; }
+    const tile = tileOf(cam.id), box = tile ? tile.querySelector(".nfcw-box") : (isWarm(cam.id) ? parkEl() : null); if (!box) { P.delete(cam.id); mark(cam.id); return; }
+    p.bg = !tile;
     const o = document.createElement("div"); o.className = "nfcw-ez"; const inr = document.createElement("div"); inr.id = "nfcwez" + (++ezSeq); inr.className = "nfcw-ezin"; o.appendChild(inr);
     p.v = o; box.appendChild(o); ezFit(p); applyZ();
     try {
       const E = lib.EZUIKitPlayer; ezRun(true);
-      p.ez = new E({ id: inr.id, accessToken: info.token, url: info.url, width: p.fw || box.clientWidth, height: p.fh || box.clientHeight, template: "simple", audio: false, language: "en", dblClickFullscreen: false,
+      const w0 = p.fw || box.clientWidth || 320; p.dpr = Math.round(ezDpr(cam, p.q, w0) * 100) / 100;
+      p.ez = new E({ id: inr.id, accessToken: info.token, url: info.url, width: w0, height: p.fh || box.clientHeight || 180, dpr: p.dpr, template: "simple", audio: false, language: "en", dblClickFullscreen: false,
         env: { domain: info.domain }, staticPath: EZ_STATIC, loggerOptions: { level: "ERROR" },
         handleSuccess: () => {}, handleError: (e) => { try { TEL.ezErr = String([e && e.type, e && e.retcode, e && e.code, e && e.msg].filter((x) => x != null && x !== "").join(":")).replace(/[^A-Za-z0-9 _:.-]/g, "").slice(0, 60); TEL.dirty = true; } catch (x) {} if (P.get(cam.id) === p && !p.started) ezGiveUp(cam, p, "err"); } });
       const on = (name, fn) => { try { if (typeof p.ez.on === "function") p.ez.on(name, fn); else if (p.ez.eventEmitter && typeof p.ez.eventEmitter.on === "function") p.ez.eventEmitter.on(name, fn); } catch (e) {} };
@@ -6594,10 +6615,38 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     else if (stuck > CFG.soft && !p.soft) { p.soft = true; mark(id); }
   }
   function setEng(e) {
-    st.eng = e === "ez" ? "ez" : "hls"; st.ezDied = false; LS.set("nf_cam_engine", st.eng); EZBAD.clear(); EZSTALL.clear(); TRIES.clear(); st.q.max = false;
+    st.eng = e === "ez" ? "ez" : "hls"; st.ezDied = false; LS.set("nf_cam_way", st.eng === "hls" ? "hls" : ""); EZBAD.clear(); EZSTALL.clear(); TRIES.clear(); st.q.max = false;
     stopAll(); if (st.eng === "ez") loadEz().catch(() => {}); paint();
   }
-  const wanted = (cam) => onPage() && !st.idle && !st.arr && !document.hidden && visible().some((c) => c.id === cam.id) && (!lazy() || seen.has(cam.id));
+  /* ---- v11.45: the other cameras get ready behind the one on screen (one-camera view with «لايف سريع»), so turning to the next one finds it already live ---- */
+  const parkEl = () => document.getElementById("nfcwpark");
+  function warmCams() { // which cameras stay live although they are not on screen — the nearest ones first
+    if (per() !== 1 || st.eng !== "ez" || st.idle || st.arr || st.q.max || !onPage() || document.hidden) return [];
+    const cams = ordered(), f = visible()[0]; if (!f || cams.length < 2) return [];
+    const i = cams.findIndex((c) => c.id === f.id), out = [], N = cams.length;
+    for (let k = 1; k < N && out.length < CFG.warmMax; k++) [i + k, i - k].forEach((j) => { const c = cams[((j % N) + N) % N]; if (c && c.id !== f.id && c.online && c.no && !ezBad(c.id) && !out.includes(c) && out.length < CFG.warmMax) out.push(c); });
+    return out;
+  }
+  const isWarm = (id) => warmCams().some((c) => c.id === id);
+  function park(v) { const pk = parkEl(); if (!pk || !v) return false; try { v.style.transform = ""; } catch (e) {} pk.appendChild(v); return true; }
+  function warmTick() { // one more camera at a time, and only once the camera on screen is showing (or has been trying for a while)
+    if (!parkEl()) return; const w = warmCams();
+    let cut = 0; P.forEach((p, id) => { if (p.bg && !w.some((c) => c.id === id)) { stopOne(id); cut++; } }); if (cut) foot(); // not one of the nearest any more (or «أعلى جودة» / normal way now): it stops
+    if (!w.length) return;
+    const f = visible()[0], pf = f && P.get(f.id);
+    if (f && f.online && !(pf && (pf.started || Date.now() - pf.t0 > CFG.warmAfter))) return;
+    if ([...P.values()].some((p) => p.bg && !p.started)) return;
+    const c = w.find((x) => !P.has(x.id) && !RT.has(x.id)); if (c) { tel("bg"); startOne(c); }
+  }
+  // the owner opened the app with «لايف سريع» on: fetch the player and the viewing token now, so the cameras page has nothing left to wait for
+  let preDone = false;
+  function preWarm() {
+    if (preDone || st.eng !== "ez" || !can()) return; preDone = true;
+    loadEz().catch(() => { preDone = false; });
+    const c = (st.cams || []).find((x) => x.online && x.no); if (c) ezInfo(c, 2).catch(() => {});
+  }
+  [1500, 3500, 8000, 20000].forEach((ms) => setTimeout(() => { try { preWarm(); } catch (e) {} }, ms));
+  const wanted = (cam) => onPage() && !st.idle && !st.arr && !document.hidden && ((visible().some((c) => c.id === cam.id) && (!lazy() || seen.has(cam.id))) || isWarm(cam.id));
   function retry(cam) { // the stream dropped or never came → again, slower each time, as long as this camera is on the screen
     const n = (TRIES.get(cam.id) || 0) + 1; TRIES.set(cam.id, n);
     if (n >= 2) setMsg(cam.id, n > CFG.maxTries ? T("النت ضعيف — بنجرّب تاني كل نص دقيقة", "Weak connection — trying again every half minute") : T("اللايف بيقطّع — بنرجّعه…", "Live dropped — reconnecting…"));
@@ -6607,13 +6656,14 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   }
   async function startOne(cam) {
     if (!can() || !onPage() || st.idle || st.arr || P.has(cam.id) || !cam.online) return;
-    if (!tileOf(cam.id)) return;
+    const bg = !tileOf(cam.id); if (bg && !(isWarm(cam.id) && parkEl())) return;
     clearTimeout(RT.get(cam.id)); RT.delete(cam.id);
     const q = per() === 1 && st.q.max && st.q.cam === cam.id ? 1 : 2; // 1 = main stream («أعلى جودة»)
     const fast = ezWanted(cam, q);
+    if (bg && !fast) return; // waiting in the background is only for the fast player
     const v = fast ? null : document.createElement("video");
     if (v) { v.muted = true; v.playsInline = true; v.autoplay = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.crossOrigin = "anonymous"; }
-    const p = { v, hls: null, ez: null, kind: fast ? "ez" : "hls", q, t0: Date.now(), started: 0, lastT: -1, lastAdv: Date.now(), soft: false, rec: 0, fail: null, ft: null, blocked: false }; P.set(cam.id, p);
+    const p = { v, hls: null, ez: null, kind: fast ? "ez" : "hls", q, t0: Date.now(), started: 0, lastT: -1, lastAdv: Date.now(), soft: false, rec: 0, fail: null, ft: null, blocked: false, bg }; P.set(cam.id, p);
     tel(fast ? "ezOpen" : "open"); watchOn(); setWait(cam.id, true);
     if (!(TRIES.get(cam.id) > 1)) setMsg(cam.id, LS.get(frameKey(cam.id)) ? "" : T("بنفتح اللايف…", "Opening live…"));
     if (fast) { startEz(cam, p); foot(); return; }
@@ -6695,6 +6745,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     });
     // a picture for next time's first paint — only when nobody is touching the screen (it costs a hiccup)
     if (now - snapAt > CFG.snap && now - lastTouch > 5000 && !G && !ZA) { snapAt = now; P.forEach((p, id) => { if (p.started) saveFrame(id); }); }
+    warmTick();
     telSend(false);
   }
 
@@ -7087,15 +7138,18 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   const landLabel = () => (phone() ? "⟲ " + T("بالعرض", "Landscape") : "⛶ " + T("ملء الشاشة", "Full screen"));
   function foot() {
     const f = document.getElementById("nfcwfoot"); if (!f) return;
-    const n = P.size; const mx = [...P.values()].some((p) => p.q === 1);
+    const n = P.size; const mx = [...P.values()].some((p) => p.q === 1); const bgN = [...P.values()].filter((p) => p.bg).length, fg = n - bgN;
     const leg = `<div class="nfcw-leg small muted"><span><i class="g"></i>${H(T("لايف", "Live"))}</span><span><i class="y"></i>${H(T("بيحمّل", "Loading"))}</span><span><i class="r"></i>${H(T("مفصولة", "Not connected"))}</span></div>`;
     f.innerHTML = st.idle
       ? `<button type="button" class="btn p" data-cwresume>${H(T("اللايف وقف عشان مالمستش الشاشة 10 دقايق — دوس هنا يكمل", "Live paused after 10 minutes without a touch — tap to continue"))}</button>`
       : mx ? `<span class="small muted">${H(T("لايف بأعلى جودة · حوالي 40 ميجا في الدقيقة من شريحة المصنع — رجّعها «عادي» لما تخلص", "Live at top quality · about 40 MB a minute of the factory SIM — switch back to «Normal» when done"))}</span>`
+      : bgN ? `<span class="small muted">${H(T(`لايف ${fg === 1 ? "كاميرا" : fg + " كاميرات"} + ${bgN} جاهزة في الخلفية · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${fg} camera${fg === 1 ? "" : "s"} + ${bgN} ready in the background · about ${n}–${n * 2} MB a minute of the factory SIM`))}</span>`
       : `<span class="small muted">${n ? H(T(`لايف ${n} ${n === 1 ? "كاميرا" : "كاميرات"} · حوالي ${n}–${n * 2} ميجا في الدقيقة من شريحة المصنع`, `Live: ${n} camera${n === 1 ? "" : "s"} · about ${n}–${n * 2} MB a minute of the factory SIM`)) : H(T("بيقف لوحده لما تخرج من الصفحة", "Stops by itself when you leave the page"))}</span>`;
     if (!st.idle && st.cams && st.cams.length) {
-      const on = st.eng === "ez", back = on ? [...EZBAD.keys()].filter((id) => ezBad(id)).length : 0;
-      f.insertAdjacentHTML("beforeend", leg + `<div class="nfcw-engrow"><button type="button" class="btn sm nfcw-engb ${on ? "on" : ""}" data-cweng aria-pressed="${on}">⚡ ${H(T("لايف سريع (تجربة)", "Fast live (trial)"))}${on ? " ✓" : ""}</button><span class="small muted">${H(on ? (back ? T(`السريع مافتحش على ${back} — شغّالة بالطريقة العادية`, `Fast did not open on ${back} — running the normal way`) : T("بيفتح بمشغّل هيك فيجن — لو حاجة باظت اقفله", "Opens with Hikvision's own player — switch it off if anything misbehaves")) : st.ezDied ? T("السريع قفل الصفحة آخر مرة فاتقفل لوحده — دوس لو عايز تجرّبه تاني", "Fast closed the page last time, so it switched itself off — tap to try again") : T("بيفتح الكاميرا في ثواني بدل ما تستنى — جرّبه", "Opens a camera in seconds instead of the wait — try it"))}</span></div>`);
+      const back = st.eng === "ez" ? [...P.entries()].filter((x) => x[1].kind !== "ez" && ezBad(x[0])).length : 0; // cameras that are open the backup way right now
+      const why = st.eng === "hls" ? (st.ezDied ? T("اللايف قفل الصفحة آخر مرة، فالمرة دي الكاميرات بتفتح بالطريقة الاحتياطية (أبطأ). المرة الجاية بترجع زي الأول.", "Live closed the page last time, so this once the cameras open the backup (slower) way. Next time it is back to normal.") : T("الكاميرات بتفتح بالطريقة الاحتياطية (أبطأ).", "Cameras are opening the backup (slower) way."))
+        : back ? T(`${back === 1 ? "كاميرا" : back === 2 ? "كاميرتين" : back + " كاميرات"} فتحت بالطريقة الاحتياطية (أبطأ) — بنجرّب السريعة تاني بعد شوية`, `${back} camera${back === 1 ? "" : "s"} opened the backup (slower) way — the fast way is tried again in a while`) : "";
+      f.insertAdjacentHTML("beforeend", leg + (why ? `<div class="small muted nfcw-engnote">${H(why)}</div>` : ""));
     }
   }
   function paint() {
@@ -7105,6 +7159,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     if (Z.id !== oneId) zReset(oneId);
     const sig = sigOf(), grid0 = b.querySelector(":scope > .nfcw-grid");
     const vis = visible(), ids = new Set(vis.map((c) => c.id));
+    const keepIds = new Set(ids); warmCams().forEach((c) => keepIds.add(c.id)); // on screen + getting ready behind it
     let rebuilt = false;
     if (sig && b.__sig === sig && (sig[0] === "S" ? !!b.querySelector(":scope > .nfcw-sec") : !!grid0)) {
       // the same cameras in the same boxes: nothing is torn out (a video that leaves the page for an instant freezes on the iPhone, and a finger on it loses its zoom)
@@ -7117,11 +7172,15 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       rebuilt = true;
       const keep = new Map(); P.forEach((p, id) => { if (p.v && p.v.parentNode) { keep.set(id, p.v); p.v.parentNode.removeChild(p.v); } });
       b.style.transform = ""; b.innerHTML = bodyHtml(); b.__sig = sig;
-      [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
-      keep.forEach((v, id) => { const t = tileOf(id); if (t && P.has(id)) { t.querySelector(".nfcw-box").appendChild(v); mark(id); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); } });
+      [...P.keys()].forEach((id) => { if (!keepIds.has(id)) stopOne(id); });
+      keep.forEach((v, id) => { const p = P.get(id), t = tileOf(id); if (!p) return;
+        if (t) { if (p.bg) tel(p.started ? "hit" : "miss"); p.bg = false; t.querySelector(".nfcw-box").appendChild(v); mark(id); if (p.started) setMsg(id, ""); const pr = v.play && v.play(); pr && pr.catch && pr.catch(() => {}); }
+        else if (p.kind === "ez" && park(v)) p.bg = true; // not on screen any more but one of the nearest: it waits, still live
+        else stopOne(id); });
+      P.forEach((p, id) => { if (!p.v) p.bg = !tileOf(id); }); // a fast player still being fetched follows where its camera is now
       vis.forEach((c) => { const t = tileOf(c.id); if (t) t.__ov = ovHtml(c); });
     }
-    [...P.keys()].forEach((id) => { if (!ids.has(id)) stopOne(id); });
+    [...P.keys()].forEach((id) => { if (!keepIds.has(id)) stopOne(id); });
     vis.forEach((c) => { if (!c.online) { const p = P.get(c.id); if (p && !p.started) stopOne(c.id, false); if (RT.has(c.id)) { clearTimeout(RT.get(c.id)); RT.delete(c.id); } if (!P.has(c.id)) { mark(c.id); setMsg(c.id, T("الكاميرا مش أونلاين", "Camera offline")); } } });
     const l = document.getElementById("nfcwsizes"); if (l) { const sb = sizeBtns(); if (l.__h !== sb) { l.__h = sb; l.innerHTML = sb; } }
     applyMode(); layout(); ezFitAll(); applyZ();
@@ -7133,11 +7192,13 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   async function loadCams(force) {
     if (!can() || st.loading) return;
     if (!force && st.cams && Date.now() - st.camsAt < 60000) { paint(); return; }
+    if (!force && st.cams) paint(); // the remembered list: boxes, last pictures and live start now — no «بنجيب الكاميرات…» wait
     st.loading = true;
     try {
       const x = await S.sb.functions.invoke("hik", { body: { action: "cameras" } }); const r = x && x.data;
       if (r && r.ok) {
         st.cams = (r.cameras || []).filter((c) => c && c.id && c.serial).sort((a, b) => Number(a.no || 0) - Number(b.no || 0)); st.camsAt = Date.now(); st.err = "";
+        LS.set("nf_camlist", JSON.stringify({ at: st.camsAt, cams: st.cams.map((c) => ({ id: c.id, serial: c.serial, no: c.no, name: c.name, online: !!c.online })) }));
         if (r.layout && r.layout.map) { st.lay = r.layout; LS.set("nf_camlay", JSON.stringify(r.layout)); }
       }
       else st.err = errText(r || { err: "network" });
@@ -7265,7 +7326,8 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
 .nfcw-name{position:absolute;z-index:3;inset-inline-start:6px;bottom:4px;display:flex;align-items:center;gap:5px;color:#fff;font-size:11px;text-shadow:0 1px 2px #000;max-width:calc(100% - 12px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .nfcw-name .dot{width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.3);flex:0 0 auto}.nfcw-tile.wait .nfcw-name .dot{background:#facc15;box-shadow:0 0 0 3px rgba(250,204,21,.32)}.nfcw-tile.live .nfcw-name .dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.32)}
 .nfcw-ez{position:absolute;inset:0;overflow:hidden;pointer-events:none;will-change:transform;background:transparent}.nfcw-ezin{position:absolute;left:0;top:0;width:100%;height:100%}.nfcw-ezin *{pointer-events:none!important}
-.nfcw-engrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}.nfcw-engb.on{background:#16a34a;border-color:#16a34a;color:#fff}
+#nfcwpark{position:absolute;left:0;bottom:0;width:4px;height:4px;overflow:hidden;opacity:.01;pointer-events:none}
+.nfcw-engnote{margin-top:6px}
 .nfcw-leg{display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap;margin-inline-end:10px}.nfcw-leg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-inline-end:4px}.nfcw-leg .g{background:#22c55e}.nfcw-leg .y{background:#facc15}.nfcw-leg .r{background:#ef4444}
 .nfcw-pages{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px}#nfcwfoot{margin-top:8px;min-height:24px}
 .nfcw-sec+.nfcw-sec{border-top:1px solid var(--line,#ddd);margin-top:12px;padding-top:10px}
@@ -7326,7 +7388,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
       <button type="button" class="btn sm nfcw-exit" data-cwexit>${H(T("→ رجوع", "← Back"))}</button>
       <div class="chips" id="nfcwsizes"></div>
       <span class="nfcw-tools"><button type="button" class="btn sm" data-cwarr>${H(T("ترتيب", "Arrange"))}</button><button type="button" class="btn sm" data-cwland>${H(landLabel())}</button><button type="button" class="btn sm" data-cwrefresh aria-label="${H(T("تحديث", "Refresh"))}">${typeof icon === "function" ? icon("refresh") : "↻"}</button></span></div>
-      <div id="nfcwbody"><div class="muted small">${H(T("بنجيب الكاميرات…", "Loading cameras…"))}</div></div><div id="nfcwfoot"></div><div id="nfcwarrbox"></div></div>`;
+      <div id="nfcwbody"><div class="muted small">${H(T("بنجيب الكاميرات…", "Loading cameras…"))}</div></div><div id="nfcwfoot"></div><div id="nfcwarrbox"></div><div id="nfcwpark" aria-hidden="true"></div></div>`;
   };
 
   /* ---- events ---- */
@@ -7360,7 +7422,6 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
     const pg = t.closest("[data-cwpage]"); if (pg) { ev.preventDefault(); if (Date.now() - (Z.pinchEnd || 0) < 400) return; /* a finger of a pinch, not a tap */ Z.end = 0; flip(Number(pg.getAttribute("data-cwpage"))); return; }
     const fc = t.closest("[data-cwfocus]"); if (fc) { ev.preventDefault(); st.focus = fc.getAttribute("data-cwfocus"); LS.set("nf_cams_focus", st.focus); paint(); return; }
     if (t.closest("[data-cwresume]")) { ev.preventDefault(); st.idle = false; poke(); paint(); return; }
-    if (t.closest("[data-cweng]")) { ev.preventDefault(); setEng(st.eng === "ez" ? "hls" : "ez"); return; }
     if (t.closest("[data-cwrefresh]")) { ev.preventDefault(); stopAll(); loadCams(true); return; }
     const sf = t.closest("[data-cwsecfull]"); if (sf) { ev.preventDefault(); st.page = Number(sf.getAttribute("data-cwsecfull")) || 0; enterFull(); return; }
     if (t.closest("[data-cwland]")) { ev.preventDefault(); if (per() === 4) st.page = topSec(); enterFull(); return; }
@@ -7387,7 +7448,7 @@ textarea.nfsc-msg{width:100%;min-height:210px;font-size:13.5px;line-height:1.6;b
   }
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("pagehide", () => stopAll());
-  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy, CFG, TEL, RT, TRIES, watch, mount, sigOf, telSend, startOne, stopOne, unblock, loadCams, view: () => EXTRA_VIEWS.cams(), setEng, EZBAD, ezInfo, ezFitAll, ezReset: () => { EZT = null; ezP = null; } }; // for tests
+  window.__nfCamWall = { st, P, Z, GROUPS, stopAll, paint, onVis, onOrient, enterFull, exitFull, goBack, fit, fill, layout, setQ, applyZ, zoomAt, local, qInfo, ordered, secs, flip, showUi, hideUi, arrOpen, seen, zoomBy, CFG, TEL, RT, TRIES, watch, mount, sigOf, telSend, startOne, stopOne, unblock, loadCams, view: () => EXTRA_VIEWS.cams(), setEng, EZBAD, ezInfo, ezFitAll, ezReset: () => { EZT = null; ezP = null; }, warmCams, warmTick, preWarm }; // for tests
 })();;
 (function(){if(window.__NF_A1136__)return;window.__NF_A1136__=1;const r="nf.rfb.back",y=12e4,i={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,n)=>{try{n==null?localStorage.removeItem(t):localStorage.setItem(t,n)}catch{}}},c=()=>{try{return sessionStorage.getItem("nf.ninety.co")||""}catch{return""}},s=t=>{try{typeof ninetySet=="function"?ninetySet(t):sessionStorage.setItem("nf.ninety.co",t)}catch{}},a=t=>["","ninety","dashboard"].includes(String(t||"").replace(/^#\/?/,"").split("/")[0])||String(t||"").replace(/^#\/?/,"")==="";function l(){const t=String(location.hash||"");i.set(r,JSON.stringify({h:t,co:c(),at:Date.now()}))}try{window.addEventListener("click",t=>{t.target&&t.target.closest&&t.target.closest("button.nfrfb")&&l()},!0)}catch{}let e=null;try{const t=JSON.parse(i.get(r)||"null");t&&Date.now()-(+t.at||0)<y&&(e=t)}catch{e=null}if(i.set(r,null),window.nfRefreshStay={remember:l,last:()=>e},!e)return;e.co&&!c()&&s(e.co);const o=String(e.h||""),f=()=>{try{const t=String(location.hash||"");if(o&&o!=="#/ninety"&&t!==o&&a(t)){const n=o.replace(/^#\/?/,"").split("/");typeof S=="object"&&S&&(S.route={view:n[0]||"dashboard",id:n[1]||null,sub:n[2]||null}),location.hash=o}e.co&&!c()&&s(e.co),typeof render=="function"&&render(!0)}catch{}};let u=0;const h=()=>{u++;try{e.co&&!c()&&s(e.co);const t=String(location.hash||"");o&&t!==o&&a(t)&&o!=="#/ninety"&&f()}catch{}u<12&&setTimeout(h,500)};setTimeout(h,0);try{document.addEventListener("nf:login",()=>setTimeout(f,60),{once:!0})}catch{}})();;
 (function(){if(window.__NF_A1137__||(window.__NF_A1137__=1,typeof isStudioz=="function"&&isStudioz()||typeof isConstruction=="function"&&isConstruction()||typeof isStuSys=="function"&&isStuSys())||typeof vMe!="function")return;const w=()=>typeof I18N!="undefined"&&I18N.lang==="en",i=(t,e)=>w()?e:t,o=t=>typeof esc=="function"?esc(String(t==null?"":t)):String(t==null?"":t),c={get:t=>{try{return localStorage.getItem(t)}catch{return null}},set:(t,e)=>{try{e==null?localStorage.removeItem(t):localStorage.setItem(t,e)}catch{}}},l=()=>{try{return/Android/i.test(navigator.userAgent||"")}catch{return!1}},u=()=>{try{return!!(S.session&&S.session.workerId)&&!(typeof isAdmin=="function"&&isAdmin())}catch{return!1}},s=()=>"nf.pt.done."+(S.session&&S.session.workerId||""),n={checked:!1,busy:!1,email:"",justSaved:!1,err:""},m=async t=>{if(!S.sb||!S.sb.functions)throw new Error("offline");const e=await S.sb.functions.invoke("play-testers",{body:t});if(e.error){let r="error";try{r=(await e.error.context.json()).error||r}catch{}throw new Error(r)}return e.data||{}},f=()=>{try{S.route&&S.route.view==="me"&&typeof rerender=="function"&&rerender()}catch{}};async function y(){if(!(n.checked||n.busy||!u()||!l()||c.get(s()))){n.busy=!0;try{const t=await m({action:"get"});n.checked=!0,t&&t.email?(c.set(s(),"1"),n.email=t.email):f()}catch{}finally{n.busy=!1}}}function g(){return!u()||!l()?"":n.justSaved?`<div class="card ptc ok" id="ptc"><div class="ptc-h">\u2713 ${o(i("\u0627\u062A\u0633\u062C\u0651\u0644","Saved"))}</div><div class="tiny muted">${o(i(`${n.email} \u2014 \u0647\u064A\u0648\u0635\u0644\u0643 \u0644\u064A\u0646\u0643 \u0645\u0646 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A \u062A\u0646\u0632\u0651\u0644 \u0645\u0646\u0647 \u0627\u0644\u0623\u0628\u0644\u0643\u064A\u0634\u0646.`,`${n.email} \u2014 you will get a Google Play link to install the app.`))}</div></div>`:c.get(s())||!n.checked?"":`<div class="card ptc" id="ptc"><div class="ptc-h">${o(i("\u0623\u0628\u0644\u0643\u064A\u0634\u0646 Ninety \u0639\u0644\u0649 \u062C\u0648\u062C\u0644 \u0628\u0644\u0627\u064A","Ninety app on Google Play"))}</div>
