@@ -446,3 +446,37 @@
   html.nf-tbmin .tabbar.tabbar>a>svg{width:24px!important;height:24px!important}
 }
 </style>`)}catch{return}i.classList.add("nf-tbm");let a=!1,m=0,o=0,s=0,d=0,p=!1,c=0,f=0;const h=()=>document.querySelector(".tabbar"),l=()=>{try{const t=h();i.classList.toggle("nf-tbmore",!(t&&t.querySelector(":scope > a.on")))}catch{}};function e(t){t=!!t&&!!n.matches,o=0,s=0,t!==a&&(a=t,t&&l(),i.classList.toggle("nf-tbmin",t))}const u=()=>window.scrollY||i.scrollTop||0;function w(){d=0;const t=u(),r=t-m;if(m=t,!n.matches){a&&e(!1);return}if(t<56){e(!1);return}(p||Date.now()-c<1500)&&(r>0?(o+=r,s=0,o>24&&Date.now()-f>2500&&e(!0)):r<0&&(s-=r,o=0,s>40&&e(!1)))}window.addEventListener("scroll",()=>{d||(d=requestAnimationFrame(w))},{passive:!0});const b=()=>{c=Date.now()};window.addEventListener("touchstart",()=>{p=!0,b()},{passive:!0,capture:!0}),["touchend","touchcancel"].forEach(t=>window.addEventListener(t,()=>{p=!1,b()},{passive:!0,capture:!0})),window.addEventListener("wheel",b,{passive:!0,capture:!0}),window.addEventListener("keydown",t=>{/^(Arrow|Page|Home|End| $)/.test(t.key||"")&&b()},!0),document.addEventListener("click",t=>{!a||!(t.target&&t.target.closest&&t.target.closest(".tabbar"))||(t.preventDefault(),t.stopPropagation(),f=Date.now(),e(!1))},!0),window.addEventListener("hashchange",()=>{m=0,e(!1)});try{n.addEventListener?n.addEventListener("change",()=>e(!1)):n.addListener&&n.addListener(()=>e(!1))}catch{}try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(()=>{a&&l()})}catch{}window.nfTabbarMin={set:e,is:()=>a}})();
+
+/* v11.55 (المصنع بس) — «توضيح» في صفحة الكاميرات (المالك بس): فلتر عرض على الصورة (إضاءة + تباين + ألوان) بدرجتين.
+   محمود 13/11 19:13 «نعمل فلتر على الكاميرات عشان نحسّن الرؤية بألوان وتفاصيل واضحة». ده عرض على شاشتك بس: إعدادات الكاميرات المتثبّتة والتسجيل مابيتغيّروش. */
+;(function () {
+  if (window.__NF_CAMFX__ || typeof EXTRA_VIEWS === "undefined") return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  window.__NF_CAMFX__ = 1;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const LV = [["", ""], ["nfcw-fx1", "1"], ["nfcw-fx2", "2"]];
+  let lv = 0; try { lv = Math.max(0, Math.min(2, Number(localStorage.getItem("nf_cam_fx")) || 0)); } catch (e) {}
+  const s = document.createElement("style"); s.id = "nfcwfx-css";
+  s.textContent = `.nfcw-fx1 .nfcw-box video,.nfcw-fx1 .nfcw-box .nfcw-ez{filter:brightness(1.25) contrast(1.12) saturate(1.3)}
+.nfcw-fx2 .nfcw-box video,.nfcw-fx2 .nfcw-box .nfcw-ez{filter:brightness(1.6) contrast(1.22) saturate(1.5)}
+.nfcw-fxb.on{background:#ffd400;color:#000;border-color:transparent}`;
+  document.head.appendChild(s);
+  const label = () => "🔆 " + (lv ? T("توضيح " + lv, "Enhance " + lv) : T("توضيح", "Enhance"));
+  function apply() {
+    const r = document.documentElement; r.classList.toggle("nfcw-fx1", lv === 1); r.classList.toggle("nfcw-fx2", lv === 2);
+    const b = document.querySelector(".nfcw-fxb"); if (b) { b.textContent = label(); b.classList.toggle("on", lv > 0); b.setAttribute("aria-pressed", lv ? "true" : "false"); }
+  }
+  function mount() {
+    if (!/^#\/cams(\/|$)/.test(location.hash)) return;
+    const t = document.querySelector(".nfcw-tools"); if (!t || t.querySelector(".nfcw-fxb")) return;
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip nfcw-fxb"; b.title = T("توضيح الصورة على شاشتك بس — مابيغيّرش الكاميرا ولا التسجيل", "Enhances the picture on your screen only — the camera and the recording are not changed");
+    t.appendChild(b); apply();
+  }
+  document.addEventListener("click", (ev) => {
+    const b = ev.target && ev.target.closest ? ev.target.closest(".nfcw-fxb") : null; if (!b) return;
+    ev.preventDefault(); ev.stopPropagation(); lv = (lv + 1) % 3; try { localStorage.setItem("nf_cam_fx", String(lv)); } catch (e) {} apply();
+  }, true);
+  setInterval(mount, 700); window.addEventListener("hashchange", () => setTimeout(mount, 60)); apply();
+  window.__nfCamFx = { get lv() { return lv; }, mount, apply };
+})();
