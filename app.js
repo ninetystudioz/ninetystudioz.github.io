@@ -666,3 +666,68 @@ ${B.join(`
 .nfie-add{display:grid;grid-template-columns:minmax(0,1fr) 92px auto;gap:6px;align-items:center}
 @media (max-width:520px){.nfie-row{flex-wrap:wrap}.nfie-q{width:100%;justify-content:flex-end}}
 </style>`),window.nfIssEdit={lineMode:f,canEdit:n,save:_}}(),function(){if(window.__NF_A1164N__||(window.__NF_A1164N__=1,typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction()))return;const L=()=>typeof I18N!="undefined"&&I18N.lang==="en",r=(s,p)=>L()?p:s,q=()=>{try{return String(S.session&&S.session.workerId||"")}catch{return""}};function l(s){try{if(!s||s.type!=="need"||s.status!=="pending"||role()!=="manager")return!1;const p=q();return!p||String(s.requesterId||"").replace(/^w:/,"")!==p?!1:typeof reqStage=="function"&&reqStage(s).role==="manager"}catch{return!1}}typeof stepActor=="function"&&(stepActor=(s=>function(p,$){return p==="manager"&&l($)?!0:s.apply(this,arguments)})(stepActor));const v=new Set;let C=0;async function n(s){if(v.has(s))return;const p=byId("requests",s);if(l(p)){v.add(s);try{await decideRequest(s,"approved",r("طلب مدير المصنع نفسه — اتعتمد تلقائي","The factory manager's own request — approved automatically"))&&C++}catch($){v.delete(s),console.warn("a1164 need auto",$)}}}typeof Store=="object"&&Store&&typeof Store.save=="function"&&(Store.save=(s=>function(p,$){const A=p==="requests"&&$&&$.type==="need"&&$.status==="pending"&&!byId("requests",$.id),k=s.apply(this,arguments);return A&&Promise.resolve(k).then(()=>setTimeout(()=>n($.id),700)).catch(()=>{}),k})(Store.save));let f=0;function y(){if(!(Date.now()-f<6e4)){f=Date.now();try{if(!S.session||role()!=="manager"||typeof writable=="function"&&!writable()||S.viewOrig||S.demoOrig)return;const s=new Date(Date.now()-14*864e5).toISOString();list("requests").filter(p=>l(p)&&String(p.createdAt||"")>=s).forEach(p=>setTimeout(()=>n(p.id),300))}catch{}}}setTimeout(y,4e3),typeof RENDER_HOOKS=="object"&&Array.isArray(RENDER_HOOKS)&&RENDER_HOOKS.push(()=>setTimeout(y,1500)),window.nfMgrNeed={mgrOwnNeed:l,stats:()=>({n:C}),sweep:()=>{f=0,y()}}}(),function(){if(window.__NF_A1164P__||(window.__NF_A1164P__=1,typeof isStuSys=="function"&&isStuSys()||typeof isConstruction=="function"&&isConstruction()))return;const L=()=>typeof I18N!="undefined"&&I18N.lang==="en",r=(n,f)=>L()?f:n,q=n=>{try{return typeof nfMpNorm=="function"?nfMpNorm(n):String(n||"").trim()}catch{return String(n||"").trim()}};function l(n){if(!n)return[];const f=Array.isArray(n.needUnmatched)&&n.needUnmatched.length?n.needUnmatched:(n.needItems||[]).filter(s=>s&&!s.materialId),y=new Set((n.items||[]).map(s=>{const p=byId("materials",s.materialId);return q(p?p.name:s.name)}));return f.filter(s=>s&&s.name&&!y.has(q(s.name)))}function v(n){return new Set([...n.querySelectorAll("#lines [name=l-mat]")].map(f=>{const y=f.value&&byId("materials",f.value);return y?q(y.name):""}).filter(Boolean))}function C(n,f){const y=l(f),s=n.querySelector(".nfpu");if(s&&s.remove(),!y.length)return;const p=v(n),$=n.querySelector('[data-ni="open"]'),A=$?$.parentElement:n.querySelector("#lines");if(!A)return;const k=!!$,E=y.map((_,e)=>{const a=p.has(q(_.name));return`<div class="nfpu-r${a?" ok":""}"><span><b>${esc(_.name)}</b> × ${esc(fmtNum(_.qty))} ${esc(_.unit||"")}</span>${a?`<span class="st good">${esc(r("اتضاف ✓","added ✓"))}</span>`:k?`<button type="button" class="btn xs p" data-nfpu="${e}">${icon("plus")}${esc(r("كوّد وضيف","Code and add"))}</button>`:""}</div>`}).join("");A.insertAdjacentHTML("beforebegin",`<div class="nfpu banner warn" style="display:block;margin:8px 0"><div style="margin-bottom:6px">${icon("alert")} ${esc(r(`بنود من الطلب لسه مش متكوّدة في المخزن (${y.length}) — لازم تتكوّد عشان تدخل الأمر:`,`Request lines not coded in the store yet (${y.length}) — code them to add them to the order:`))}</div>${E}</div>`),n.querySelectorAll("[data-nfpu]").forEach(_=>_.addEventListener("click",e=>{e.preventDefault();const a=y[+_.dataset.nfpu];a&&($.click(),setTimeout(()=>{const i=n.querySelector("#ni-name");i&&(i.value=a.name);const d=n.querySelector("#ni-unit");d&&a.unit&&([...d.options].some(u=>u.value===a.unit)||d.insertAdjacentHTML("beforeend",`<option value="${esc(a.unit)}">${esc(a.unit)}</option>`),d.value=a.unit),n.dataset.nfpuWant=JSON.stringify({name:a.name,qty:a.qty});try{(n.querySelector("#nibox")||i).scrollIntoView({block:"center",behavior:"smooth"})}catch{}},60))}))}document.addEventListener("click",n=>{const f=n.target.closest&&n.target.closest('[data-ni="save"]');if(!f)return;const y=f.closest("form")||document.getElementById("mform");if(!y||!y.dataset.nfpuWant)return;let s=null;try{s=JSON.parse(y.dataset.nfpuWant)}catch{return}let p=0;const $=setInterval(()=>{p++;try{const A=[...y.querySelectorAll("#lines .line")].find(k=>{const E=k.querySelector("[name=l-mat]"),_=E&&E.value&&byId("materials",E.value);return _&&q(_.name)===q(s.name)});if(A){clearInterval($),delete y.dataset.nfpuWant;const k=A.querySelector("[name=l-qty]");k&&!(+k.value>0)&&(k.value=s.qty,k.dispatchEvent(new Event("input",{bubbles:!0})),k.dispatchEvent(new Event("change",{bubbles:!0})));const E=y.dataset.nfpuPid,_=E&&byId("purchases",E);_&&C(y,_)}}catch{}p>40&&clearInterval($)},250)},!0),typeof ACTIONS=="object"&&typeof ACTIONS.poEdit=="function"&&(ACTIONS.poEdit=(n=>function(f){const y=n.apply(this,arguments);return setTimeout(()=>{try{const s=byId("purchases",f),p=document.querySelector("#modalroot form");if(!s||!p||!l(s).length)return;p.dataset.nfpuPid=f,C(p,s)}catch(s){console.warn("a1164 po pending",s)}},80),y})(ACTIONS.poEdit)),document.head.insertAdjacentHTML("beforeend","<style>.nfpu-r{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px dashed var(--line,#ccc)}.nfpu-r.ok{opacity:.7}</style>"),window.nfPoPending={pending:l}}();
+
+/* v11.57 (14 Nov 2026): «انت مروّح؟» — the face terminal (Edge acsync) recorded a check-out before the shift end ⇒ open task source:'gate'
+   for the worker (or his head when he has no phone). A card at the bottom of every page answers it: «أيوه مروّح» keeps the check-out,
+   «لأ، غلطة» cancels it (RPC nf_gate_out_answer). «بعدين» folds the card into a small pill. */
+(function () {
+  if (window.__nfGateOut) return;
+  if ((typeof isStudioz === "function" && isStudioz()) || (typeof isConstruction === "function" && isConstruction())) return;
+  const EN = () => typeof I18N !== "undefined" && I18N.lang === "en";
+  const T = (a, b) => (EN() ? b : a);
+  const done = new Set(); let folded = false; let busy = false;
+  const css = document.createElement("style");
+  css.textContent = `#nfgo{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 86px);z-index:950;max-width:520px;margin:0 auto;
+  background:var(--card,#fff);color:var(--ink,#1d232b);border:1px solid var(--line,#e3e6ea);border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.22);padding:14px 14px 12px;direction:rtl;-webkit-backdrop-filter:blur(18px) saturate(1.3);backdrop-filter:blur(18px) saturate(1.3)}
+  #nfgo .go-h{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px;margin-bottom:4px}
+  #nfgo .go-t{font-size:14px;line-height:1.6;color:var(--muted-ink,#5b636d);margin-bottom:10px}
+  #nfgo .go-b{display:flex;gap:8px}
+  #nfgo .go-b button{flex:1;border:0;border-radius:12px;padding:11px 8px;font:inherit;font-weight:700;font-size:15px;cursor:pointer}
+  #nfgo .go-yes{background:var(--accent,#1f3a5f);color:#fff}
+  #nfgo .go-no{background:#fff1d6;color:#8a5200}
+  #nfgo .go-later{position:absolute;top:8px;left:10px;border:0;background:none;color:var(--muted-ink,#7a828c);font:inherit;font-size:13px;cursor:pointer}
+  #nfgo .go-more{font-size:12px;color:var(--muted-ink,#7a828c);margin-top:8px}
+  #nfgop{position:fixed;left:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);z-index:950;border:0;border-radius:999px;padding:9px 14px;
+  background:#fff1d6;color:#8a5200;font:inherit;font-weight:800;box-shadow:0 6px 18px rgba(0,0,0,.15);cursor:pointer}
+  #nfgo button:disabled{opacity:.6}`;
+  document.head.appendChild(css);
+  const me = () => { try { return S && S.session && S.session.workerId ? String(S.session.workerId) : ""; } catch { return ""; } };
+  const open = () => { const w = me(); if (!w) return []; let L = []; try { L = list("tasks") || []; } catch { L = []; }
+    return L.filter((t) => t && t.source === "gate" && t.gateOut && ["open", "doing", undefined, null, ""].includes(t.status) && String(t.assigneeId || "") === w && !done.has(t.id))
+      .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""))); };
+  const esc2 = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  function paint() {
+    const Q = open(); let box = document.getElementById("nfgo"), pill = document.getElementById("nfgop");
+    if (!Q.length) { box && box.remove(); pill && pill.remove(); return; }
+    if (folded) { box && box.remove(); if (!pill) { pill = document.createElement("button"); pill.id = "nfgop"; pill.onclick = () => { folded = false; paint(); }; document.body.appendChild(pill); } pill.textContent = "🚪 " + (Q.length > 1 ? T(`${Q.length} أسئلة انصراف`, `${Q.length} check-out questions`) : T("انت مروّح؟", "Leaving?")); return; }
+    pill && pill.remove();
+    const t = Q[0], g = t.gateOut || {}, forHead = !!g.forHead;
+    const key = t.id + (busy ? ":b" : "");
+    if (box && box.getAttribute("data-k") === key) return;
+    if (!box) { box = document.createElement("div"); box.id = "nfgo"; document.body.appendChild(box); }
+    box.setAttribute("data-k", key);
+    box.style.direction = EN() ? "ltr" : "rtl";
+    box.innerHTML = `<button class="go-later" data-go="later">${T("بعدين", "Later")}</button>
+      <div class="go-h">🚪 ${forHead ? T(`${esc2(g.wname)} مروّح؟`, `Is ${esc2(g.wname)} leaving?`) : T("انت مروّح؟", "Are you leaving?")}</div>
+      <div class="go-t">${forHead ? T(`جهاز البصمة سجّل <b>${esc2(g.wname)}</b> انصراف`, `The face terminal checked <b>${esc2(g.wname)}</b> out`) : T("جهاز البصمة سجّلك انصراف", "The face terminal checked you out")} ${T("الساعة", "at")} <b>${esc2(g.hm)}</b> — ${T("قبل ميعاد الانصراف.", "before the end of the shift.")}</div>
+      <div class="go-b"><button class="go-yes" data-go="yes" ${busy ? "disabled" : ""}>${T("أيوه مروّح", "Yes, leaving")}</button><button class="go-no" data-go="no" ${busy ? "disabled" : ""}>${T("لأ، غلطة", "No, a mistake")}</button></div>
+      ${Q.length > 1 ? `<div class="go-more">${T(`وفيه ${Q.length - 1} كمان بعده`, `${Q.length - 1} more after this`)}</div>` : ""}`;
+    box.onclick = async (ev) => {
+      const b = ev.target && ev.target.closest ? ev.target.closest("[data-go]") : null; if (!b || busy) return;
+      const k = b.getAttribute("data-go");
+      if (k === "later") { folded = true; return paint(); }
+      busy = true; paint();
+      try {
+        const { data, error } = await S.sb.rpc("nf_gate_out_answer", { p_task: t.id, p_leave: k === "yes" });
+        if (error) throw error;
+        done.add(t.id);
+        if (typeof toast === "function") toast(k === "yes" ? T(`تمام — الانصراف ${g.hm} متسجّل`, `OK — check-out ${g.hm} kept`) : (data && data.cancelled === false ? T("فيه بصمة أحدث بعدها — مااتلغاش حاجة", "A newer punch came after it — nothing cancelled") : T("اتلغت بصمة الانصراف ✓", "Check-out cancelled ✓")));
+      } catch (e) { if (typeof toast === "function") toast(T("ماقدرتش أبعت الرد — جرّب تاني", "Couldn't send the answer — try again"), "err"); }
+      busy = false; paint();
+    };
+  }
+  window.addEventListener("hashchange", () => { folded = false; paint(); });
+  setInterval(paint, 2500); setTimeout(paint, 800);
+  window.__nfGateOut = { paint, open, done };
+})();
+
