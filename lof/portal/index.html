@@ -204,6 +204,9 @@ body.staff [data-act="out"]{display:none}
 [dir=rtl] .cc .dls b{text-transform:none}
 .cc .dls div{padding:1.3mm 0;border-top:.2mm solid var(--line-2)}
 .cc .dls .n{font-weight:500;color:var(--ink)}
+.cp.one{grid-template-columns:1fr}
+.cc.tight table{margin-top:3mm}.cc.tight td{padding:1.3mm 1.5mm}.cc.tight .dls div{padding:.9mm 0}.cc.tight .rn{margin-top:1.5mm}
+.cc.tighter{font-size:92%}.cc.tighter table{font-size:7.8pt}.cc.tighter .dls{font-size:7.2pt}.cc.tighter h3{font-size:13pt;margin-bottom:2mm}
 @media print{
   @page{size:A4 landscape;margin:0}
   html,body{background:#fff!important}
@@ -284,7 +287,7 @@ body.staff [data-act="out"]{display:none}
       upd: 'آخر تحديث', contracts: 'تعاقدات', pieces: 'إجمالي القطع', delivered: 'تم توريده', left: 'المتبقي', of: 'من',
       secT: 'المقاولون', secS: 'حسب أمر التوريد / العقد', po: 'أمر توريد', contract: 'عقد', dated: 'بتاريخ', due: 'موعد التسليم', lastDel: 'آخر توريد',
       st: { done: 'تم التوريد بالكامل', part: 'توريد جزئي', work: 'قيد التصنيع' }, nowSt: 'الموقف الحالي', back: '↩ السيستم',
-      item: 'البند', qty: 'المتعاقد', got: 'تم', rem: 'المتبقي', dels: 'أذون التسليم', prior: 'توريد سابق (قبل التسجيل على النظام)', none: 'لم يتم توريد أي كميات بعد.', dn: 'إذن',
+      item: 'البند', qty: 'المتعاقد', got: 'تم', rem: 'المتبقي', dels: 'أذون التسليم', prior: 'توريد سابق (قبل التسجيل على النظام)', conf: 'توريد مؤكَّد', none: 'لم يتم توريد أي كميات بعد.', dn: 'إذن',
       foot: 'البيانات مأخوذة مباشرة من نظام مصنع lōf وتتحدّث تلقائياً. الكميات فقط — بدون أسعار.', repEy: 'Site Furniture — حالة التوريدات', repT: 'حالة توريدات المقاولين', repSum: 'ملخص التعاقدات', repDet: 'تفاصيل التعاقدات', contractor: 'المقاول', project: 'المشروع (حسب المستند)', ref: 'المرجع', prog: 'التقدّم', status: 'الحالة', asOf: 'بتاريخ', page: 'صفحة', repFoot: 'lōf outdoor furniture — كميات فقط، بدون أسعار', coverSub: 'موقف توريد الفرش الخارجي لكل مقاول: الكميات المتعاقد عليها، ما تم توريده بأذون تسليم موقّعة، المتبقي، وموعد التسليم.', allDone: 'اكتمل', pct: '٪'
     },
     en: {
@@ -296,7 +299,7 @@ body.staff [data-act="out"]{display:none}
       upd: 'Last updated', contracts: 'Contracts', pieces: 'Total pieces', delivered: 'Delivered', left: 'Remaining', of: 'of',
       secT: 'Contractors', secS: 'by purchase order / contract', po: 'PO', contract: 'Contract', dated: 'dated', due: 'Delivery date', lastDel: 'Last delivery',
       st: { done: 'Fully delivered', part: 'Partly delivered', work: 'In production' }, nowSt: 'Current status', back: '↩ System',
-      item: 'Item', qty: 'Contracted', got: 'Delivered', rem: 'Left', dels: 'Delivery notes', prior: 'Earlier delivery (before system records)', none: 'Nothing delivered yet.', dn: 'Note',
+      item: 'Item', qty: 'Contracted', got: 'Delivered', rem: 'Left', dels: 'Delivery notes', prior: 'Earlier delivery (before system records)', conf: 'Confirmed delivery', none: 'Nothing delivered yet.', dn: 'Note',
       foot: 'Data comes straight from the lōf factory system and updates automatically. Quantities only — no prices.', repEy: 'Site Furniture — supply status', repT: 'Contractors\' supply status', repSum: 'Contracts summary', repDet: 'Contract details', contractor: 'Contractor', project: 'Project (as on the document)', ref: 'Reference', prog: 'Progress', status: 'Status', asOf: 'As of', page: 'Page', repFoot: 'lōf outdoor furniture — quantities only, no prices', coverSub: 'Site furniture supply position per contractor: contracted quantities, what was delivered on signed delivery notes, what is left and the delivery date.', allDone: 'complete', pct: '%'
     }
   };
@@ -368,7 +371,7 @@ body.staff [data-act="out"]{display:none}
     else {
       h += '<details><summary>' + esc(T('dels')) + ' (<span class="num">' + ds.length + '</span>)</summary><ul class="dl">';
       ds.forEach(function (z) {
-        h += '<li><div class="h"><span>' + (z.prior ? esc(T('prior')) : esc(T('dn')) + ' <span class="num">' + esc(z.no) + '</span>') + '</span><span class="num">' + (z.date ? esc(dt(z.date)) : '') + '</span></div>';
+        h += '<li><div class="h"><span>' + dlab(z) + '</span><span class="num">' + (z.date ? esc(dt(z.date)) : '') + '</span></div>';
         h += '<div class="ln">' + z.lines.map(function (l) { return '<span class="num">' + l.qty + '</span> × ' + esc(lang === 'en' ? l.en : l.ar); }).join(' · ') + '</div></li>';
       });
       h += '</ul></details>';
@@ -402,7 +405,27 @@ body.staff [data-act="out"]{display:none}
     pairs.forEach(function (pr) { pages.push('<section class="pg">' + head(T('repDet')) + '<div class="cp">' + pr.map(rcard).join('') + '</div>@@FOOT@@</section>'); });
     var tot = pages.length;
     $('report').innerHTML = pages.map(function (h, k) { return h.replace('@@FOOT@@', foot(k + 1, tot)); }).join('');
+    fitReport();
   }
+  /* a contract card that does not fit its half page gets a page of its own (full width); still too tall → tighter type */
+  function fitReport() {
+    var r = $('report'); if (!r || !r.firstChild) return;
+    var st = r.getAttribute('style'); r.setAttribute('style', 'display:block;position:absolute;left:-99999px;top:0;visibility:hidden');
+    try {
+      var over = function (el) { return el.scrollHeight > el.clientHeight + 2; };
+      [].slice.call(r.querySelectorAll('section.pg')).forEach(function (pg) {
+        var cp = pg.querySelector('.cp'); if (!cp) return; var cards = cp.querySelectorAll('.cc');
+        if (cards.length === 2 && (over(cards[0]) || over(cards[1]))) {
+          var pg2 = pg.cloneNode(true); pg2.querySelectorAll('.cc')[0].remove(); cards[1].remove();
+          pg.parentNode.insertBefore(pg2, pg.nextSibling); cp.classList.add('one'); pg2.querySelector('.cp').classList.add('one');
+        } else if (cards.length === 1) cp.classList.add('one');
+      });
+      [].slice.call(r.querySelectorAll('.cp.one .cc')).forEach(function (cc) { if (over(cc)) cc.classList.add('tight'); if (over(cc)) cc.classList.add('tighter'); });
+      var ps = r.querySelectorAll('section.pg'); [].forEach.call(ps, function (pg, k) { var el = pg.querySelector('.rf .num'); if (el) el.textContent = T('page') + ' ' + (k + 1) + ' / ' + ps.length; });
+    } catch (e) { /* keep the report as built */ }
+    if (st == null) r.removeAttribute('style'); else r.setAttribute('style', st);
+  }
+  function dlab(z) { return z.prior ? esc(T('prior')) : (!z.no || /^سابق/.test(z.no)) ? esc(T('conf')) : esc(T('dn')) + ' <span class="num">' + esc(z.no) + '</span>'; }
   function rcard(c) {
     var p = pct(c.done, c.qty);
     var h = '<div class="cc"><div class="co">' + esc(L(c.contractor)) + '</div><h3>' + esc(L(c.name)) + '</h3><div class="mt"><span><span class="k">' + esc(c.refKind === 'contract' ? T('contract') : T('po')) + '</span><b class="num">' + esc(c.ref) + '</b></span>' +
@@ -414,7 +437,7 @@ body.staff [data-act="out"]{display:none}
       return '<tr><td class="it">' + esc(lang === 'en' ? it.en : it.ar) + '</td><td class="n num">' + it.qty + '</td><td class="n num ' + (it.done ? 'ok' : 'zero') + '">' + it.done + '</td><td class="n num ' + (it.left ? 'left' : 'zero') + '">' + it.left + '</td></tr>'; }).join('') + '</tbody></table>';
     var ds = c.deliveries || [];
     h += '<div class="dls"><b>' + esc(T('dels')) + '</b>' + (ds.length ? ds.map(function (z) {
-      return '<div><span class="n">' + (z.prior ? esc(T('prior')) : esc(T('dn')) + ' <span class="num">' + esc(z.no) + '</span>') + (z.date ? ' · <span class="num">' + esc(dt(z.date)) + '</span>' : '') + '</span> — ' + z.lines.map(function (l) { return '<span class="num">' + l.qty + '</span> × ' + esc(lang === 'en' ? l.en : l.ar); }).join(' · ') + '</div>'; }).join('') : '<div>' + esc(T('none')) + '</div>') + '</div>';
+      return '<div><span class="n">' + dlab(z) + (z.date ? ' · <span class="num">' + esc(dt(z.date)) + '</span>' : '') + '</span> — ' + z.lines.map(function (l) { return '<span class="num">' + l.qty + '</span> × ' + esc(lang === 'en' ? l.en : l.ar); }).join(' · ') + '</div>'; }).join('') : '<div>' + esc(T('none')) + '</div>') + '</div>';
     return h + '</div>';
   }
   var cairoDay = function (iso) { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)); } catch (e) { return String(iso || '').slice(0, 10); } };
