@@ -383,8 +383,7 @@ body.staff [data-act="out"]{display:none}
     var foot = function (n, tot) { return '<div class="rf"><span>' + esc(T('repFoot')) + '</span><span class="num">' + esc(T('page')) + ' ' + n + ' / ' + tot + '</span></div>'; };
     var head = function (t) { return '<div class="rh"><span class="logo">' + LOGO + '</span><div class="tt"><small>' + esc(T('repEy')) + '</small><b>' + esc(t) + '</b></div><div class="d">' + esc(L(d.client)) + ' — ' + esc(L(d.project)) + '<br>' + esc(T('asOf')) + ' <span class="num">' + esc(day) + '</span></div></div>'; };
     /* cover */
-    pages.push('<section class="pg cov"><div class="l"><span class="logo">' + LOGO + '</span></div><div class="r"><div class="ey">' + esc(T('repEy')) + '</div><h1>' + esc(L(d.client)) + '<br>' + esc(L(d.project)) + '</h1><div class="sb">' + esc(T('coverSub')) + '</div><div class="rule"></div>' +
-      '<div class="kp"><div>' + esc(T('contracts')) + '<b class="num">' + cs.length + '</b></div><div>' + esc(T('pieces')) + '<b class="num">' + q + '</b></div><div class="g">' + esc(T('delivered')) + '<b class="num">' + g + '</b></div><div>' + esc(T('left')) + '<b class="num">' + (q - g) + '</b></div></div></div>' +
+    pages.push('<section class="pg cov"><div class="l"><span class="logo">' + LOGO + '</span></div><div class="r"><div class="ey">' + esc(T('repEy')) + '</div><h1>' + esc(L(d.client)) + '<br>' + esc(L(d.project)) + '</h1><div class="sb">' + esc(T('coverSub')) + '</div><div class="rule"></div></div>' +
       '<div class="dt">' + esc(T('asOf')) + ' <span class="num">' + esc(day) + '</span></div></section>');
     /* summary */
     var rows = cs.map(function (c) { var p = pct(c.done, c.qty);
