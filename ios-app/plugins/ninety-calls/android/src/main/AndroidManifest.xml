@@ -23,6 +23,8 @@
         </service>
         <service android:name="app.ninety.calls.WorkService" android:exported="false" android:foregroundServiceType="remoteMessaging" />
         <activity android:name="app.ninety.calls.IncomingCallActivity" android:exported="false" android:showWhenLocked="true" android:turnScreenOn="true" android:launchMode="singleInstance" android:excludeFromRecents="true" android:taskAffinity="app.ninety.calls.incoming" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+        <!-- v12: the call screen of a call this phone answered by itself (NativeCall) -->
+        <activity android:name="app.ninety.calls.InCallActivity" android:exported="false" android:showWhenLocked="true" android:turnScreenOn="true" android:launchMode="singleInstance" android:excludeFromRecents="true" android:taskAffinity="app.ninety.calls.incall" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
         <receiver android:name="app.ninety.calls.CallActionReceiver" android:exported="false" />
         <service android:name="app.ninety.calls.CallService" android:exported="false" android:foregroundServiceType="microphone" />
         <!-- v7.36: self-update result (PackageInstaller) + «updated — tap to open» after the new version is in -->

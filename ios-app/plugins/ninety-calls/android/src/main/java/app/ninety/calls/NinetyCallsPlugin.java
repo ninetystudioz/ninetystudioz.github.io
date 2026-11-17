@@ -63,6 +63,7 @@ public class NinetyCallsPlugin extends Plugin {
     public void load() {
         self = this;
         NinetyLK.setSink(o -> ui.post(() -> notifyListeners("lkEvent", o)));   /* v8.69 */
+        NativeCall.bind(getContext().getApplicationContext());   /* v12 */
         if (getActivity() != null && getActivity().getIntent() != null) takeIntent(getActivity().getIntent());
     }
 
@@ -131,11 +132,24 @@ public class NinetyCallsPlugin extends Plugin {
     @PluginMethod
     public void endCall(PluginCall call) {
         String id = call.getString("callId", "");
+        /* v12: a call this phone answered by itself is not the page's to close — only «hang: true» (the page's own red button) ends it */
+        if (NativeCall.busyWith(id)) {   /* also while the answer is on its way to the server */
+            Boolean hang = call.getBoolean("hang", false);
+            if (hang != null && hang && NativeCall.owns(id)) NativeCall.hangup(getContext().getApplicationContext());
+            call.resolve();
+            return;
+        }
         if (id != null && !id.isEmpty()) CallUI.stop(getContext(), id);
         /* v8.20: force = the call is over (the page hung up / it failed) → the lock screen comes back */
         Boolean force = call.getBoolean("force", false);
         if (force != null && force) overLock(false);
         call.resolve();
+    }
+
+    /** v12: the call this phone answered by itself — { active, callId, peer, since, connected, muted, speaker } */
+    @PluginMethod
+    public void nativeCall(PluginCall call) {
+        call.resolve(NativeCall.state());
     }
 
     /** v8.20: the page has the answer → forget the pending one */

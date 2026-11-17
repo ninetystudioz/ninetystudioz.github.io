@@ -324,6 +324,10 @@ final class NinetyRTC: NSObject {
         pcs = [:]
         delegates = [:]
         tracks = [:]
+        if NinetyLK.shared.count > 0 {            // v12: a LiveKit call goes on (the phone's own call) — only this WebRTC stops
+            RTCAudioSession.sharedInstance().isAudioEnabled = false
+            return
+        }
         allClosed()
     }
 

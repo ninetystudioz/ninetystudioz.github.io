@@ -44,6 +44,10 @@ object NinetyLK {
     @JvmStatic
     var sink: Sink? = null
 
+    /** v12: the call this phone answered by itself (NativeCall) listens here — the page may not exist at all */
+    @JvmStatic
+    var nativeSink: Sink? = null
+
     private class R(val id: String, val room: Room) {
         var job: Job? = null
     }
@@ -81,6 +85,7 @@ object NinetyLK {
         o.put("kind", kind)
         try { fill(o) } catch (_: Exception) { }
         try { sink?.lkEvent(o) } catch (_: Exception) { }
+        try { nativeSink?.lkEvent(o) } catch (_: Exception) { }
     }
 
     /** main thread */
@@ -187,7 +192,10 @@ object NinetyLK {
                 val dev = h.availableAudioDevices.firstOrNull { it is AudioDevice.Speakerphone }
                 if (dev != null) h.selectDevice(dev)
             } else {
-                h.selectDevice(null)
+                /* v12: by name — Bluetooth, then a wired headset, then the earpiece (never the loudspeaker unless asked) */
+                val av = h.availableAudioDevices
+                val dev = av.firstOrNull { it is AudioDevice.BluetoothHeadset } ?: av.firstOrNull { it is AudioDevice.WiredHeadset } ?: av.firstOrNull { it is AudioDevice.Earpiece }
+                h.selectDevice(dev)
             }
         } catch (_: Exception) { }
     }

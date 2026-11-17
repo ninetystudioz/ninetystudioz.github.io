@@ -52,7 +52,7 @@ public class CallService extends Service {
                 nm.createNotificationChannel(ch);
             }
         }
-        Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        Intent open = NativeCall.active() ? InCallActivity.intent(this) : getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (open == null) open = new Intent();
         open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi = PendingIntent.getActivity(this, NID, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

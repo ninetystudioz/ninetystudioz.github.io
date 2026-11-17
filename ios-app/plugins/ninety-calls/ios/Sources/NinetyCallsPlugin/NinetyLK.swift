@@ -70,6 +70,10 @@ final class NinetyLKRoom: NSObject, RoomDelegate, @unchecked Sendable {
 final class NinetyLK: NSObject {
     static let shared = NinetyLK()
     weak var plugin: NinetyCallsPlugin?
+    /// v12: the call this phone answered by itself (NinetyCallManager, native answer) hears its room here — main thread
+    var nativeSink: ((String, [String: Any]) -> Void)?
+    /// v12: the room of that call — the page's «close everything» (rtcCloseAll) never closes it
+    var nativeRoom = ""
 
     private var rooms: [String: NinetyLKRoom] = [:]
     private var prepared = false
@@ -196,8 +200,10 @@ final class NinetyLK: NSObject {
     }
 
     func leaveAll() {
-        let all = Array(rooms.values)
+        let keep = nativeRoom.isEmpty ? nil : rooms[nativeRoom]          // v12
+        let all = rooms.values.filter { $0 !== keep }
         rooms = [:]
+        if let keep = keep { rooms[keep.id] = keep }
         for r in all { Task { await r.room.disconnect() } }
         afterLeave()
     }
@@ -287,7 +293,9 @@ final class NinetyLK: NSObject {
         var d = data
         d["pcId"] = id
         DispatchQueue.main.async { [weak self] in
-            self?.plugin?.notifyListeners("lkEvent", data: d)
+            guard let self = self else { return }
+            if !self.nativeRoom.isEmpty && id == self.nativeRoom { self.nativeSink?(id, d); return }   // v12: not the page's room
+            self.plugin?.notifyListeners("lkEvent", data: d)
         }
     }
 

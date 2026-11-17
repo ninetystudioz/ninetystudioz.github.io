@@ -179,6 +179,12 @@ public final class CallUI {
             try { why = ring(ctx, d); } catch (Exception e) { why = "error"; }
             report(ctx, d, why, got);
         }
+        else if (NativeCall.busyWith(id)) {
+            /* v12: this phone answered the call itself — «stop» is the server closing the ring on the person's devices (keep talking),
+               «end» is the caller's side saying the call is over */
+            try { NotificationManagerCompat.from(ctx).cancel(nid(id)); } catch (Exception ignored) { }
+            if ("end".equals(type)) NativeCall.remoteEnded(ctx, id);
+        }
         else if ("end".equals(type)) missed(ctx, d);
         else stop(ctx, id);
     }
@@ -341,6 +347,13 @@ public final class CallUI {
         i.putExtra(EXTRA_ACTION, "answer");
         i.putExtra(EXTRA_CALL_ID, id);
         return i;
+    }
+
+    /** v12: «Answer» was pressed — the ringtone stops now, the call screen stays until the server replies */
+    static void silence(Context ctx, String id) {
+        if (id == null) return;
+        markHandled(ctx, id);
+        try { NotificationManagerCompat.from(ctx).cancel(nid(id)); } catch (Exception ignored) { }
     }
 
     public static void stop(Context ctx, String id) {

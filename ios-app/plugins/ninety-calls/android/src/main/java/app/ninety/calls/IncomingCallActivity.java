@@ -30,6 +30,9 @@ public class IncomingCallActivity extends Activity {
     private String callId = "";
     private String token = "";
     private final Handler h = new Handler(Looper.getMainLooper());
+    private boolean answering = false;
+    private TextView subText;
+    private Button btnAnswer, btnDecline;
 
     static void finishIf(String id) {
         IncomingCallActivity a = current.get();
@@ -107,6 +110,7 @@ public class IncomingCallActivity extends Activity {
         LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lpSub.topMargin = dp(10);
         root.addView(sub, lpSub);
+        subText = sub;
 
         View space = new View(this);
         root.addView(space, new LinearLayout.LayoutParams(1, 0, 1f));
@@ -128,6 +132,9 @@ public class IncomingCallActivity extends Activity {
             finish();
         });
         answer.setOnClickListener(v -> answer());
+        btnAnswer = answer;
+        btnDecline = decline;
+        answering = false;
         setContentView(root);
 
         h.removeCallbacksAndMessages(null);
@@ -156,10 +163,37 @@ public class IncomingCallActivity extends Activity {
     private void answer() {
         final String id = callId;
         final Context app = getApplicationContext();
-        /* v8.20: no keyguard dismissal (a PIN prompt could block or cancel the answer) — the app opens over the lock screen */
-        try { startActivity(CallUI.answerIntent(app, id)); } catch (Exception ignored) { }
-        CallUI.stop(app, id);
-        finish();
+        if (answering) return;
+        answering = true;
+        h.removeCallbacksAndMessages(null);
+        CallUI.silence(app, id);   /* the ringtone stops at the tap */
+        try {
+            if (subText != null) subText.setText(CallUI.tr(this, "جاري الرد…", "Answering…"));
+            if (btnAnswer != null) { btnAnswer.setEnabled(false); btnAnswer.setAlpha(0.45f); }
+            if (btnDecline != null) { btnDecline.setEnabled(false); btnDecline.setAlpha(0.45f); }
+        } catch (Exception ignored) { }
+        /* v12: the call screen answers by itself (NativeCall → Edge «callx» → the LiveKit room) — no web page on the way.
+           «page» = the caller is on the old engine / no microphone permission yet / no network answer → the old way below. */
+        final String who = getIntent() == null || getIntent().getStringExtra("caller") == null ? "" : getIntent().getStringExtra("caller");
+        NativeCall.answer(app, id, token, who, (ok, mode) -> {
+            answering = false;
+            if (ok) {
+                /* from this screen while it is still on top (Android does not let the background open a screen) */
+                try { startActivity(InCallActivity.intent(this)); } catch (Exception e) { InCallActivity.open(app); }
+                CallUI.stop(app, id);
+                finish();
+                return;
+            }
+            if (mode != null && mode.startsWith("gone")) {   /* the call is over (answered elsewhere / the caller hung up) */
+                CallUI.stop(app, id);
+                finish();
+                return;
+            }
+            /* v8.20: no keyguard dismissal (a PIN prompt could block or cancel the answer) — the app opens over the lock screen */
+            try { startActivity(CallUI.answerIntent(app, id)); } catch (Exception ignored) { }
+            CallUI.stop(app, id);
+            finish();
+        });
     }
 
     @Override

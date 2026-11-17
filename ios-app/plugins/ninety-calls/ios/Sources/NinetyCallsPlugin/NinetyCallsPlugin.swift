@@ -38,6 +38,17 @@
 // v8.69 (Mahmoud 25 Oct «حل جذري للمكالمات» → LiveKit on our own server): lkJoin / lkLeave / lkMute / lkSpeaker / lkState / lkStats, events «lkEvent»
 // (NinetyLK.swift, LiveKit Swift SDK) — when both sides can, the call's audio goes through our LiveKit server instead of a direct
 // connection; CallKit / the held session decide when its audio engine runs. rtcMute / rtcCloseAll reach it too. caps() → v 5, lk: true.
+//
+// v12 (Mahmoud 17 Nov «الحل الكامل على طول», brief _docs/calls-native-brief-1117.md): the iPhone call screen answers BY ITSELF.
+// · «Answer» on the CallKit screen → Edge «callx» (action answer, the per-call token of the ring push) → the call is active on the
+//   server and this phone joins the LiveKit room here (NinetyLK) under the CallKit call — no web page on the way, so it works with
+//   the app closed, on the lock screen, before the page has loaded. The caller's page joins the same room when it sees the answer.
+// · the server says «page» (the caller is on the old engine / a video call / the pilot is off) or does not reply → the old way:
+//   «callAction» answer to the page, exactly as before.
+// · the red button → the room is left and the server is told (callx end); «Mute» → the room's microphone; the other side leaves
+//   (6 s of patience for a network change) or the server's «end» push → the call screen closes.
+// · every ring is reported from the phone itself (callx rang: shown or why not — Focus / blocked) → «بيرن عنده» for the caller.
+// · the page's endCall / rtcCloseAll never touch that call; nativeCall() → { active, callId, connected, muted }. caps() → v 6, native.
 import Foundation
 import UIKit
 import PushKit
@@ -63,6 +74,7 @@ final class BgTask {
 public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProviderDelegate {
     public static let shared = NinetyCallManager()
     static let api = URL(string: "https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/push")!
+    static let callx = URL(string: "https://erhcnkjyaumdoixkksbz.supabase.co/functions/v1/callx")!   // v12
     static let ringSeconds: TimeInterval = 46
     static let connectSeconds: TimeInterval = 45      // v8.19: answered → the page must say «connected» within this
     private static let keepAliveKey = "nfcalls.keepAlive"
@@ -81,6 +93,16 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     private var heldAudio = false                      // v8.29: audioPriority activated the session itself
     private var ended: [String: Date] = [:]
     public private(set) var token: String = ""
+    // v12: the call this phone answered by itself
+    private var videoCalls = Set<UUID>()
+    private var nativeUUID: UUID?
+    private var nativeId = ""
+    private var nativeTok = ""
+    private var nativePc = ""
+    private var nativeGen = 0
+    private var nativeUp = false                       // somebody else is in the room
+    private var nativeMuted = false
+    private var nativeSince = Date()
     weak var plugin: NinetyCallsPlugin?
 
     /// v8.19: the page reports the call state (reportConnected / endCall force) — remembered for the next cold start
@@ -113,6 +135,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         r.desiredPushTypes = [.voIP]
         registry = r
         if let t = r.pushToken(for: .voIP) { token = t.map { String(format: "%02x", $0) }.joined() }
+        NinetyRTC.shared.hasCallKitCall = { NinetyCallManager.shared.hasCalls }   // v12: also before the plugin loads
     }
 
     // MARK: PushKit
@@ -151,10 +174,25 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
             calls[callId] = uuid
             ids[uuid] = callId
             tokens[uuid] = s("t")
+            if s("video") == "1" { videoCalls.insert(uuid) }
+            let tk = s("t")
+            let got = Date().timeIntervalSince1970 * 1000
             provider.reportNewIncomingCall(with: uuid, update: update(caller, task, s("video") == "1")) { [weak self] err in
                 if err != nil { self?.forget(uuid) } else { self?.arm(uuid) }
+                /* v12: the phone itself says what happened with the ring (shown / Focus / blocked) */
+                var info: [String: Any] = ["shown": err == nil, "app": NinetyCallManager.appState(), "test": s("test") == "1"]
+                if let e = err as NSError? { info["reason"] = "callkit:\(e.code)"; info["domain"] = e.domain } else { info["reason"] = "shown" }
+                if exp > 0 { info["delayMs"] = Int(got - (exp - 45000)) }
+                info["os"] = UIDevice.current.systemVersion
+                info["vc"] = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? ""
+                self?.tell("rang", callId, tk, ["info": info])
                 completion()
             }
+            return
+        }
+        /* v12: this phone answered the call itself — a «stop» for it is the server closing the ring on the person's other devices */
+        if kind == "stop", nativeOwns(callId), let mine = calls[callId] {
+            provider.reportNewIncomingCall(with: mine, update: update(caller, task, false)) { _ in completion() }
             return
         }
         /* cancelled / answered elsewhere / missed */
@@ -209,14 +247,17 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
             guard let self = self, let id = self.ids[uuid], self.answered.contains(uuid), !self.connected.contains(uuid) else { return }
             self.ended[id] = Date()
             self.provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
-            self.forget(uuid)
-            self.plugin?.emitEnded(id, "timeout")
+            let mine = self.nativeUUID == uuid
+            self.forget(uuid, "timeout")
+            if !mine { self.plugin?.emitEnded(id, "timeout") }
         }
         connectTimers[uuid] = w
         DispatchQueue.main.asyncAfter(deadline: .now() + NinetyCallManager.connectSeconds, execute: w)
     }
 
-    private func forget(_ uuid: UUID) {
+    private func forget(_ uuid: UUID, _ why: String = "ended") {
+        if nativeUUID == uuid { dropNative(why) }          // v12: the room is left, the server is told
+        videoCalls.remove(uuid)
         timers[uuid]?.cancel()
         timers[uuid] = nil
         connectTimers[uuid]?.cancel()
@@ -238,9 +279,10 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     /// v8.19: with keepAlive, an answered call that is not connected yet stays unless force (the page hung up / failed).
     /// Returns false when the call was kept.
     @discardableResult
-    func end(_ callId: String, force: Bool = false) -> Bool {
+    func end(_ callId: String, force: Bool = false, hang: Bool = false) -> Bool {
         let id = callId.lowercased()
         guard !id.isEmpty else { return true }
+        if nativeOwns(id) && !hang { return false }        // v12: not the page's call to close
         if let uuid = calls[id], !force, keepAliveNow, answered.contains(uuid), !connected.contains(uuid) { return false }
         ended[id] = Date()
         guard let uuid = calls[id] else { return true }
@@ -349,6 +391,8 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         tokens = [:]
         answered = []
         connected = []
+        videoCalls = []
+        if nativeUUID != nil { dropNative("reset") }
         for id in gone { plugin?.emitEnded(id, "reset") }
     }
 
@@ -359,25 +403,213 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         timers[uuid] = nil
         configureAudio(AVAudioSession.sharedInstance())   // before CallKit activates the session
         if let id = ids[uuid] {
-            if keepAlive { armConnect(uuid) }
-            if let p = plugin { p.emitAction("answer", id) }  // saved as pending only when no page listens yet
-            else { savePending("answer", id) }                // the page / plugin is not loaded yet (cold start)
+            let t = tokens[uuid] ?? ""
+            if nativeCan(uuid, t) {
+                armConnect(uuid)                              // v12: 45 s for the room to talk, whatever the page says
+                nativeAnswer(uuid, id, t)
+            } else {
+                answerByPage(uuid, id)
+            }
         }
         action.fulfill()
+    }
+
+    /// the way before v12: the page answers («callAction» now, or pending for the page that is still loading)
+    private func answerByPage(_ uuid: UUID, _ id: String) {
+        if keepAlive { armConnect(uuid) } else { connectTimers[uuid]?.cancel(); connectTimers[uuid] = nil }
+        if let p = plugin { p.emitAction("answer", id) }      // saved as pending only when no page listens yet
+        else { savePending("answer", id) }                    // the page / plugin is not loaded yet (cold start)
+    }
+
+    // MARK: v12 — the call screen answers by itself
+    func nativeOwns(_ callId: String) -> Bool {
+        let id = callId.lowercased()
+        return !id.isEmpty && nativeUUID != nil && nativeId == id
+    }
+
+    func nativeState() -> [String: Any] {
+        return ["active": nativeUUID != nil, "callId": nativeId, "pcId": nativePc, "connected": nativeUp, "muted": nativeMuted,
+                "since": Int(nativeSince.timeIntervalSince1970 * 1000)]
+    }
+
+    private static func appState() -> String {
+        switch UIApplication.shared.applicationState {
+        case .active: return "front"
+        case .inactive: return "inactive"
+        case .background: return "bg"
+        @unknown default: return "?"
+        }
+    }
+
+    private func nativeCan(_ uuid: UUID, _ t: String) -> Bool {
+        if t.isEmpty || nativeUUID != nil || videoCalls.contains(uuid) { return false }
+        if NinetyLK.shared.count > 0 || NinetyRTC.shared.count > 0 { return false }             // another call is on — the page decides
+        return AVAudioSession.sharedInstance().recordPermission == .granted                    // the page asks for the microphone
+    }
+
+    private func nativeAnswer(_ uuid: UUID, _ id: String, _ t: String) {
+        nativeGen += 1
+        let g = nativeGen
+        nativeUUID = uuid
+        nativeId = id
+        nativeTok = t
+        nativePc = ""
+        nativeUp = false
+        nativeMuted = false
+        nativeSince = Date()
+        let t0 = Date()
+        var body: [String: Any] = ["action": "answer", "id": id, "t": t, "plat": "ios"]
+        if !token.isEmpty { body["dev"] = token }             // the other devices stop ringing, not this one
+        post(body, 8) { [weak self] res in
+            guard let self = self else { return }
+            let ok = (res?["ok"] as? Bool) ?? false
+            guard g == self.nativeGen, self.nativeUUID == uuid, self.ids[uuid] != nil else {
+                if ok { self.tell("end", id, t, ["why": "late"]) }   // the call screen is gone meanwhile — do not leave the call open
+                return
+            }
+            let url = (res?["url"] as? String) ?? ""
+            let tok = (res?["token"] as? String) ?? ""
+            if ok && !url.isEmpty && !tok.isEmpty {
+                let pc = "nat" + id
+                self.nativePc = pc
+                NinetyLK.shared.nativeRoom = pc
+                NinetyLK.shared.nativeSink = { [weak self] pcId, d in self?.nativeEvent(pcId, d) }
+                NinetyLK.shared.join(pc, url: url, token: tok, servers: [], muted: self.nativeMuted) { [weak self] err in
+                    guard let self = self else { return }
+                    let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                    var d: [String: Any] = ["step": err == nil ? "joined" : "join-err", "extra": ["ms": ms]]
+                    if let err = err { d["err"] = err }
+                    self.tell("diag", id, t, d)
+                    if err != nil && g == self.nativeGen && self.nativeUUID == uuid { self.endNative(uuid, id, "join-err") }
+                }
+                return
+            }
+            /* not a native answer: forget it here without telling the server */
+            self.nativeGen += 1
+            self.nativeUUID = nil
+            self.nativeId = ""
+            self.nativeTok = ""
+            let mode = (res?["mode"] as? String) ?? ""
+            if res == nil || mode == "page" {
+                self.answerByPage(uuid, id)
+            } else {
+                /* the call is not ringing any more (answered on another device / the caller hung up) */
+                self.ended[id] = Date()
+                self.provider.reportCall(with: uuid, endedAt: Date(), reason: .answeredElsewhere)
+                self.forget(uuid)
+            }
+        }
+    }
+
+    /// room events of the native call (NinetyLK.nativeSink, main thread)
+    private func nativeEvent(_ pcId: String, _ d: [String: Any]) {
+        guard !nativePc.isEmpty, pcId == nativePc, let uuid = nativeUUID, let id = ids[uuid] else { return }
+        let kind = (d["kind"] as? String) ?? ""
+        let peers = (d["peers"] as? Int) ?? -1
+        if kind == "track" || ((kind == "peer" || kind == "joined") && peers > 0) {
+            if !nativeUp {
+                nativeUp = true
+                connected.insert(uuid)
+                connectTimers[uuid]?.cancel()
+                connectTimers[uuid] = nil
+            }
+            return
+        }
+        if kind == "peer-left" && peers == 0 {
+            /* the other side left the room: a short wait first — a phone that changes network leaves and comes back */
+            let g = nativeGen
+            let pc = nativePc
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let self = self, g == self.nativeGen, self.nativeUUID == uuid else { return }
+                let now = (NinetyLK.shared.state(pc)["peers"] as? Int) ?? 0
+                if now <= 0 { self.endNative(uuid, id, "remote") }
+            }
+            return
+        }
+        if kind == "state" && (d["state"] as? String) == "disconnected" {
+            endNative(uuid, id, "disconnected")
+            return
+        }
+        if kind == "mic", let e = d["error"] {
+            tell("diag", id, nativeTok, ["step": "mic-err", "err": "\(e)", "extra": ["tries": d["tries"] ?? 0]])
+        }
+    }
+
+    /// the native call is over from this side's point of view → the call screen closes (forget → dropNative)
+    private func endNative(_ uuid: UUID, _ id: String, _ why: String) {
+        ended[id] = Date()
+        provider.reportCall(with: uuid, endedAt: Date(), reason: why == "remote" ? .remoteEnded : .failed)
+        forget(uuid, why)
+    }
+
+    /// leaves the room and tells the server (callx end) — once
+    private func dropNative(_ why: String) {
+        guard nativeUUID != nil else { return }
+        let id = nativeId, t = nativeTok, pc = nativePc
+        let dur = Int(Date().timeIntervalSince(nativeSince) * 1000)
+        let was = nativeUp
+        nativeGen += 1
+        nativeUUID = nil
+        nativeId = ""
+        nativeTok = ""
+        nativePc = ""
+        nativeUp = false
+        nativeMuted = false
+        NinetyLK.shared.nativeRoom = ""
+        if !pc.isEmpty { NinetyLK.shared.leave(pc) }
+        tell("end", id, t, ["why": why, "extra": ["durMs": dur, "connected": was]])
+    }
+
+    /// the red button in the page's own banner of that call (endCall hang: true)
+    func hangNative(_ callId: String) -> Bool {
+        guard nativeOwns(callId), let uuid = nativeUUID else { return false }
+        let id = nativeId
+        ended[id] = Date()
+        provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+        forget(uuid, "user")
+        return true
+    }
+
+    /// POST to Edge «callx» — the reply (or nil) comes back on the main thread
+    private func post(_ body: [String: Any], _ timeout: TimeInterval, _ done: (([String: Any]?) -> Void)?) {
+        var req = URLRequest(url: NinetyCallManager.callx)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let box = BgTask()
+        box.id = UIApplication.shared.beginBackgroundTask(withName: "nf-callx") { box.finish() }
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            let out: [String: Any]? = data.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+            DispatchQueue.main.async {
+                box.finish()
+                done?(out)
+            }
+        }.resume()
+    }
+
+    /// fire and forget: rang / diag / end
+    private func tell(_ action: String, _ id: String, _ t: String, _ more: [String: Any]) {
+        guard !id.isEmpty, !t.isEmpty else { return }
+        var body: [String: Any] = ["action": action, "id": id, "t": t, "plat": "ios"]
+        for (k, v) in more { body[k] = v }
+        post(body, 8, nil)
     }
 
     public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         let uuid = action.callUUID
         if let id = ids[uuid] {
             ended[id] = Date()
-            if answered.contains(uuid) {
+            if nativeUUID == uuid {
+                /* v12: the call is this phone's own — forget() below leaves the room and tells the server */
+            } else if answered.contains(uuid) {
                 plugin?.emitEnded(id, "user")                 // v8.19: red button after answering → the page hangs up
             } else {
                 decline(id, tokens[uuid] ?? "")
                 plugin?.emitEnded(id, "declined")
             }
         }
-        forget(uuid)
+        forget(uuid, "user")
         action.fulfill()
     }
 
@@ -390,7 +622,10 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
 
     /// v8.19: «Mute» on the iPhone call screen (the call now stays there) → the page mutes its microphone
     public func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
-        if let id = ids[action.callUUID] { plugin?.emitMuted(id, action.isMuted) }
+        if nativeUUID == action.callUUID {                   // v12: the room's own microphone
+            nativeMuted = action.isMuted
+            NinetyLK.shared.setMuted(action.isMuted)
+        } else if let id = ids[action.callUUID] { plugin?.emitMuted(id, action.isMuted) }
         action.fulfill()
     }
 
@@ -483,7 +718,8 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "lkMute", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "lkSpeaker", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "lkState", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "lkStats", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "lkStats", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "nativeCall", returnType: CAPPluginReturnPromise)         // v12
     ]
 
     override public func load() {
@@ -534,10 +770,21 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func endCall(_ call: CAPPluginCall) {
         let id = call.getString("callId") ?? ""
         let force = call.getBool("force") ?? false
+        let hang = call.getBool("hang") ?? false
         DispatchQueue.main.async {
+            /* v12: a call this phone answered by itself is not the page's to close — only «hang: true» ends it */
+            if NinetyCallManager.shared.nativeOwns(id) {
+                call.resolve(["ended": hang ? NinetyCallManager.shared.hangNative(id) : false, "native": true])
+                return
+            }
             let done = NinetyCallManager.shared.end(id, force: force)
             call.resolve(["ended": done])
         }
+    }
+
+    /// v12: the call this phone answered by itself — { active, callId, pcId, connected, muted, since }
+    @objc func nativeCall(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { call.resolve(NinetyCallManager.shared.nativeState()) }
     }
 
     @objc func keepAlive(_ call: CAPPluginCall) {
@@ -572,7 +819,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func caps(_ call: CAPPluginCall) {
-        call.resolve(["keepAlive": true, "v": 5, "outgoing": true, "audio": true, "rtc": true, "lk": true])
+        call.resolve(["keepAlive": true, "v": 6, "outgoing": true, "audio": true, "rtc": true, "lk": true, "native": true])
     }
 
     /// v8.29: a call this phone makes shows as an iPhone call (audio priority)
