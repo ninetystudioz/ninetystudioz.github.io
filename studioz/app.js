@@ -2815,3 +2815,115 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
   }
   window.nfMailImap = { state: function () { return { cfg: st.cfg, res: st.res, err: st.err }; }, v: 1 };
 })();
+/* ===== a11169 — تحليل الإيميلات + لينك سامي + «الموقع» في التواصل (v11.169، 23 نوفمبر 2026) =====
+   محمود: «تعمل تحليلات على الإيميلات» ← الأربعة (ملخص الصبح · طلبات العملاء · اللي ما اتردش عليه · التصنيف)؛
+          «ابعت اللينك لسامي يكتب فيها الإيميلات والباسورد»؛ «الويب سايت عايزه يبقى موجود في الكومينكيشن».
+   - صفحة البريد: كارت «ملخص» فوق القايمة (آخر 24 ساعة · طلبات عملاء · محتاج رد) + فلاتر (الكل · طلبات · محتاج رد · عملاء · موردين ·
+     حسابات · سبام) + علامة جنب كل إيميل + سطر «الخلاصة» فوق الإيميل المفتوح. البيانات من Edge mailbox «ai» (الصلاحية على السيرفر).
+   - الإعدادات ← البريد: «لينك لسامي» — لينك مرة واحدة (72 ساعة) لصفحة mail-setup.html يكتب فيها الإيميلات والباسوردات بنفسه.
+   - القايمة: «الموقع الإلكتروني» بقى جوه مجموعة «التواصل». */
+(function () {
+  if (typeof ACTIONS === 'undefined') return;
+  var en = function () { return typeof I18N !== 'undefined' && I18N.lang === 'en'; };
+  var t = function (ar, e) { return en() ? e : ar; };
+  var call = async function (body) { var r = await S.sb.functions.invoke('mailbox', { body: body }); var d = (r && r.data) || {}; if (r && r.error && !d.error) throw new Error(String(r.error.message || r.error)); return d; };
+  var CAT = { client: ['عميل', 'Client', '#2f6fb3'], supplier: ['مورد', 'Supplier', '#8a6d1f'], accounts: ['حسابات', 'Accounts', '#6b4fa3'], spam: ['سبام', 'Spam', '#8a8f98'], other: ['تاني', 'Other', '#5f6b7a'] };
+  var st = { ai: {}, at: {}, busy: {}, filter: 'all' };
+  var loadAi = function (box) {
+    if (!box || st.busy[box] || (st.at[box] && Date.now() - st.at[box] < 3 * 6e4)) return;
+    st.busy[box] = true;
+    call({ action: 'ai', box: box }).then(function (d) { if (d && d.ok) { var m = {}; (d.items || []).forEach(function (x) { m[x.id] = x; }); st.ai[box] = { map: m, items: d.items || [], on: !!d.ai }; } })
+      .catch(function () {}).then(function () { st.busy[box] = false; st.at[box] = Date.now(); if (typeof rerender === 'function') rerender(); });
+  };
+  var chip = function (x) {
+    if (!x || !x.cat) return '';
+    var c = CAT[x.cat] || CAT.other, h = '';
+    if (x.req) h += '<span class="mai-b" style="background:#1f7a4d">' + t('طلب', 'Request') + '</span>';
+    else if (x.cat !== 'other') h += '<span class="mai-b" style="background:' + c[2] + '">' + (en() ? c[1] : c[0]) + '</span>';
+    if (x.reply && !x.ans) h += '<span class="mai-b" style="background:#c0392b">' + t('محتاج رد', 'Needs reply') + '</span>';
+    return h;
+  };
+  var pass = function (x) {
+    var f = st.filter; if (f === 'all') return true; if (!x) return false;
+    if (f === 'req') return !!x.req; if (f === 'reply') return x.reply && !x.ans; return x.cat === f;
+  };
+  document.head.insertAdjacentHTML('beforeend', '<style>.mai-b{display:inline-block;color:#fff;font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 6px;margin-inline-start:6px;vertical-align:1px}'
+    + '.mai-f{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.mai-f button{all:unset;cursor:pointer;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--ink)}.mai-f button.on{background:var(--accent);border-color:var(--accent);color:#fff}'
+    + '.mai-s{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0;background:var(--surface-2)}.mai-s .n{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.mai-s .n b{font-size:16px}'
+    + '.mai-s .it{display:block;width:100%;text-align:start;all:unset;box-sizing:border-box;cursor:pointer;font-size:12.5px;padding:5px 0;border-top:1px dashed var(--line)}.mai-s .it:first-of-type{border-top:0}'
+    + '.mai-sum{border-inline-start:3px solid var(--accent);background:var(--surface-2);border-radius:8px;padding:8px 10px;margin:0 0 10px;font-size:13px}.mbrow.mai-hide{display:none}</style>');
+
+  /* ---- mail page ---- */
+  if (typeof EXTRA_VIEWS !== 'undefined' && EXTRA_VIEWS.mail) {
+    var pv = EXTRA_VIEWS.mail;
+    EXTRA_VIEWS.mail = function () {
+      var h = pv.apply(this, arguments); if (typeof h !== 'string') return h;
+      var bm = /class="on" data-action="mbBox" data-arg="([^"]+)"/.exec(h); if (!bm) return h;
+      var box = bm[1].replace(/&amp;/g, '&'); loadAi(box);
+      var A = st.ai[box]; if (!A) return h;
+      var M = A.map, now = Date.now(), day = A.items.filter(function (x) { return x.cat !== 'spam' && Date.parse(x.at || '') > now - 864e5; });
+      var pend = A.items.filter(function (x) { return x.reply && !x.ans && x.cat !== 'spam'; });
+      var reqs = A.items.filter(function (x) { return x.req && Date.parse(x.at || '') > now - 7 * 864e5; });
+      var line = function (x) { return '<button class="it" data-action="mbOpen" data-arg="' + esc(x.id) + '"><b class="notr">' + esc(x.who || (x.from && (x.from.name || x.from.addr)) || '') + '</b> — <span class="notr">' + esc(x.sum || x.subject || '') + '</span></button>'; };
+      var summary = '<div class="mai-s"><div class="n"><span><b>' + day.length + '</b> ' + t('إيميل آخر 24 ساعة', 'emails in 24 h') + '</span><span><b>' + reqs.length + '</b> ' + t('طلب عميل (أسبوع)', 'client requests (week)') + '</span><span style="color:' + (pend.length ? '#c0392b' : 'inherit') + '"><b>' + pend.length + '</b> ' + t('محتاج رد', 'need a reply') + '</span></div>'
+        + (pend.length ? '<div class="tiny muted" style="margin-top:6px">' + t('محتاج رد:', 'Needs a reply:') + '</div>' + pend.slice(0, 4).map(line).join('') : '')
+        + (!A.on ? '<div class="tiny muted">' + t('التحليل محتاج مفتاح الذكاء الاصطناعي في الإعدادات.', 'Analysis needs the AI key in Settings.') + '</div>' : '') + '</div>';
+      var F = [['all', 'الكل', 'All'], ['req', 'طلبات', 'Requests'], ['reply', 'محتاج رد', 'Needs reply'], ['client', 'عملاء', 'Clients'], ['supplier', 'موردين', 'Suppliers'], ['accounts', 'حسابات', 'Accounts'], ['spam', 'سبام', 'Spam']];
+      var filt = '<div class="mai-f">' + F.map(function (f) { return '<button class="' + (st.filter === f[0] ? 'on' : '') + '" data-action="maiFilter" data-arg="' + f[0] + '">' + (en() ? f[2] : f[1]) + '</button>'; }).join('') + '</div>';
+      h = h.replace(/(<div class="item mbrow )([^"]*)(" data-action="mbOpen" data-arg=")([^"]*)("><div class="main"><div class="title">)([\s\S]*?)(<\/div>)/g, function (all, a, cls, b, id, c, title, d) {
+        var x = M[id.replace(/&amp;/g, '&')]; return a + cls + (pass(x) ? '' : ' mai-hide') + b + id + c + title + chip(x) + d;
+      });
+      var li = h.indexOf('<div class="list">'); if (li >= 0) h = h.slice(0, li) + summary + filt + h.slice(li);
+      var om = /<div class="item mbrow [^"]*\bon\b[^"]*" data-action="mbOpen" data-arg="([^"]*)"/.exec(h);
+      if (om) { var x = M[om[1].replace(/&amp;/g, '&')]; if (x && x.sum) h = h.replace('<div class="mbread card">', '<div class="mbread card"><div class="mai-sum"><b>' + t('الخلاصة:', 'In short:') + '</b> <span class="notr">' + esc(x.sum) + '</span>' + (x.cat ? ' ' + chip(x) : '') + '</div>'); }
+      return h;
+    };
+  }
+  ACTIONS.maiFilter = function (f) { st.filter = f || 'all'; rerender(); };
+
+  /* ---- Settings → Mail: one-time link for IT ---- */
+  if (typeof EXTRA_SETTINGS !== 'undefined' && EXTRA_SETTINGS.stumail) {
+    var pr = EXTRA_SETTINGS.stumail.render;
+    EXTRA_SETTINGS.stumail.render = function () {
+      var h = pr.apply(this, arguments); if (!isAdmin()) return h;
+      return h + '<div class="card" id="maisetup" style="margin-top:14px"><h3>' + t('لينك لسامي (الـIT)', 'Link for IT (Sami)') + '</h3><p class="small muted">' + t('لينك بيفتح صفحة يكتب فيها سامي الإيميلات والباسوردات بنفسه (إيميلات Ninety وLOF، وcareers، وإيميلات الموظفين). الإيميلات الجديدة بتظهر لك إنت بس. اللينك شغال 72 ساعة ومش بيتفتح غير بيه.', 'A page where IT types the mailboxes and their passwords (Ninety and LOF, careers, staff mailboxes). New mailboxes show to you only. The link works for 72 hours.') + '</p>'
+        + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn p" data-action="maiLink">' + t('اعمل لينك', 'Make a link') + '</button><button type="button" class="btn" data-action="maiLinkOff">' + t('اقفل اللينك', 'Close the link') + '</button></div></div>';
+    };
+  }
+  ACTIONS.maiLink = async function () {
+    try {
+      var d = await call({ action: 'setup_link' }); if (!d || !d.ok || !d.t) throw new Error((d && d.error) || 'error');
+      var url = new URL('mail-setup.html', location.href).href.split('#')[0] + '#t=' + d.t;
+      var msg = t('سامي، ده لينك تكتب فيه إيميلات الشركة والباسوردات بتاعتها عشان تتربط بالسيستم (شغال 72 ساعة):', 'Sami, use this link to add the company mailboxes and their passwords to the system (works for 72 hours):') + '\n' + url;
+      openModal({ title: t('لينك لسامي', 'Link for Sami'), submitLabel: t('تمام', 'Done'),
+        body: '<div class="form"><div class="field full"><label>' + t('ابعت ده لسامي على الواتساب', 'Send this to Sami on WhatsApp') + '</label><textarea readonly rows="4" class="ltr notr" id="mailink">' + esc(url) + '</textarea></div>'
+          + '<div class="row full" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn" data-action="maiCopy">' + t('انسخ', 'Copy') + '</button><a class="btn p" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(msg) + '">WhatsApp</a></div>'
+          + '<div class="tiny muted full">' + t('اللينك ده زي المفتاح — ماتبعتهوش لحد تاني. ولما سامي يخلص دوس «اقفل اللينك».', 'Treat this link like a key — send it to Sami only, and close it when he is done.') + '</div></div>',
+        onSubmit: function () {} });
+    } catch (e) { toast(String(e.message || e), 'err'); }
+  };
+  ACTIONS.maiCopy = function () { var x = document.getElementById('mailink'); if (!x) return; try { navigator.clipboard.writeText(x.value); toast(t('اتنسخ', 'Copied')); } catch (e) { x.select(); document.execCommand('copy'); } };
+  ACTIONS.maiLinkOff = async function () { try { await call({ action: 'setup_off' }); toast(t('اللينك اتقفل', 'Link closed')); } catch (e) { toast(String(e.message || e), 'err'); } };
+
+  /* ---- menu: «الموقع الإلكتروني» inside «التواصل» ---- */
+  if (typeof navHTML === 'function') {
+    navHTML = (function (prev) {
+      return function () {
+        var h = prev.apply(this, arguments);
+        try {
+          if (typeof h !== 'string' || h.indexOf('website') < 0) return h;
+          var d = document.createElement('div'); d.innerHTML = h;
+          var a = Array.prototype.find.call(d.querySelectorAll('a,[data-view],[data-id]'), function (x) { var hr = x.getAttribute('href') || ''; return /#\/website(\/|$)/.test(hr) || x.getAttribute('data-view') === 'website' || x.getAttribute('data-id') === 'website'; });
+          var grp = Array.prototype.find.call(d.querySelectorAll('.ngrp'), function (g) { var tt = g.querySelector('.ngt'); return g.getAttribute('data-g') === 'comm' || (tt && /التواصل|Communication/.test(tt.textContent)); });
+          var inner = grp && grp.querySelector('.ngi');
+          if (!a || !inner || inner.contains(a)) return h;
+          var old = a.closest('.ngrp'); inner.appendChild(a);
+          if (old && old !== grp && !old.querySelector('a,[data-view]')) old.remove();
+          if (old && old !== grp && old.classList.contains('single') === false) { var left = old.querySelectorAll('.ngi > *'); if (left.length === 1 && !old.querySelector('.ngi a,.ngi [data-view]')) old.remove(); }
+          return d.innerHTML;
+        } catch (e) { return h; }
+      };
+    })(navHTML);
+  }
+  window.nfMailAi = { state: function () { return { filter: st.filter, boxes: Object.keys(st.ai) }; }, v: 1 };
+})();

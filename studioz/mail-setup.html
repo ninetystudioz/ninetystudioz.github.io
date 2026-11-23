@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ninety — ربط الإيميلات</title>
+<style>
+:root{--bg:#f4f3ef;--card:#fff;--ink:#14181d;--muted:#6b7280;--line:#e3e1da;--acc:#1f3a5f;--ok:#2a9d5c;--bad:#c0392b;--warn:#b7791f;--field:#f7f6f2}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0f14;--card:#121821;--ink:#e8edf2;--muted:#93a1b0;--line:#222c38;--acc:#7ea2d6;--ok:#4cc38a;--bad:#ff7a6b;--warn:#f0b354;--field:#0e141b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif;padding:16px}
+.wrap{max-width:720px;margin:0 auto}
+.logo{font-weight:900;letter-spacing:.32em;font-size:22px;margin:8px 0 2px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 16px;letter-spacing:.12em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+h1{font-size:19px;margin:0 0 6px}
+p{margin:6px 0}
+.muted{color:var(--muted);font-size:13px}
+.box{border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+.head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.addr{font-weight:700;direction:ltr;overflow-wrap:anywhere}
+.st{font-size:13px}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media (max-width:560px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:3px}
+input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font:inherit;direction:ltr;text-align:left}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;background:var(--acc);color:#fff}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--line)}
+button:disabled{opacity:.55;cursor:default}
+.res{font-size:13px}
+.err{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad);border-radius:10px;padding:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">NINETY</div>
+  <div class="sub">STUDIO MANAGEMENT</div>
+  <div class="card">
+    <h1>ربط إيميلات الشركة بالسيستم</h1>
+    <p>اكتب لكل إيميل نفس الباسورد اللي على Outlook، وبعدين دوس «حفظ».</p>
+    <p class="muted">السيستم بيجرّب يدخل على الإيميل الأول. لو الباسورد صح، بيتحفظ على السيرفر بس ومش بيظهر تاني لأي حد. اللينك ده شغال لمدة محدودة.</p>
+    <p class="muted" id="exp"></p>
+  </div>
+  <div id="main"><div class="card muted">جارٍ التحميل…</div></div>
+</div>
+<script>
+(function () {
+  var FN = 'https://rekmppawmxerlqxqpqni.supabase.co/functions/v1/mailbox';
+  var m = /(?:^|[#&])t=([a-f0-9]{48})/.exec(location.hash || '');
+  var T = m ? m[1] : '';
+  try { if (T) sessionStorage.setItem('nf.ms.t', T); else T = sessionStorage.getItem('nf.ms.t') || ''; } catch (e) {}
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  var main = document.getElementById('main');
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var call = function (body) { body.t = T; return fetch(FN, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) { return r.json().catch(function () { return { error: 'http ' + r.status }; }); }); };
+  var errText = function (c) { return ({ bad_password: 'الباسورد غلط', connect: 'مش قادر يتوصل بسيرفر الإيميل — جرّب تاني بعد دقيقة', bad_address: 'العنوان غلط أو مش من إيميلات الشركة', link_expired: 'اللينك انتهى — اطلب لينك جديد' })[c] || c; };
+  var domains = [];
+  function boxHTML(b, i, isNew) {
+    var st = b.pw ? '<span class="st ok">✓ متسجّل</span>' : '<span class="st warn">ناقص الباسورد</span>';
+    return '<div class="box" data-i="' + i + '">'
+      + (isNew ? '' : '<div class="head"><span class="addr">' + esc(b.addr) + '</span>' + st + '</div>')
+      + '<div class="grid">'
+      + (isNew ? '<div><label>الإيميل</label><input name="addr" type="email" autocomplete="off" placeholder="name@' + esc(domains[0] || 'ninetystudioz.com') + '"></div><div><label>اسم يظهر في السيستم (اختياري)</label><input name="label" autocomplete="off" style="direction:rtl;text-align:right" placeholder="مثلاً: Careers"></div>' : '<input type="hidden" name="addr" value="' + esc(b.addr) + '">')
+      + '<div style="grid-column:1/-1"><label>الباسورد</label><input name="pw" type="password" autocomplete="new-password" placeholder="' + (b.pw ? 'متسجّل — اكتبه تاني لو اتغيّر' : 'نفس باسورد Outlook') + '"></div>'
+      + '</div><div class="row"><button type="button" data-save="' + i + '">حفظ</button><span class="res"></span></div></div>';
+  }
+  var newCount = 0;
+  function addNew() { var c = document.getElementById('newlist'); var i = 'n' + (newCount++); c.insertAdjacentHTML('beforeend', boxHTML({ addr: '', pw: false }, i, true)); }
+  function render(d) {
+    domains = d.domains || [];
+    var exp = d.exp ? new Date(d.exp) : null;
+    if (exp) document.getElementById('exp').textContent = 'اللينك شغال لحد: ' + exp.toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+    main.innerHTML = '<div class="card"><h1 style="font-size:16px">الإيميلات اللي في السيستم</h1>' + (d.boxes || []).map(function (b, i) { return boxHTML(b, i, false); }).join('') + '</div>'
+      + '<div class="card"><h1 style="font-size:16px">إيميلات تانية</h1><p class="muted">أي إيميل تاني على ' + domains.map(esc).join(' أو ') + ' (مثلاً careers@ أو إيميلات الموظفين). بيظهر للمالك بس.</p><div id="newlist"></div><button type="button" class="ghost" id="addbtn">+ إيميل تاني</button></div>';
+    addNew();
+    document.getElementById('addbtn').onclick = addNew;
+  }
+  main.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-save]'); if (!btn) return;
+    var box = btn.closest('.box'); var res = box.querySelector('.res');
+    var addr = (box.querySelector('[name=addr]').value || '').trim().toLowerCase();
+    var pw = box.querySelector('[name=pw]').value || '';
+    var lab = box.querySelector('[name=label]'); lab = lab ? lab.value.trim() : '';
+    if (!addr) { res.innerHTML = '<span class="bad">اكتب الإيميل</span>'; return; }
+    if (!pw) { res.innerHTML = '<span class="bad">اكتب الباسورد</span>'; return; }
+    btn.disabled = true; res.textContent = 'بيجرّب يدخل…';
+    call({ action: 'setup_save', addr: addr, pw: pw, label: lab }).then(function (r) {
+      btn.disabled = false;
+      if (r && r.ok) { box.querySelector('[name=pw]').value = ''; res.innerHTML = '<span class="ok">✓ اتربط — ' + (r.unread != null ? r.unread + ' غير مقروء من ' + r.total : '') + '</span>'; var h = box.querySelector('.st'); if (h) { h.className = 'st ok'; h.textContent = '✓ متسجّل'; } }
+      else res.innerHTML = '<span class="bad">✗ ' + esc(errText(r && r.error || 'error')) + '</span>';
+    }).catch(function () { btn.disabled = false; res.innerHTML = '<span class="bad">✗ مفيش نت؟ جرّب تاني</span>'; });
+  });
+  if (!T) { main.innerHTML = '<div class="card err">اللينك ناقص. افتحه تاني من الرسالة زي ما هو.</div>'; return; }
+  call({ action: 'setup_info' }).then(function (d) {
+    if (!d || !d.ok) { main.innerHTML = '<div class="card err">' + esc(errText(d && d.error || 'error')) + '</div>'; return; }
+    render(d);
+  }).catch(function () { main.innerHTML = '<div class="card err">مش قادر يوصل للسيستم — جرّب تاني.</div>'; });
+})();
+</script>
+</body>
+</html>
