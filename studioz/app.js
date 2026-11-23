@@ -2390,3 +2390,310 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
   } catch (e) {}
   window.nfStuOtDay = { dayOf, scan, v: 1 };
 })();
+
+/* a11165-stu-website (v11.165, studio only) — «الموقع»: ninetystudioz.com edited from inside the studio system
+   Owner (23 Nov 2026): «عايز اضيفه علي السيستم عندنا بحيث انا او سابق نعرف نعدّل عليه» → «الكاملة على طول».
+   Who: the owner and the people in admin_config «site_editors» (Mohamed Sabek, PIN 23 Nov). Everyone else never sees the page.
+   How: every read/write goes through the Edge Function «site-api», which checks the person and calls the website's private API
+   with a key the browser never sees. Works on iPhone, Android and the computer, Arabic and English.
+   What: (1) Projects — the order on the Works page (↑ ↓), new project, edit the details, images: upload (shrunk on the phone
+   first), order, cover, grid picture, take off (the file stays on the site, nothing is deleted); delete a project (confirm).
+   (2) Home page — the hero title and slogan. (3) Messages — what visitors sent from the site, mark read / archive. */
+(function () {
+  try {
+    if (window.__NF_A11165__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_A11165__ = 1;
+  } catch (e) { return; }
+  var ID = "website", SITE = "https://ninetystudioz.com";
+  var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+  var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var st = { can: null, who: "", ov: null, proj: null, msgs: null, tab: "projects", busy: false, err: "" };
+  var meKey = function () { try { var s = S.session || {}; return String(s.id || s.uid || s.workerId || ""); } catch (e) { return ""; } };
+  var img = function (u) { return u ? (/^https?:/.test(u) ? u : SITE + u) : ""; };
+
+  async function edge(body) {
+    var r = await S.sb.functions.invoke("site-api", { body: body });
+    if (r.error) {
+      var j = null;
+      try { j = await r.error.context.json(); } catch (e) { }
+      throw new Error((j && j.error) || String(r.error.message || r.error));
+    }
+    var d = r.data || {};
+    if (d.ok === false || d.error) throw new Error(d.error || "error");
+    return d.data !== undefined ? d.data : d;
+  }
+  var call = function (op, args) { return edge({ action: "call", op: op, args: args || {} }); };
+  var errText = function (m) {
+    m = String(m || "");
+    if (/not_linked|site|404|502|503|fetch/i.test(m)) return T("الموقع مش بيرد دلوقتي — جرّب كمان شوية", "The website is not answering right now — try again shortly");
+    if (/exists/.test(m)) return T("فيه مشروع بنفس الاسم", "A project with this name already exists");
+    if (/forbidden|unauthorized/.test(m)) return T("مش مسموح لحسابك", "Not allowed for your account");
+    return T("حصلت مشكلة: ", "Something went wrong: ") + m.slice(0, 80);
+  };
+
+  /* ---- who can see it (asked once per person) ---- */
+  async function check() {
+    var k = meKey();
+    if (!k || !S.sb || st.who === k) return;
+    st.who = k; st.can = null;
+    try {
+      var d = await edge({ action: "who" });
+      st.can = !!d.can;
+    } catch (e) { st.can = false; }
+    nav();
+    try { rerender(); } catch (e) { }
+  }
+  function nav() {
+    try {
+      if (typeof NAV === "undefined") return;
+      var i = NAV.findIndex(function (n) { return n.id === ID; });
+      if (st.can && i < 0) {
+        var at = NAV.findIndex(function (n) { return n.id === "portfolio"; });
+        if (at < 0) at = NAV.findIndex(function (n) { return n.id === "dashboard"; });
+        NAV.splice(at >= 0 ? at + 1 : NAV.length, 0, { id: ID, label: "الموقع — ninetystudioz.com", short: "الموقع", icon: "link" });
+      } else if (!st.can && i >= 0) NAV.splice(i, 1);
+    } catch (e) { }
+  }
+  try { VIEW_TITLES[ID] = "الموقع"; } catch (e) { }
+  try { Object.keys(ROLE_VIEWS).forEach(function (r) { if (Array.isArray(ROLE_VIEWS[r]) && r !== "kiosk" && ROLE_VIEWS[r].indexOf(ID) < 0) ROLE_VIEWS[r] = ROLE_VIEWS[r].concat([ID]); }); } catch (e) { }
+  try { if (typeof EXTRA_TITLES === "object" && EXTRA_TITLES) EXTRA_TITLES[ID] = function () { return { title: T("الموقع", "Website"), sub: "ninetystudioz.com" }; }; } catch (e) { }
+  try { RENDER_HOOKS.push(function () { check(); }); } catch (e) { }
+  setInterval(check, 4000);
+
+  /* ---- data ---- */
+  async function loadOv(force) {
+    if (st.ov && !force) return;
+    try { st.ov = await call("overview"); st.err = ""; } catch (e) { st.err = errText(e.message); }
+    rerender();
+  }
+  async function loadProj(slug, force) {
+    if (st.proj && st.proj.slug === slug && !force) return;
+    try { st.proj = await call("project.get", { slug: slug }); st.err = ""; } catch (e) { st.err = errText(e.message); }
+    rerender();
+  }
+  async function loadMsgs(force) {
+    if (st.msgs && !force) return;
+    try { st.msgs = await call("messages.list"); st.err = ""; } catch (e) { st.err = errText(e.message); }
+    rerender();
+  }
+
+  /* ---- the page ---- */
+  var CSS = '.ws-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}.ws-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}' +
+    '.ws-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface);color:var(--ink);display:flex;flex-direction:column;min-width:0}' +
+    '.ws-card .ws-im{aspect-ratio:4/3;background:var(--surface-2) center/cover no-repeat;cursor:pointer;position:relative}.ws-card .ws-b{padding:8px 10px;display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}' +
+    '.ws-card .ws-t{font-weight:600;font-size:14px;line-height:1.3;cursor:pointer;color:var(--ink);overflow-wrap:anywhere}.ws-card .ws-row{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:auto}' +
+    '.ws-tag{position:absolute;top:6px;inset-inline-start:6px;background:rgba(0,0,0,.7);color:#fff;font-size:11px;border-radius:8px;padding:2px 7px}' +
+    '.ws-tag.b{top:auto;bottom:6px}.ws-n{position:absolute;top:6px;inset-inline-end:6px;background:var(--surface);color:var(--ink);border-radius:8px;font-size:11px;padding:2px 7px}' +
+    '.ws-imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px}.ws-msg{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 12px;margin-bottom:10px;overflow-wrap:anywhere}' +
+    '.ws-msg.unread{border-inline-start:4px solid var(--accent)}.ws-msg .ws-mh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.ws-msg p{white-space:pre-wrap;margin:6px 0}' +
+    '.ws-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}.ws-page .form .full{grid-column:1/-1}';
+  function css() { try { if (document.getElementById('nfws-css')) return; var el = document.createElement('style'); el.id = 'nfws-css'; el.textContent = CSS; document.head.appendChild(el); } catch (e) { } }
+  var btn = function (act, arg, txt, cls) { return '<button type="button" class="btn ' + (cls || "sm") + '" data-action="' + act + '"' + (arg != null ? ' data-arg="' + H(arg) + '"' : "") + ">" + txt + "</button>"; };
+
+  function tabs(unread) {
+    var t = function (k, l) { return btn("wsTab", k, H(l), "sm " + (st.tab === k ? "p" : "ghost")); };
+    return '<div class="ws-tabs">' + t("projects", T("المشاريع", "Projects")) + t("home", T("الصفحة الرئيسية", "Home page")) +
+      t("msgs", T("الرسايل", "Messages") + (unread ? " (" + unread + ")" : "")) +
+      '<a class="btn sm ghost" href="' + SITE + '" target="_blank" rel="noopener">' + H(T("افتح الموقع ↗", "Open the site ↗")) + "</a></div>";
+  }
+  function projectsTab() {
+    var ps = st.ov.projects || [];
+    var cards = ps.map(function (p, i) {
+      return '<div class="ws-card"><div class="ws-im" data-action="wsOpen" data-arg="' + H(p.slug) + '" style="background-image:url(\'' + H(img(p.img)) + '\')">' +
+        (p.featured ? '<span class="ws-tag">★ ' + H(T("مميز", "Featured")) + "</span>" : "") + '<span class="ws-n">' + (i + 1) + "</span></div>" +
+        '<div class="ws-b"><div class="ws-t" data-action="wsOpen" data-arg="' + H(p.slug) + '">' + H(p.title) + "</div>" +
+        '<div class="tiny muted">' + H([p.category, p.location, p.year].filter(Boolean).concat([p.mediaCount + " " + T("صورة", "images")]).join(" · ")) + "</div>" +
+        '<div class="ws-row">' + (i > 0 ? btn("wsMove", p.slug + ":-1", "↑", "xs ghost") : "") + (i < ps.length - 1 ? btn("wsMove", p.slug + ":1", "↓", "xs ghost") : "") + "</div></div></div>";
+    }).join("");
+    return '<div class="ws-bar">' + btn("wsNew", null, "+ " + H(T("مشروع جديد", "New project")), "p") +
+      '<span class="small muted">' + H(T("الترتيب هنا هو ترتيب صفحة Works على الموقع — حرّك بالأسهم.", "This is the order on the site's Works page — move with the arrows.")) + "</span></div>" +
+      (ps.length ? '<div class="ws-grid">' + cards + "</div>" : '<div class="empty">' + H(T("مفيش مشاريع لسه", "No projects yet")) + "</div>");
+  }
+  function catOpts(sel) {
+    return '<option value="">' + H(T("— بدون تصنيف —", "— No category —")) + "</option>" + ((st.ov && st.ov.categories) || []).map(function (c) {
+      return '<option value="' + c.id + '"' + (String(sel) === String(c.id) ? " selected" : "") + ">" + H(c.name) + "</option>";
+    }).join("");
+  }
+  function fields(p) {
+    p = p || {};
+    var f = function (n, l, v, typ, full) { return '<div class="field' + (full ? " full" : "") + '"><label>' + H(l) + '</label><input name="' + n + '" type="' + (typ || "text") + '" value="' + H(v == null ? "" : v) + '"></div>'; };
+    return '<div class="form">' + f("title", T("اسم المشروع (بيظهر على الموقع)", "Project title (shown on the site)"), p.title, "text", true) +
+      '<div class="field"><label>' + H(T("التصنيف", "Category")) + '</label><select name="categoryId">' + catOpts(p.categoryId) + "</select></div>" +
+      f("client", T("العميل", "Client"), p.client) + f("location", T("المكان", "Location"), p.location) + f("year", T("السنة", "Year"), p.year, "number") +
+      f("videoUrl", T("فيديو (YouTube / Vimeo)", "Video (YouTube / Vimeo)"), p.videoUrl, "url") +
+      '<div class="field full"><label class="check ' + (p.featured ? "on" : "") + '"><input type="checkbox" name="featured" ' + (p.featured ? "checked" : "") + "> " + H(T("مميز (يظهر في الرئيسية)", "Featured (on the home page)")) + "</label></div>" +
+      '<div class="field full"><label>' + H(T("الوصف", "Description")) + '</label><textarea name="description" rows="5">' + H(p.description || "") + "</textarea></div></div>";
+  }
+  function read(fm) {
+    var d = typeof formData === "function" ? formData(fm) : {};
+    var g = function (n) { var el = fm.querySelector("[name=" + n + "]"); return el ? el.value : ""; };
+    return { title: String(g("title")).trim(), categoryId: g("categoryId") || null, client: g("client"), location: g("location"), year: g("year"), videoUrl: g("videoUrl").trim(), description: g("description"), featured: !!(fm.querySelector("[name=featured]") || {}).checked, _d: d };
+  }
+  function projectView(slug) {
+    var p = st.proj && st.proj.slug === slug ? st.proj : null;
+    if (!p) { loadProj(slug); return '<div class="muted">' + H(T("بيحمّل…", "Loading…")) + "</div>"; }
+    var ims = (p.media || []).map(function (m, i) {
+      var cover = p.featuredImageId === m.id, grid = p.thumbnailImageId === m.id;
+      return '<div class="ws-card"><div class="ws-im" style="background-image:url(\'' + H(img(m.thumb)) + '\')">' + (cover ? '<span class="ws-tag">' + H(T("الغلاف", "Cover")) + "</span>" : "") +
+        (grid ? '<span class="ws-tag b">' + H(T("صورة الشبكة", "Grid picture")) + "</span>" : "") + '<span class="ws-n">' + (i + 1) + "</span></div>" +
+        '<div class="ws-b"><div class="ws-row">' + (i > 0 ? btn("wsImMove", m.id + ":-1", "↑", "xs ghost") : "") + (i < p.media.length - 1 ? btn("wsImMove", m.id + ":1", "↓", "xs ghost") : "") +
+        (cover ? "" : btn("wsCover", m.id, H(T("غلاف", "Cover")), "xs ghost")) + btn("wsGrid", m.id, H(grid ? T("شيل من الشبكة", "Not for grid") : T("للشبكة", "For grid")), "xs ghost") +
+        btn("wsImOff", m.id, H(T("شيل", "Remove")), "xs ghost") + "</div></div></div>";
+    }).join("");
+    return '<div class="ws-bar">' + btn("wsBack", null, "← " + H(T("كل المشاريع", "All projects")), "sm ghost") +
+      '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + SITE + "/works/" + encodeURIComponent(p.slug) + '">' + H(T("شوفه على الموقع ↗", "See it on the site ↗")) + "</a>" +
+      btn("wsDel", p.slug, H(T("امسح المشروع", "Delete project")), "sm ghost danger") + "</div>" +
+      '<form id="wsform" onsubmit="return false">' + fields(p) + '<div class="ws-bar" style="margin-top:10px">' + btn("wsSave", p.slug, H(T("حفظ البيانات", "Save details")), "p") + "</div></form>" +
+      "<h3 style=\"margin:18px 0 4px\">" + H(T("الصور", "Images")) + " (" + (p.media || []).length + ")</h3>" +
+      '<div class="ws-bar"><label class="btn p">+ ' + H(T("ارفع صور", "Upload images")) + '<input type="file" id="wsup" accept="image/jpeg,image/png,image/webp" multiple hidden></label>' +
+      '<span class="small muted">' + H(T("الصور بتتصغّر لـ 3000 بكسل قبل ما تترفع. «شيل» بتشيلها من المشروع بس — الملف بيفضل على الموقع.", "Images are shrunk to 3000px before upload. «Remove» only takes it off the project — the file stays on the site.")) + "</span></div>" +
+      (ims ? '<div class="ws-imgs">' + ims + "</div>" : '<div class="empty">' + H(T("مفيش صور لسه", "No images yet")) + "</div>");
+  }
+  function homeTab() {
+    var h = st.ov.hero || {};
+    return '<form id="wshero" onsubmit="return false"><div class="form"><div class="field full"><label>' + H(T("العنوان الكبير في الصفحة الرئيسية", "Home page headline")) + '</label><input name="title" value="' + H(h.title || "") + '"></div>' +
+      '<div class="field full"><label>' + H(T("الجملة اللي تحته", "The line under it")) + '</label><input name="slogan" value="' + H(h.slogan || "") + '"></div></div>' +
+      '<div class="ws-bar" style="margin-top:10px">' + btn("wsHero", null, H(T("حفظ", "Save")), "p") + '<span class="small muted">' + H(T("لو سبتهم فاضيين الموقع بيرجع للنص الأصلي.", "Leave empty to use the site's default text.")) + "</span></div></form>";
+  }
+  function msgsTab() {
+    if (!st.msgs) { loadMsgs(); return '<div class="muted">' + H(T("بيحمّل…", "Loading…")) + "</div>"; }
+    if (!st.msgs.length) return '<div class="empty">' + H(T("مفيش رسايل", "No messages")) + "</div>";
+    return st.msgs.map(function (m) {
+      var meta = m.metadata && typeof m.metadata === "object" ? Object.keys(m.metadata).map(function (k) { return k + ": " + m.metadata[k]; }).join(" · ") : "";
+      return '<div class="ws-msg ' + (m.status === "unread" ? "unread" : "") + '"><div class="ws-mh"><b>' + H(m.name) + " — " + H(m.subject) + '</b><span class="tiny muted">' + H(String(m.at || "").slice(0, 16).replace("T", " ")) + "</span></div>" +
+        '<div class="small"><a href="mailto:' + H(m.email) + '">' + H(m.email) + "</a>" + (m.phone ? ' · <a href="tel:' + H(m.phone) + '">' + H(m.phone) + "</a>" : "") + (meta ? ' · <span class="muted">' + H(meta) + "</span>" : "") + "</div>" +
+        "<p>" + H(m.message) + '</p><div class="ws-row">' + (m.status === "unread" ? btn("wsMark", m.id + ":read", H(T("اتقرت", "Mark read")), "xs ghost") : btn("wsMark", m.id + ":unread", H(T("مش مقروءة", "Mark unread")), "xs ghost")) +
+        (m.status !== "archived" ? btn("wsMark", m.id + ":archived", H(T("أرشيف", "Archive")), "xs ghost") : '<span class="tiny muted">' + H(T("في الأرشيف", "Archived")) + "</span>") + "</div></div>";
+    }).join("");
+  }
+  function page() {
+    if (st.can === null) return '<div class="muted">' + H(T("بيحمّل…", "Loading…")) + "</div>";
+    if (!st.can) return '<div class="empty">' + H(T("الصفحة دي للإدارة بس", "This page is for management only")) + "</div>";
+    css();
+    var head = (st.err ? '<div class="alert err" style="margin-bottom:10px">' + H(st.err) + " " + btn("wsRetry", null, H(T("جرّب تاني", "Retry")), "xs") + "</div>" : "");
+    if (!st.ov) { loadOv(); return '<div class="ws-page">' + head + '<div class="muted">' + H(T("بيحمّل…", "Loading…")) + "</div></div>"; }
+    var slug = (S.route || {}).id;
+    if (slug) return '<div class="ws-page">' + head + projectView(slug) + "</div>";
+    var body = st.tab === "home" ? homeTab() : st.tab === "msgs" ? msgsTab() : projectsTab();
+    return '<div class="ws-page">' + head + tabs(st.ov.unread) + body + "</div>";
+  }
+  try { if (typeof EXTRA_VIEWS === "object" && EXTRA_VIEWS) EXTRA_VIEWS[ID] = function () { return page(); }; } catch (e) { }
+
+  /* ---- images: shrink on the device, then send one by one ---- */
+  function shrink(file) {
+    return new Promise(function (res, rej) {
+      var u = URL.createObjectURL(file), im = new Image();
+      im.onload = function () {
+        try {
+          var k = Math.min(1, 3000 / Math.max(im.naturalWidth, im.naturalHeight)), w = Math.round(im.naturalWidth * k), h = Math.round(im.naturalHeight * k);
+          var c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(im, 0, 0, w, h);
+          URL.revokeObjectURL(u);
+          res(c.toDataURL("image/jpeg", 0.9).split(",")[1]);
+        } catch (e) { rej(e); }
+      };
+      im.onerror = function () { URL.revokeObjectURL(u); rej(new Error("image")); };
+      im.src = u;
+    });
+  }
+  document.addEventListener("change", async function (ev) {
+    var t = ev.target;
+    if (!t || t.id !== "wsup" || !t.files || !t.files.length || !st.proj) return;
+    var files = Array.prototype.slice.call(t.files, 0, 40), slug = st.proj.slug, done = 0;
+    for (var i = 0; i < files.length; i++) {
+      toast(T("بترفع ", "Uploading ") + (i + 1) + "/" + files.length + "…");
+      try {
+        var data = await shrink(files[i]);
+        await edge({ action: "upload", slug: slug, name: String(files[i].name || "image").replace(/\.[^.]+$/, "") + ".jpg", type: "image/jpeg", data: data });
+        done++;
+      } catch (e) { toast(errText(e.message), "err"); }
+    }
+    t.value = "";
+    if (done) toast(T("اترفع ", "Uploaded ") + done + T(" صورة ✓", " image(s) ✓"));
+    st.ov = null; await loadProj(slug, true);
+  });
+
+  /* ---- actions ---- */
+  async function guard(fn) {
+    if (st.busy) return;
+    st.busy = true;
+    try { await fn(); } catch (e) { toast(errText(e.message), "err"); } finally { st.busy = false; }
+  }
+  async function saveImages(p, extra) {
+    await call("project.media", Object.assign({ slug: p.slug, order: p.media.map(function (m) { return m.id; }) }, extra || {}));
+    st.ov = null; await loadProj(p.slug, true);
+  }
+  if (typeof ACTIONS === "object" && ACTIONS) {
+    ACTIONS.wsTab = function (k) { st.tab = k; if (k === "msgs") st.msgs = null; rerender(); };
+    ACTIONS.wsRetry = function () { st.err = ""; st.ov = null; st.proj = null; st.msgs = null; rerender(); };
+    ACTIONS.wsOpen = function (slug) { st.proj = null; go(ID + "/" + encodeURIComponent(slug)); };
+    ACTIONS.wsBack = function () { go(ID); loadOv(true); };
+    ACTIONS.wsMove = function (arg) {
+      guard(async function () {
+        var a = String(arg).split(":"), slug = a[0], d = +a[1], ps = st.ov.projects.slice(), i = ps.findIndex(function (p) { return p.slug === slug; }), j = i + d;
+        if (i < 0 || j < 0 || j >= ps.length) return;
+        var x = ps[i]; ps[i] = ps[j]; ps[j] = x; st.ov.projects = ps; rerender();
+        await call("project.order", { slugs: ps.map(function (p) { return p.slug; }) });
+      });
+    };
+    ACTIONS.wsNew = function () {
+      openModal({
+        title: T("مشروع جديد على الموقع", "New project on the website"), wide: true, submitLabel: T("أضف", "Add"), body: fields({}),
+        onSubmit: async function (fm) {
+          var d = read(fm);
+          if (!d.title) { toast(T("اكتب اسم المشروع", "Write the project title"), "err"); return false; }
+          try {
+            var r = await call("project.save", { title: d.title, categoryId: d.categoryId, client: d.client, location: d.location, year: d.year, videoUrl: d.videoUrl, description: d.description, featured: d.featured });
+            toast(T("المشروع اتضاف ✓ — ارفع صوره", "Project added ✓ — upload its images"));
+            st.ov = null; st.proj = null; closeModal(); go(ID + "/" + encodeURIComponent(r.slug));
+          } catch (e) { toast(errText(e.message), "err"); return false; }
+        }
+      });
+    };
+    ACTIONS.wsSave = function (slug) {
+      guard(async function () {
+        var fm = document.getElementById("wsform"); if (!fm) return;
+        var d = read(fm);
+        if (!d.title) { toast(T("اكتب اسم المشروع", "Write the project title"), "err"); return; }
+        await call("project.save", { slug: slug, title: d.title, categoryId: d.categoryId, client: d.client, location: d.location, year: d.year, videoUrl: d.videoUrl, description: d.description, featured: d.featured });
+        toast(T("اتحفظ ✓ — ظاهر على الموقع", "Saved ✓ — live on the site"));
+        st.ov = null; await loadProj(slug, true);
+      });
+    };
+    ACTIONS.wsDel = async function (slug) {
+      if (!(await confirmDlg(T("تمسح المشروع ده من الموقع؟ صوره بتفضل في مكتبة الموقع.", "Delete this project from the website? Its images stay in the site's library."), T("امسح", "Delete")))) return;
+      guard(async function () { await call("project.delete", { slug: slug }); toast(T("اتمسح", "Deleted")); st.ov = null; st.proj = null; go(ID); });
+    };
+    ACTIONS.wsImMove = function (arg) {
+      guard(async function () {
+        var p = st.proj, a = String(arg).split(":"), id = +a[0], d = +a[1], i = p.media.findIndex(function (m) { return m.id === id; }), j = i + d;
+        if (i < 0 || j < 0 || j >= p.media.length) return;
+        var x = p.media[i]; p.media[i] = p.media[j]; p.media[j] = x; rerender();
+        await saveImages(p);
+      });
+    };
+    ACTIONS.wsCover = function (id) { guard(async function () { await saveImages(st.proj, { featuredImageId: +id }); toast(T("بقت الغلاف ✓", "Set as cover ✓")); }); };
+    ACTIONS.wsGrid = function (id) { guard(async function () { var p = st.proj; await saveImages(p, { thumbnailImageId: p.thumbnailImageId === +id ? null : +id }); }); };
+    ACTIONS.wsImOff = async function (id) {
+      if (!(await confirmDlg(T("تشيل الصورة دي من المشروع؟ (الملف بيفضل على الموقع)", "Take this image off the project? (the file stays on the site)"), T("شيل", "Remove")))) return;
+      guard(async function () { await call("media.detach", { slug: st.proj.slug, id: +id }); st.ov = null; await loadProj(st.proj.slug, true); });
+    };
+    ACTIONS.wsHero = function () {
+      guard(async function () {
+        var fm = document.getElementById("wshero"); if (!fm) return;
+        var t = fm.querySelector("[name=title]").value, s = fm.querySelector("[name=slogan]").value;
+        await call("hero.save", { title: t, slogan: s });
+        st.ov.hero = { title: t, slogan: s }; toast(T("اتحفظ ✓", "Saved ✓"));
+      });
+    };
+    ACTIONS.wsMark = function (arg) {
+      guard(async function () {
+        var a = String(arg).split(":"), id = +a[0], s = a[1];
+        await call("messages.mark", { id: id, status: s });
+        (st.msgs || []).forEach(function (m) { if (m.id === id) m.status = s; });
+        if (st.ov) st.ov.unread = (st.msgs || []).filter(function (m) { return m.status === "unread"; }).length;
+        rerender();
+      });
+    };
+  }
+  window.nfWebsite = { state: function () { return { can: st.can, tab: st.tab, err: st.err, n: st.ov ? (st.ov.projects || []).length : null }; }, v: 1 };
+})();
