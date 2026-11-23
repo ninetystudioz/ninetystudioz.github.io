@@ -2391,7 +2391,7 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
   window.nfStuOtDay = { dayOf, scan, v: 1 };
 })();
 
-/* a11165-stu-website (v11.165, studio only) — «الموقع»: ninetystudioz.com edited from inside the studio system
+/* a11165-stu-website (v11.165 → v11.166, studio only) — «الموقع»: ninetystudioz.com edited from inside the studio system
    Owner (23 Nov 2026): «عايز اضيفه علي السيستم عندنا بحيث انا او سابق نعرف نعدّل عليه» → «الكاملة على طول».
    Who: the owner and the people in admin_config «site_editors» (Mohamed Sabek, PIN 23 Nov). Everyone else never sees the page.
    How: every read/write goes through the Edge Function «site-api», which checks the person and calls the website's private API
@@ -2404,7 +2404,7 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
     if (window.__NF_A11165__ || !(typeof isStuSys === "function" && isStuSys())) return;
     window.__NF_A11165__ = 1;
   } catch (e) { return; }
-  var ID = "website", SITE = "https://ninetystudioz.com";
+  var ID = "website", SITE = "https://ninetystudioz.com", LBL = "الموقع الإلكتروني — ninetystudioz.com", SHORT = "الموقع الإلكتروني";
   var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
   var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var st = { can: null, who: "", ov: null, proj: null, msgs: null, tab: "projects", busy: false, err: "" };
@@ -2450,14 +2450,22 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
       if (st.can && i < 0) {
         var at = NAV.findIndex(function (n) { return n.id === "portfolio"; });
         if (at < 0) at = NAV.findIndex(function (n) { return n.id === "dashboard"; });
-        NAV.splice(at >= 0 ? at + 1 : NAV.length, 0, { id: ID, label: "الموقع — ninetystudioz.com", short: "الموقع", icon: "link" });
+        NAV.splice(at >= 0 ? at + 1 : NAV.length, 0, { id: ID, label: LBL, short: SHORT, icon: "link" });
       } else if (!st.can && i >= 0) NAV.splice(i, 1);
     } catch (e) { }
   }
-  try { VIEW_TITLES[ID] = "الموقع"; } catch (e) { }
+  /* v11.166: the menu's English came out «Location» (the automatic translation of «الموقع») — fixed words for these labels only */
+  function en() {
+    try {
+      if (typeof I18N !== "undefined" && I18N.exact && typeof I18N.exact.set === "function" && !I18N.exact.has(LBL)) {
+        I18N.exact.set(LBL, "Website — ninetystudioz.com"); I18N.exact.set(SHORT, "Website");
+      }
+    } catch (e) { }
+  }
+  try { VIEW_TITLES[ID] = SHORT; } catch (e) { }
   try { Object.keys(ROLE_VIEWS).forEach(function (r) { if (Array.isArray(ROLE_VIEWS[r]) && r !== "kiosk" && ROLE_VIEWS[r].indexOf(ID) < 0) ROLE_VIEWS[r] = ROLE_VIEWS[r].concat([ID]); }); } catch (e) { }
-  try { if (typeof EXTRA_TITLES === "object" && EXTRA_TITLES) EXTRA_TITLES[ID] = function () { return { title: T("الموقع", "Website"), sub: "ninetystudioz.com" }; }; } catch (e) { }
-  try { RENDER_HOOKS.push(function () { check(); }); } catch (e) { }
+  try { if (typeof EXTRA_TITLES === "object" && EXTRA_TITLES) EXTRA_TITLES[ID] = function () { return { title: T("الموقع الإلكتروني", "Website"), sub: "ninetystudioz.com" }; }; } catch (e) { }
+  try { RENDER_HOOKS.push(function () { en(); check(); }); } catch (e) { }
   setInterval(check, 4000);
 
   /* ---- data ---- */
