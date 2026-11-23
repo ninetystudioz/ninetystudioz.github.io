@@ -2326,3 +2326,67 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
   html.nf-tbm.nf-tbx.nf-tbxl .nfdial .nfd-main{background:linear-gradient(var(--nf-tbx-on),var(--nf-tbx-on)),var(--nf-tbx-bg)!important;color:var(--nf-tbx-fg)!important;border:1px solid var(--line)!important;box-shadow:0 10px 26px -12px rgba(20,30,50,.45)!important}
 }
 </style>`)}catch{return}e.classList.add("nf-tbm");let o=!1,u=0,b=0,d=0,x=0,g=!1,y=0,v=0;const E=()=>document.querySelector(".tabbar"),L=()=>{try{const t=E();e.classList.toggle("nf-tbmore",!(t&&t.querySelector(":scope > a.on")))}catch{}};function a(t){t=!!t&&!!n.matches,b=0,d=0,t!==o&&(o=t,t&&L(),e.classList.toggle("nf-tbmin",t))}const O=()=>window.scrollY||e.scrollTop||0;function C(){x=0;const t=O(),r=t-u;if(u=t,!n.matches){o&&a(!1);return}if(t<56){a(!1);return}(g||Date.now()-y<1500)&&(r>0?(b+=r,d=0,b>24&&Date.now()-v>2500&&a(!0)):r<0&&(d-=r,b=0,d>40&&a(!1)))}window.addEventListener("scroll",()=>{x||(x=requestAnimationFrame(C))},{passive:!0});const m=()=>{y=Date.now()};window.addEventListener("touchstart",()=>{g=!0,m()},{passive:!0,capture:!0}),["touchend","touchcancel"].forEach(t=>window.addEventListener(t,()=>{g=!1,m()},{passive:!0,capture:!0})),window.addEventListener("wheel",m,{passive:!0,capture:!0}),window.addEventListener("keydown",t=>{/^(Arrow|Page|Home|End| $)/.test(t.key||"")&&m()},!0),document.addEventListener("click",t=>{!o||!(t.target&&t.target.closest&&t.target.closest(".tabbar"))||(t.preventDefault(),t.stopPropagation(),v=Date.now(),a(!1))},!0),window.addEventListener("hashchange",()=>{u=0,a(!1)});try{n.addEventListener?n.addEventListener("change",()=>a(!1)):n.addListener&&n.addListener(()=>a(!1))}catch{}try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(()=>{o&&L()})}catch{}let c="";const S=t=>!!t&&t!=="transparent"&&!/^rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)$/.test(t);function l(){try{const t=E();if(!t||!n.matches)return;const r=(e.getAttribute("data-theme")||"")+"|"+e.className.replace(/\bnf-tb\w*/g,"").replace(/\s+/g," ").trim()+"|"+(document.body?document.body.className:"");if(r===c&&e.classList.contains("nf-tbx"))return;let w=t.querySelector(":scope > a.on"),i=null;if(!w){const s=t.querySelector(":scope > a[href]")||t.querySelector(":scope > a");if(!s)return;i=s.cloneNode(!0),i.classList.add("on"),i.style.cssText="position:absolute!important;visibility:hidden!important;pointer-events:none!important",t.appendChild(i),w=i}const k=getComputedStyle(w),R=getComputedStyle(t),q=k.color,N=k.backgroundColor,f=R.backgroundColor;i&&i.remove(),e.style.setProperty("--nf-tbx-fg",q),e.style.setProperty("--nf-tbx-on",S(N)?N:"transparent"),e.style.setProperty("--nf-tbx-bg",S(f)?f:"var(--surface)");const h=/(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)/.exec(f||"");let T=!0;if(h){let s=+h[1],D=+h[2],M=+h[3];/^color\(/.test(f)&&(s*=255,D*=255,M*=255),T=.2126*s+.7152*D+.0722*M>140}e.classList.toggle("nf-tbxl",T),e.classList.add("nf-tbx"),c=r}catch{}}let _=0;const p=()=>{clearTimeout(_),_=setTimeout(l,80)};try{typeof RENDER_HOOKS!="undefined"&&RENDER_HOOKS.push(p)}catch{}try{new MutationObserver(p).observe(e,{attributes:!0,attributeFilter:["data-theme","class"]})}catch{}try{n.addEventListener&&n.addEventListener("change",p),window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").addEventListener("change",()=>{c="",p()})}catch{}setTimeout(l,400),setTimeout(l,2500),window.nfTabbarMin={set:a,is:()=>o,paint:()=>{c="",l()}}})();
+
+/* a11162-stu-otday (v11.162, studio only) — the day of the week next to the date in «Log overtime hours»
+   Owner (23 Nov 2026, a screenshot of the office's sheet): «عايز اليوم يتكتب جنب التاريخ».
+   In the overtime sheet (and any date field of a sheet in the office system) the weekday is written next to the date —
+   «Sunday» / «الأحد» — and changes as soon as the date changes. Display only: nothing is saved. */
+;(function () {
+  if (window.__NF_A11162__) return;
+  window.__NF_A11162__ = 1;
+  try {
+    if (!(typeof isStuSys == "function" && isStuSys())) return;
+  } catch (e) {
+    return;
+  }
+  const en = () => typeof I18N != "undefined" && I18N.lang === "en";
+  const dayOf = (v) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ""))) return "";
+    const d = new Date(v + "T12:00:00");
+    if (isNaN(d)) return "";
+    try {
+      return d.toLocaleDateString(en() ? "en-GB" : "ar-EG", { weekday: "long" });
+    } catch (e) {
+      return "";
+    }
+  };
+  function dress(inp) {
+    if (!inp || inp.dataset.otday) return;
+    inp.dataset.otday = "1";
+    const wrap = document.createElement("div");
+    wrap.className = "nf-otday";
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    const tag = document.createElement("span");
+    tag.className = "nf-otday-d";
+    tag.setAttribute("aria-live", "polite");
+    wrap.appendChild(tag);
+    const paint = () => (tag.textContent = dayOf(inp.value));
+    inp.addEventListener("input", paint);
+    inp.addEventListener("change", paint);
+    paint();
+  }
+  function scan() {
+    try {
+      document.querySelectorAll('.modal input[type="date"], .sheet input[type="date"], dialog input[type="date"], .mb input[type="date"]').forEach(dress);
+    } catch (e) {}
+  }
+  let t = 0;
+  try {
+    new MutationObserver(() => {
+      if (!t) t = requestAnimationFrame(() => ((t = 0), scan()));
+    }).observe(document.body || document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+  try {
+    (document.head || document.documentElement).insertAdjacentHTML(
+      "beforeend",
+      `<style id="nf-a11162">
+.nf-otday{display:flex;align-items:center;gap:8px;min-width:0}
+.nf-otday>input{flex:1 1 auto;min-width:0}
+.nf-otday-d{flex:none;font-weight:700;font-size:15px;color:var(--accent,var(--ink));padding:0 4px;white-space:nowrap}
+.nf-otday-d:empty{display:none}
+</style>`,
+    );
+  } catch (e) {}
+  window.nfStuOtDay = { dayOf, scan, v: 1 };
+})();
