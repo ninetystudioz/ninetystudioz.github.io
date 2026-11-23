@@ -2707,3 +2707,111 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
   }
   window.nfWebsite = { state: function () { return { can: st.can, tab: st.tab, err: st.err, n: st.ov ? (st.ov.projects || []).length : null }; }, v: 1 };
 })();
+/* ===== a11168 — «البريد» بإيميل وباسورد زي Outlook (A2 Hosting، مش Microsoft) (v11.168، 23 نوفمبر 2026) =====
+   محمود: «إيميلات المكتب» ← «أيوه، ابدأ». إيميلات ninetystudioz.com على A2 Hosting، فالربط بقى IMAP/SMTP:
+   - الإعدادات ← البريد: كارت جديد بدل كارت Microsoft 365 — لكل صندوق: العنوان، الاسم، الباسورد (بيتجرّب الأول وبعدين يتحفظ
+     على السيرفر بس، ومش بيرجع تاني)، مين يقدر يفتحه، والحالة. السيرفر تحت «متقدم».
+   - صفحة البريد: رسالة «لسه ما اتربطش» بقت بتقول تكتب الباسورد بدل «Microsoft 365».
+   كل الشغل على Edge «mailbox» v3 (cfg / setpw / sethost / ping). */
+(function () {
+  if (typeof EXTRA_SETTINGS === 'undefined' || !EXTRA_SETTINGS.stumail || typeof ACTIONS === 'undefined') return;
+  var en = function () { return typeof I18N !== 'undefined' && I18N.lang === 'en'; };
+  var t = function (ar, e) { return en() ? e : ar; };
+  var ROLES = [['manager', 'الآرت دايركتور', 'Art director'], ['hr', 'الموارد البشرية والحسابات', 'HR & accounts'], ['acc', 'مسؤول الحسابات', 'Accounts'], ['office', 'مهندس (مكتب)', 'Engineer (office)']];
+  var st = { cfg: null, asked: false, err: '', res: {}, busy: false };
+  var call = async function (body) {
+    var r = await S.sb.functions.invoke('mailbox', { body: body }); var d = (r && r.data) || {};
+    if (r && r.error && !d.error) throw new Error(String(r.error.message || r.error));
+    return d;
+  };
+  var load = async function (force) {
+    if (st.asked && !force) return; st.asked = true;
+    try { var d = await call({ action: 'cfg' }); if (d.error) throw new Error(d.error); st.cfg = d; st.err = ''; } catch (e) { st.err = String(e.message || e); }
+    if (typeof rerender === 'function') rerender();
+  };
+  var errText = function (code) {
+    return ({ bad_password: t('الباسورد غلط', 'Wrong password'), connect: t('مش قادر يتوصل بسيرفر الإيميل', 'Cannot reach the mail server'), unknown_box: t('احفظ الصندوق الأول', 'Save the mailbox first'), no_password: t('مفيش باسورد', 'No password') })[code] || code;
+  };
+  var row = function (b, i) {
+    var r = st.res[b.addr];
+    var status = r ? (r.ok ? '<span style="color:var(--ok,#2a9d5c)">✓ ' + t('اتربط', 'Connected') + (r.total != null ? ' · ' + t('غير مقروء', 'unread') + ' ' + r.unread + ' ' + t('من', 'of') + ' ' + r.total : '') + '</span>' : '<span style="color:var(--danger,#d64545)">✗ ' + esc(r.msg || '') + '</span>')
+      : (b.pw ? '<span style="color:var(--ok,#2a9d5c)">✓ ' + t('الباسورد متسجّل', 'Password saved') + '</span>' : '<span style="color:var(--warn,#d98c00)">' + t('ناقص الباسورد', 'Password missing') + '</span>');
+    return '<div class="mi-box" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0">'
+      + '<div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px"><b class="ltr notr" style="overflow-wrap:anywhere">' + esc(b.addr || t('صندوق جديد', 'New mailbox')) + '</b><span class="tiny">' + status + '</span></div>'
+      + '<div class="form">'
+      + '<div class="field"><label>' + t('العنوان', 'Address') + '</label><input name="mi_addr_' + i + '" class="ltr notr" value="' + esc(b.addr || '') + '" placeholder="info@ninetystudioz.com" autocomplete="off"></div>'
+      + '<div class="field"><label>' + t('الاسم', 'Label') + '</label><input name="mi_label_' + i + '" value="' + esc(b.label || '') + '" placeholder="Info"></div>'
+      + '<div class="field full"><label>' + t('باسورد الإيميل', 'Mailbox password') + '</label><input name="mi_pw_' + i + '" type="password" autocomplete="new-password" class="ltr notr" placeholder="' + (b.pw ? t('متسجّل ✓', 'Saved ✓') : t('نفس باسورد Outlook', 'Same password as in Outlook')) + '"></div>'
+      + '<div class="field full"><label>' + t('مين يقدر يفتحه', 'Who may open it') + ' <span class="tiny muted">(' + t('المالك بيشوف الكل', 'the owner sees all') + ')</span></label><div class="row" style="gap:6px 14px;flex-wrap:wrap">'
+      + ROLES.map(function (x) { return '<label class="check tiny"><input type="checkbox" name="mi_role_' + i + '_' + x[0] + '" ' + ((b.roles || []).indexOf(x[0]) >= 0 ? 'checked' : '') + '> ' + (en() ? x[2] : x[1]) + '</label>'; }).join('') + '</div></div>'
+      + '</div></div>';
+  };
+  var card = function () {
+    if (!st.cfg) { load(); return '<div class="card" id="stumsimap" style="margin-top:14px"><h3>' + t('إيميلات المكتب جوه السيستم', 'Office mail inside the system') + '</h3><p class="small muted">' + (st.err ? esc(st.err) : t('جارٍ التحميل…', 'Loading…')) + '</p></div>'; }
+    var c = st.cfg, srv = c.server || {};
+    if (c.mode === 'graph') return '';
+    var boxes = (c.boxes || []);
+    var anyPw = boxes.some(function (b) { return b.pw; });
+    return '<form class="card" id="stumsimap" style="margin-top:14px"><h3>' + t('إيميلات المكتب جوه السيستم', 'Office mail inside the system') + '</h3>'
+      + '<p class="small muted">' + t('السيستم بيقرا ويبعت من إيميلات المكتب بنفس طريقة Outlook: العنوان والباسورد. اكتب باسورد كل صندوق مرة واحدة — السيستم بيجرّبه الأول، وبعدين بيتحفظ على السيرفر بس ومش بيظهر تاني.', 'The system reads and sends from the office mailboxes the same way Outlook does: address and password. Type each mailbox password once — the system tries it first, then keeps it on the server only and never shows it again.') + '</p>'
+      + '<p class="small"><b>' + t('الحالة:', 'Status:') + '</b> ' + (anyPw ? '<span style="color:var(--ok,#2a9d5c)">' + t('متصل ✓', 'Connected ✓') + '</span>' : '<span style="color:var(--warn,#d98c00)">' + t('لسه ما اتربطش — اكتب الباسوردات واحفظ', 'Not connected yet — type the passwords and save') + '</span>') + '</p>'
+      + '<div id="mirows">' + boxes.map(row).join('') + '</div>'
+      + '<details style="margin-top:10px"><summary class="small muted">' + t('متقدم — سيرفر الإيميل', 'Advanced — mail server') + '</summary><div class="form" style="margin-top:8px">'
+      + '<div class="field"><label>' + t('السيرفر', 'Server') + '</label><input name="mi_host" class="ltr notr" value="' + esc(srv.host || '') + '"></div>'
+      + '<div class="field"><label>IMAP</label><input name="mi_imap" class="ltr notr" inputmode="numeric" value="' + esc(String(srv.imap || 993)) + '"></div>'
+      + '<div class="field"><label>SMTP</label><input name="mi_smtp" class="ltr notr" inputmode="numeric" value="' + esc(String(srv.smtp || 465)) + '"></div></div></details>'
+      + '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><button type="button" class="btn sm" data-action="miAddRow">' + icon('plus') + t('صندوق', 'Mailbox') + '</button><button type="submit" class="btn p"' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? t('جارٍ الحفظ…', 'Saving…') : t('حفظ وتجربة', 'Save & test')) + '</button><button type="button" class="btn" data-action="mbPing">' + t('اختبار الاتصال', 'Test connection') + '</button><span class="tiny muted" id="stumsmsg"></span></div></form>';
+  };
+  var prev = EXTRA_SETTINGS.stumail.render;
+  EXTRA_SETTINGS.stumail.render = function () {
+    var html = prev.apply(this, arguments);
+    if (!isAdmin() || (st.cfg && st.cfg.mode === 'graph')) return html;
+    var i = html.indexOf('<form class="card" id="stumsform"');
+    if (i >= 0) html = html.slice(0, i);
+    return html + card();
+  };
+  ACTIONS.miAddRow = function () {
+    var tb = document.getElementById('mirows'); if (!tb) return;
+    tb.insertAdjacentHTML('beforeend', row({ addr: '', label: '', roles: [], pw: false }, tb.querySelectorAll('.mi-box').length));
+  };
+  document.addEventListener('submit', async function (ev) {
+    if (!ev.target || ev.target.id !== 'stumsimap') return; ev.preventDefault();
+    if (!isAdmin() || !sbOn() || st.busy) return;
+    var f = formData(ev.target), form = ev.target, boxes = [], pws = [];
+    for (var i = 0; i < 30; i++) {
+      if (!(('mi_addr_' + i) in f)) continue;
+      var addr = String(f['mi_addr_' + i] || '').trim().toLowerCase(); if (!addr) continue;
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { toast(t('عنوان غلط: ', 'Bad address: ') + addr, 'err'); return; }
+      boxes.push({ addr: addr, label: String(f['mi_label_' + i] || '').trim() || addr, roles: ROLES.map(function (x) { return x[0]; }).filter(function (r) { var c = form.querySelector('[name="mi_role_' + i + '_' + r + '"]'); return c && c.checked; }) });
+      var pw = String(f['mi_pw_' + i] || ''); if (pw) pws.push({ addr: addr, pw: pw });
+    }
+    st.busy = true; rerender();
+    try {
+      var r1 = await S.sb.rpc('nf_set_secret', { p_key: 'mail_boxes', p_value: boxes.length ? JSON.stringify(boxes) : '' });
+      if (r1.error) throw new Error(r1.error.message);
+      var srv = (st.cfg && st.cfg.server) || {}, host = String(f.mi_host || '').trim().toLowerCase(), im = Number(f.mi_imap) || 993, sm = Number(f.mi_smtp) || 465;
+      if (host && (host !== srv.host || im !== srv.imap || sm !== srv.smtp)) { var h = await call({ action: 'sethost', host: host, imap: im, smtp: sm }); if (h.error) throw new Error(h.error); }
+      st.res = {};
+      for (var k = 0; k < pws.length; k++) {
+        var p = pws[k]; var d = await call({ action: 'setpw', addr: p.addr, pw: p.pw });
+        st.res[p.addr] = d.ok ? { ok: true, total: d.total, unread: d.unread } : { ok: false, msg: errText(d.error || 'error') };
+      }
+      form.querySelectorAll('input[type=password]').forEach(function (x) { x.value = ''; });
+      var bad = Object.keys(st.res).filter(function (a) { return !st.res[a].ok; });
+      toast(bad.length ? t('اتحفظ — بس فيه باسورد غلط: ', 'Saved — but a password is wrong: ') + bad.join(', ') : t('اتحفظ', 'Saved'), bad.length ? 'err' : undefined);
+    } catch (e) { toast(t('فشل الحفظ: ', 'Save failed: ') + String(e.message || e), 'err'); }
+    st.busy = false; st.asked = false; st.cfg = null; await load(true);
+    try { if (ACTIONS.mbRefresh) ACTIONS.mbRefresh(); } catch (e) { /* ignore */ }
+  });
+  /* the mail page: the «not connected» line talks about passwords now */
+  if (typeof EXTRA_VIEWS !== 'undefined' && EXTRA_VIEWS.mail) {
+    var pv = EXTRA_VIEWS.mail;
+    EXTRA_VIEWS.mail = function () {
+      var h = pv.apply(this, arguments);
+      if (typeof h !== 'string') return h;
+      return h.replace('ربط Microsoft 365 لسه ما اتعملش — إعدادات ← البريد (بعد ما الـIT يسلّم بيانات التطبيق).', 'الإيميلات لسه ما اتربطتش — الإعدادات ← البريد: اكتب باسورد كل صندوق.')
+        .replace('Microsoft 365 is not connected yet — Settings → Mail (after IT hands over the app details).', 'The mailboxes are not connected yet — Settings → Mail: type each mailbox password.');
+    };
+  }
+  window.nfMailImap = { state: function () { return { cfg: st.cfg, res: st.res, err: st.err }; }, v: 1 };
+})();
