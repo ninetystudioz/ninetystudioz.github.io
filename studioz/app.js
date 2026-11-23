@@ -2558,10 +2558,12 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
       (ims ? '<div class="ws-imgs">' + ims + "</div>" : '<div class="empty">' + H(T("مفيش صور لسه", "No images yet")) + "</div>");
   }
   function homeTab() {
-    var h = st.ov.hero || {};
+    /* v11.167 (owner: «حط الكلام اللي موجود في الموقع»): empty = the site shows its built-in text — show that text here
+       (the site's own defaults, lib/hero-text.ts), so saving without a change keeps the page exactly as it is */
+    var h0 = st.ov.hero || {}, h = { title: h0.title || "NINETY STUDIO", slogan: h0.slogan || "A story in **every frame**" };
     return '<form id="wshero" onsubmit="return false"><div class="form"><div class="field full"><label>' + H(T("العنوان الكبير في الصفحة الرئيسية", "Home page headline")) + '</label><input name="title" value="' + H(h.title || "") + '"></div>' +
       '<div class="field full"><label>' + H(T("الجملة اللي تحته", "The line under it")) + '</label><input name="slogan" value="' + H(h.slogan || "") + '"></div></div>' +
-      '<div class="ws-bar" style="margin-top:10px">' + btn("wsHero", null, H(T("حفظ", "Save")), "p") + '<span class="small muted">' + H(T("لو سبتهم فاضيين الموقع بيرجع للنص الأصلي.", "Leave empty to use the site's default text.")) + "</span></div></form>";
+      '<div class="ws-bar" style="margin-top:10px">' + btn("wsHero", null, H(T("حفظ", "Save")), "p") + '<span class="small muted">' + H(T("ده الكلام اللي على الموقع دلوقتي. الكلمة بين **نجمتين** بتطلع عريضة. لو مسحتهم وحفظت الموقع بيرجع للنص الأصلي.", "This is the text on the site now. A word between **two stars** shows in bold. Clear both and save to go back to the site's original text.")) + "</span></div></form>";
   }
   function msgsTab() {
     if (!st.msgs) { loadMsgs(); return '<div class="muted">' + H(T("بيحمّل…", "Loading…")) + "</div>"; }
