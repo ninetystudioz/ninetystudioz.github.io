@@ -2927,3 +2927,245 @@ ${L().toFixed(2)}× · ${In()} lines`,o=0,r=l),requestAnimationFrame(i)};request
   }
   window.nfMailAi = { state: function () { return { filter: st.filter, boxes: Object.keys(st.ai) }; }, v: 1 };
 })();
+
+/* a11171-stu-home-media (studio only) — «الموقع» → «الصفحة الرئيسية»: the home page video, its still picture and the photo strip
+   Owner (24 Nov 2026): «فين الفديوهات والصوره الي بتتعرض في الهوم» → «أيوه، الاتنين» → «اعملهم على ريبو blurr».
+   Same people as the Website page (owner + admin_config «site_editors»). Reads/writes go through the Edge Function «site-api»
+   (ops home.get / home.set / home.featured / media.images / up.ticket). A new video goes from the phone/computer straight to
+   https://ninetystudioz.com/api/studio/upload-direct with a one-time ticket (MP4, up to 95 MB) — never through the Edge Function.
+   Nothing is deleted from the site: an old video or picture stays in the site's library. iPhone, Android, computer; Arabic + English. */
+(function () {
+  try {
+    if (window.__NF_A11171__ || !(typeof isStuSys === "function" && isStuSys())) return;
+    window.__NF_A11171__ = 1;
+  } catch (e) { return; }
+  var ID = "website", SITE = "https://ninetystudioz.com", MAXV = 95 * 1024 * 1024;
+  var T = function (a, b) { try { return typeof I18N !== "undefined" && I18N.lang === "en" ? b : a; } catch (e) { return a; } };
+  var H = function (s) { s = String(s == null ? "" : s); try { if (typeof esc === "function") return esc(s); } catch (e) { } return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var url = function (u) { return u ? (/^https?:/.test(u) ? u : SITE + u) : ""; };
+  var hm = { d: null, err: "", busy: false, prog: "", lib: null };
+
+  async function edge(body) {
+    var r = await S.sb.functions.invoke("site-api", { body: body });
+    if (r.error) { var j = null; try { j = await r.error.context.json(); } catch (e) { } throw new Error((j && j.error) || String(r.error.message || r.error)); }
+    var d = r.data || {};
+    if (d.ok === false || d.error) throw new Error(d.error || "error");
+    return d.data !== undefined ? d.data : d;
+  }
+  var call = function (op, args) { return edge({ action: "call", op: op, args: args || {} }); };
+  var errText = function (m) {
+    m = String(m || "");
+    if (/^size/.test(m)) return T("الملف أكبر من المسموح (الفيديو لحد 95 ميجا)", "The file is too big (video up to 95 MB)");
+    if (/^type/.test(m)) return T("نوع الملف مش مقبول — الفيديو MP4 والصور JPG / PNG / WEBP", "File type not accepted — video MP4, images JPG / PNG / WEBP");
+    if (/ticket/.test(m)) return T("انتهى وقت الرفع — جرّب تاني", "The upload expired — try again");
+    if (/not_linked|site|404|502|503|fetch|network|op/i.test(m)) return T("الموقع مش بيرد دلوقتي — جرّب كمان شوية", "The website is not answering right now — try again shortly");
+    if (/forbidden|unauthorized/.test(m)) return T("مش مسموح لحسابك", "Not allowed for your account");
+    return T("حصلت مشكلة: ", "Something went wrong: ") + m.slice(0, 80);
+  };
+  function isHome() {
+    try { var s = window.nfWebsite && window.nfWebsite.state(); return !!(s && s.can && s.tab === "home" && !(S.route || {}).id && S.route && S.route.view === ID); } catch (e) { return false; }
+  }
+  async function load(force) {
+    if (hm.d && !force) return;
+    try { hm.d = await call("home.get"); hm.err = ""; } catch (e) { hm.err = errText(e.message); }
+    try { rerender(); } catch (e) { }
+  }
+
+  /* ---- send one file straight to the website (XHR so the phone shows how far it got) ---- */
+  function send(file, kind, name) {
+    return call("up.ticket", { kind: kind }).then(function (t) {
+      return new Promise(function (res, rej) {
+        var x = new XMLHttpRequest();
+        x.open("POST", SITE + "/api/studio/upload-direct");
+        x.setRequestHeader("content-type", file.type || (kind === "video" ? "video/mp4" : "image/jpeg"));
+        x.setRequestHeader("x-up-ticket", t.ticket);
+        x.setRequestHeader("x-file-name", encodeURIComponent(name || file.name || kind));
+        x.upload.onprogress = function (ev) {
+          if (!ev.lengthComputable) return;
+          hm.prog = T("بيترفع ", "Uploading ") + Math.round(ev.loaded * 100 / ev.total) + "%";
+          var el = document.getElementById("hm-prog"); if (el) el.textContent = hm.prog;
+        };
+        x.onload = function () {
+          var j = null; try { j = JSON.parse(x.responseText); } catch (e) { }
+          if (x.status >= 200 && x.status < 300 && j && j.ok) res(j.data); else rej(new Error((j && j.error) || "site " + x.status));
+        };
+        x.onerror = function () { rej(new Error("network")); };
+        x.send(file);
+      });
+    });
+  }
+  /* pictures are shrunk to 3000 px on the device first (same as the project images) */
+  function shrink(file) {
+    return new Promise(function (res, rej) {
+      var u = URL.createObjectURL(file), im = new Image();
+      im.onload = function () {
+        try {
+          var k = Math.min(1, 3000 / Math.max(im.naturalWidth, im.naturalHeight)), w = Math.round(im.naturalWidth * k), h = Math.round(im.naturalHeight * k);
+          var c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(im, 0, 0, w, h);
+          URL.revokeObjectURL(u);
+          c.toBlob(function (b) { b ? res(b) : rej(new Error("image")); }, "image/jpeg", 0.9);
+        } catch (e) { rej(e); }
+      };
+      im.onerror = function () { URL.revokeObjectURL(u); rej(new Error("image")); };
+      im.src = u;
+    });
+  }
+
+  /* ---- the section under the headline form ---- */
+  var CSS = ".hm-sec{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:12px;margin-top:16px}" +
+    ".hm-sec h3{margin:0 0 4px;font-size:16px}.hm-media{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:8px}" +
+    ".hm-box{min-width:0}.hm-box video,.hm-box .hm-ph{width:100%;aspect-ratio:16/9;border-radius:10px;background:#000 center/cover no-repeat;display:block;object-fit:cover}" +
+    ".hm-box .hm-ph.empty{background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px}" +
+    ".hm-lbl{font-weight:600;font-size:13px;margin:0 0 6px}.hm-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:10px}" +
+    ".hm-it{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface);min-width:0}.hm-it .hm-im{aspect-ratio:1;background:var(--surface-2) center/cover no-repeat;position:relative}" +
+    ".hm-it .hm-n{position:absolute;top:5px;inset-inline-end:5px;background:var(--surface);color:var(--ink);border-radius:8px;font-size:11px;padding:1px 6px}" +
+    ".hm-it .ws-row{padding:5px;display:flex;gap:4px;flex-wrap:wrap}.hm-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;max-height:60vh;overflow:auto;padding:2px}" +
+    ".hm-pick label{position:relative;display:block;border-radius:8px;overflow:hidden;border:2px solid transparent;cursor:pointer;aspect-ratio:1;background:var(--surface-2)}" +
+    ".hm-pick label img{width:100%;height:100%;object-fit:cover;display:block}.hm-pick input{position:absolute;top:5px;inset-inline-start:5px;width:18px;height:18px;margin:0}" +
+    ".hm-pick label:has(input:checked){border-color:var(--accent)}.hm-pick .hm-g{grid-column:1/-1;font-weight:600;font-size:13px;margin:8px 0 0}" +
+    ".hm-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}";
+  function css() { try { if (document.getElementById("nfhm-css")) return; var el = document.createElement("style"); el.id = "nfhm-css"; el.textContent = CSS; document.head.appendChild(el); } catch (e) { } }
+  var btn = function (act, arg, txt, cls) { return '<button type="button" class="btn ' + (cls || "sm") + '" data-action="' + act + '"' + (arg != null ? ' data-arg="' + H(arg) + '"' : "") + ">" + txt + "</button>"; };
+  var fileBtn = function (id, accept, txt, cls) { return '<label class="btn ' + (cls || "sm ghost") + '">' + txt + '<input type="file" id="' + id + '" accept="' + accept + '" hidden></label>'; };
+
+  function section() {
+    css();
+    if (!hm.d) { load(); return '<div class="hm-sec">' + (hm.err ? '<div class="alert err">' + H(hm.err) + " " + btn("hmRetry", null, H(T("جرّب تاني", "Retry")), "xs") + "</div>" : '<div class="muted">' + H(T("بيحمّل الفيديو والصور…", "Loading the video and pictures…")) + "</div>") + "</div>"; }
+    var d = hm.d, v = d.video, f = d.fallback, list = d.featured || [], max = d.max || 16;
+    var prog = '<div class="small muted" id="hm-prog" aria-live="polite">' + H(hm.prog) + "</div>";
+    var vid = v ? '<video src="' + H(url(v.url)) + '"' + (f ? ' poster="' + H(url(f.thumb || f.url)) + '"' : "") + ' muted loop playsinline controls preload="metadata"></video>' : '<div class="hm-ph empty">' + H(T("مفيش فيديو — بتظهر الصورة", "No video — the picture shows")) + "</div>";
+    var still = f ? '<div class="hm-ph" style="background-image:url(\'' + H(url(f.thumb || f.url)) + '\')"></div>' : '<div class="hm-ph empty">' + H(T("مفيش صورة", "No picture")) + "</div>";
+    var strip = list.map(function (m, i) {
+      return '<div class="hm-it"><div class="hm-im" style="background-image:url(\'' + H(url(m.thumb)) + '\')"><span class="hm-n">' + (i + 1) + '</span></div><div class="ws-row">' +
+        (i > 0 ? btn("hmMove", m.id + ":-1", "↑", "xs ghost") : "") + (i < list.length - 1 ? btn("hmMove", m.id + ":1", "↓", "xs ghost") : "") +
+        btn("hmOff", m.id, H(T("شيل", "Remove")), "xs ghost") + "</div></div>";
+    }).join("");
+    return '<div class="hm-sec"><h3>' + H(T("فيديو الصفحة الرئيسية", "Home page video")) + "</h3>" +
+      '<div class="small muted">' + H(T("الفيديو اللي بيشتغل ورا العنوان. الصورة بتظهر لحد ما الفيديو يحمّل، وعلى الموبايل لو النت ضعيف.", "The video that plays behind the headline. The picture shows until the video loads, and on phones with a weak connection.")) + "</div>" +
+      '<div class="hm-media"><div class="hm-box"><div class="hm-lbl">' + H(T("الفيديو", "Video")) + "</div>" + vid +
+      '<div class="hm-row">' + fileBtn("hmvid", "video/mp4", H(T("غيّر الفيديو (MP4)", "Change video (MP4)")), "sm p") + (v ? btn("hmVidOff", null, H(T("من غير فيديو", "No video")), "sm ghost") : "") + "</div></div>" +
+      '<div class="hm-box"><div class="hm-lbl">' + H(T("الصورة اللي بتظهر قبل الفيديو", "Picture shown before the video")) + "</div>" + still +
+      '<div class="hm-row">' + fileBtn("hmstill", "image/jpeg,image/png,image/webp", H(T("ارفع صورة", "Upload picture"))) + btn("hmPickStill", null, H(T("اختار من صور المشاريع", "Pick from project images")), "sm ghost") + "</div></div></div>" +
+      '<div class="tiny muted" style="margin-top:6px">' + H(T("الفيديو MP4 لحد 95 ميجا. الفيديو القديم بيفضل في مكتبة الموقع.", "Video: MP4 up to 95 MB. The old video stays in the site's library.")) + "</div>" + prog + "</div>" +
+      '<div class="hm-sec"><h3>' + H(T("شريط الصور في الصفحة الرئيسية", "Home page photo strip")) + " (" + list.length + "/" + max + ")</h3>" +
+      '<div class="small muted">' + H(T("الصور اللي بتعدّي تحت الفيديو بنفس الترتيب ده. أي تغيير بيظهر على الموقع على طول.", "The pictures that scroll under the video, in this order. Every change shows on the site right away.")) + "</div>" +
+      '<div class="hm-row">' + (list.length < max ? btn("hmPick", null, "+ " + H(T("من صور المشاريع", "From project images")), "sm p") + fileBtn("hmadd", "image/jpeg,image/png,image/webp", "+ " + H(T("ارفع صورة", "Upload picture"))) : '<span class="small muted">' + H(T("وصلت للحد الأقصى — شيل صورة الأول", "At the limit — remove one first")) + "</span>") + "</div>" +
+      (list.length ? '<div class="hm-strip">' + strip + "</div>" : '<div class="empty">' + H(T("الشريط فاضي", "The strip is empty")) + "</div>") + "</div>";
+  }
+  try {
+    if (typeof EXTRA_VIEWS === "object" && EXTRA_VIEWS && typeof EXTRA_VIEWS[ID] === "function" && !EXTRA_VIEWS[ID].__hm) {
+      var orig = EXTRA_VIEWS[ID];
+      var wrapped = function () {
+        var h = orig.apply(this, arguments);
+        try { if (isHome() && /id="wshero"/.test(h)) h = h.replace(/<\/div>\s*$/, section() + "</div>"); } catch (e) { }
+        return h;
+      };
+      wrapped.__hm = 1;
+      EXTRA_VIEWS[ID] = wrapped;
+    }
+  } catch (e) { }
+
+  /* ---- actions ---- */
+  async function guard(fn) {
+    if (hm.busy) { toast(T("استنى العملية اللي شغالة تخلص", "Wait for the current step to finish")); return; }
+    hm.busy = true;
+    try { await fn(); } catch (e) { toast(errText(e.message), "err"); } finally { hm.busy = false; hm.prog = ""; try { rerender(); } catch (e) { } }
+  }
+  async function saveStrip(ids) {
+    await call("home.featured", { ids: ids });
+    await load(true);
+  }
+  async function library() {
+    if (!hm.lib) hm.lib = await call("media.images");
+    return hm.lib;
+  }
+  function pickerHTML(items, multi, taken) {
+    var g = "", out = "";
+    items.forEach(function (m) {
+      var p = m.project ? m.project.title : T("صور من غير مشروع", "Images without a project");
+      if (p !== g) { g = p; out += '<div class="hm-g">' + H(p) + "</div>"; }
+      var on = taken.indexOf(m.id) >= 0;
+      out += '<label title="' + H(p) + '"><img loading="lazy" alt="" src="' + H(url(m.thumb)) + '"><input type="' + (multi ? "checkbox" : "radio") + '" name="hm" value="' + m.id + '"' + (on ? " checked" + (multi ? " disabled" : "") : "") + "></label>";
+    });
+    return '<div class="hm-pick">' + out + "</div>";
+  }
+  function byProject(items) {
+    /* group the images under their project, projects in the order they first appear (newest first) */
+    var order = [], groups = {};
+    items.forEach(function (m) { var k = m.project ? m.project.slug : "~"; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(m); });
+    return order.filter(function (k) { return k !== "~"; }).concat(groups["~"] ? ["~"] : []).reduce(function (a, k) { return a.concat(groups[k]); }, []);
+  }
+  async function openPicker(multi) {
+    var items;
+    try { toast(T("بيحمّل الصور…", "Loading images…")); items = byProject(await library()); } catch (e) { toast(errText(e.message), "err"); return; }
+    var cur = (hm.d.featured || []).map(function (m) { return m.id; }), max = hm.d.max || 16;
+    openModal({
+      title: multi ? T("اختار صور للشريط", "Pick pictures for the strip") : T("اختار الصورة اللي قبل الفيديو", "Pick the picture shown before the video"),
+      wide: true, submitLabel: multi ? T("أضف", "Add") : T("اختار", "Choose"),
+      body: (multi ? '<div class="small muted" style="margin-bottom:8px">' + H(T("ممكن تختار لحد ", "You can pick up to ") + (max - cur.length) + T(" صورة كمان.", " more.")) + "</div>" : "") + pickerHTML(items, multi, multi ? cur : (hm.d.fallback ? [hm.d.fallback.id] : [])),
+      onSubmit: async function (fm) {
+        var picked = Array.prototype.map.call(fm.querySelectorAll('input[name=hm]:checked:not([disabled])'), function (i) { return +i.value; });
+        if (!picked.length) { toast(T("اختار صورة الأول", "Pick a picture first"), "err"); return false; }
+        if (multi) {
+          var ids = cur.concat(picked.filter(function (id) { return cur.indexOf(id) < 0; }));
+          if (ids.length > max) { toast(T("كده أكتر من ", "That is more than ") + max + T(" صورة", " pictures"), "err"); return false; }
+          closeModal();
+          guard(async function () { await saveStrip(ids); toast(T("اتضافت ✓ — ظاهرة على الموقع", "Added ✓ — live on the site")); });
+        } else {
+          closeModal();
+          guard(async function () { await call("home.set", { fallback: picked[0] }); await load(true); toast(T("الصورة اتغيّرت ✓", "Picture changed ✓")); });
+        }
+      }
+    });
+  }
+  if (typeof ACTIONS === "object" && ACTIONS) {
+    ACTIONS.hmRetry = function () { hm.err = ""; hm.d = null; rerender(); };
+    ACTIONS.hmPick = function () { openPicker(true); };
+    ACTIONS.hmPickStill = function () { openPicker(false); };
+    ACTIONS.hmMove = function (arg) {
+      guard(async function () {
+        var a = String(arg).split(":"), id = +a[0], dd = +a[1], ids = hm.d.featured.map(function (m) { return m.id; }), i = ids.indexOf(id), j = i + dd;
+        if (i < 0 || j < 0 || j >= ids.length) return;
+        var x = hm.d.featured[i]; hm.d.featured[i] = hm.d.featured[j]; hm.d.featured[j] = x; rerender();
+        await saveStrip(hm.d.featured.map(function (m) { return m.id; }));
+      });
+    };
+    ACTIONS.hmOff = async function (id) {
+      if (!(await confirmDlg(T("تشيل الصورة دي من شريط الصفحة الرئيسية؟ (الملف بيفضل على الموقع)", "Take this picture off the home page strip? (the file stays on the site)"), T("شيل", "Remove")))) return;
+      guard(async function () { await saveStrip(hm.d.featured.map(function (m) { return m.id; }).filter(function (x) { return x !== +id; })); });
+    };
+    ACTIONS.hmVidOff = async function () {
+      if (!(await confirmDlg(T("تشيل الفيديو من الصفحة الرئيسية؟ هتظهر الصورة بداله. (الفيديو بيفضل في مكتبة الموقع)", "Take the video off the home page? The picture shows instead. (The video stays in the site's library)"), T("شيل", "Remove")))) return;
+      guard(async function () { await call("home.set", { video: null }); await load(true); toast(T("اتشال ✓", "Removed ✓")); });
+    };
+  }
+  document.addEventListener("change", function (ev) {
+    var t = ev.target;
+    if (!t || !t.files || !t.files.length || ["hmvid", "hmstill", "hmadd"].indexOf(t.id) < 0 || !hm.d) return;
+    var file = t.files[0], which = t.id;
+    t.value = "";
+    if (which === "hmvid") {
+      if (!/^video\/mp4$/.test(file.type || "") && !/\.mp4$/i.test(file.name || "")) { toast(T("الفيديو لازم يكون MP4", "The video must be MP4"), "err"); return; }
+      if (file.size > MAXV) { toast(T("الفيديو ", "The video is ") + Math.round(file.size / 1048576) + T(" ميجا — الحد 95 ميجا. صغّره وارفعه تاني.", " MB — the limit is 95 MB. Make it smaller and try again."), "err"); return; }
+      guard(async function () {
+        hm.prog = T("بيترفع 0%", "Uploading 0%"); rerender();
+        var m = await send(file.type ? file : new File([file], file.name, { type: "video/mp4" }), "video", file.name);
+        hm.prog = T("بيحفظ…", "Saving…");
+        await call("home.set", { video: m.id });
+        await load(true);
+        toast(T("الفيديو الجديد على الموقع ✓", "The new video is live ✓"));
+      });
+      return;
+    }
+    guard(async function () {
+      hm.prog = T("بيجهّز الصورة…", "Preparing the picture…"); rerender();
+      var blob = await shrink(file);
+      var m = await send(blob, "image", String(file.name || "image").replace(/\.[^.]+$/, "") + ".jpg");
+      if (which === "hmstill") { await call("home.set", { fallback: m.id }); toast(T("الصورة اتغيّرت ✓", "Picture changed ✓")); }
+      else { await saveStrip((hm.d.featured || []).map(function (x) { return x.id; }).concat([m.id])); toast(T("اتضافت ✓ — ظاهرة على الموقع", "Added ✓ — live on the site")); }
+      hm.lib = null;
+      await load(true);
+    });
+  });
+  window.nfHomeMedia = { state: function () { return { loaded: !!hm.d, err: hm.err, n: hm.d ? (hm.d.featured || []).length : null, video: !!(hm.d && hm.d.video) }; }, v: 1 };
+})();
