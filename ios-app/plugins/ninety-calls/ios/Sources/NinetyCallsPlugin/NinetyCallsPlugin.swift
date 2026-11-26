@@ -20,8 +20,9 @@
 // · The pending «answer» is cleared as soon as the page has it (delivered to a listener, or ack({ callId })).
 //
 // v12.2 (Mahmoud 26 Nov, «عايز المكالمات… تظهر لي في اللوج بتاعة الموبايل… يجيب لي نفس الحاجة اللي بنتكلم عليها»):
-// · the calls can be written in the iPhone's own Recents: setRecents({ on }) (kept for the next cold start; off until a page
-//   turns it on, so an app whose page does not know it stays as it was); recentsState() → { on };
+// · the calls can be written in the iPhone's own Recents: setRecents({ on }) (kept for the next cold start);
+//   v12.3: on unless turned off (the provider starts with it); recentsState() → { on, live, v: 2 };
+//   endCall({ callId, missed: true }) closes a dropped call as «unanswered» = a missed call in Recents; caps v 8, missed.
 // · the handle kept with every call is readable («name — subject») and ends with the first 8 of the call id;
 // · a tap on such an entry in Recents opens the app with a «start call» activity → event «recentsCall» { handle, video }
 //   (kept until the page listens); the page finds the call, opens its subject and calls the same person again.
@@ -92,9 +93,11 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     static let connectSeconds: TimeInterval = 45      // v8.19: answered → the page must say «connected» within this
     private static let keepAliveKey = "nfcalls.keepAlive"
     private static let recentsKey = "nfcalls.recents"                // v12.2
-    /// v12.2: write the calls in the iPhone's Recents — off until a page of this app turned it on
+    /// v12.2: write the calls in the iPhone's Recents.
+    /// v12.3: ON unless this person turned it off. On the first try (build 213) the page turned it on while the app was
+    /// running and three calls were shown but none was written in Recents — so the provider now starts with it on.
     static var recentsOn: Bool {
-        get { UserDefaults.standard.bool(forKey: recentsKey) }
+        get { UserDefaults.standard.object(forKey: recentsKey) == nil ? true : UserDefaults.standard.bool(forKey: recentsKey) }
         set { UserDefaults.standard.set(newValue, forKey: recentsKey) }
     }
     /// the value kept with a call in Recents: readable, and the first 8 of the call id at the end so a tap finds the call again
@@ -212,6 +215,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
                 if exp > 0 { info["delayMs"] = Int(got - (exp - 45000)) }
                 info["os"] = UIDevice.current.systemVersion
                 info["vc"] = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? ""
+                info["rec"] = self?.provider.configuration.includesCallsInRecents ?? false     // v12.3
                 self?.tell("rang", callId, tk, ["info": info])
                 completion()
             }
@@ -306,14 +310,16 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     /// v8.19: with keepAlive, an answered call that is not connected yet stays unless force (the page hung up / failed).
     /// Returns false when the call was kept.
     @discardableResult
-    func end(_ callId: String, force: Bool = false, hang: Bool = false) -> Bool {
+    /// v12.3: missed — the caller dropped it / nobody answered: «unanswered», which the iPhone lists as a missed call
+    /// («answered elsewhere» is not shown as missed).
+    func end(_ callId: String, force: Bool = false, hang: Bool = false, missed: Bool = false) -> Bool {
         let id = callId.lowercased()
         guard !id.isEmpty else { return true }
         if nativeOwns(id) && !hang { return false }        // v12: not the page's call to close
         if let uuid = calls[id], !force, keepAliveNow, answered.contains(uuid), !connected.contains(uuid) { return false }
         ended[id] = Date()
         guard let uuid = calls[id] else { return true }
-        provider.reportCall(with: uuid, endedAt: Date(), reason: answered.contains(uuid) ? .remoteEnded : .answeredElsewhere)
+        provider.reportCall(with: uuid, endedAt: Date(), reason: answered.contains(uuid) ? .remoteEnded : (missed ? .unanswered : .answeredElsewhere))
         forget(uuid)
         return true
     }
@@ -327,6 +333,9 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         if outgoing.contains(uuid) { provider.reportOutgoingCall(with: uuid, connectedAt: Date()) }   // v8.29
         return true
     }
+
+    /// v12.3: what the provider holds now (for the page's report)
+    var recentsLive: Bool { provider.configuration.includesCallsInRecents }
 
     /// v12.2: Recents on / off for this phone (the provider takes the new setting for the calls that follow)
     func setRecents(_ on: Bool) {
@@ -802,7 +811,9 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func recentsState(_ call: CAPPluginCall) {
-        call.resolve(["on": NinetyCallManager.recentsOn, "v": 1])
+        DispatchQueue.main.async {
+            call.resolve(["on": NinetyCallManager.recentsOn, "live": NinetyCallManager.shared.recentsLive, "v": 2])
+        }
     }
 
     func emitToken(_ t: String) {
@@ -844,13 +855,14 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         let id = call.getString("callId") ?? ""
         let force = call.getBool("force") ?? false
         let hang = call.getBool("hang") ?? false
+        let missed = call.getBool("missed") ?? false          // v12.3
         DispatchQueue.main.async {
             /* v12: a call this phone answered by itself is not the page's to close — only «hang: true» ends it */
             if NinetyCallManager.shared.nativeOwns(id) {
                 call.resolve(["ended": hang ? NinetyCallManager.shared.hangNative(id) : false, "native": true])
                 return
             }
-            let done = NinetyCallManager.shared.end(id, force: force)
+            let done = NinetyCallManager.shared.end(id, force: force, missed: missed)
             call.resolve(["ended": done])
         }
     }
@@ -892,7 +904,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func caps(_ call: CAPPluginCall) {
-        call.resolve(["keepAlive": true, "v": 7, "outgoing": true, "audio": true, "rtc": true, "lk": true, "native": true, "recents": true])
+        call.resolve(["keepAlive": true, "v": 8, "outgoing": true, "audio": true, "rtc": true, "lk": true, "native": true, "recents": true, "missed": true])
     }
 
     /// v8.29: a call this phone makes shows as an iPhone call (audio priority)
