@@ -18,6 +18,13 @@
 // · The audio session: .playAndRecord / .voiceChat / Bluetooth (HFP + A2DP), no forced speaker; set before CallKit activates it
 //   and again in didActivate; never deactivated by us (WebRTC in the web view owns the audio while the call runs).
 // · The pending «answer» is cleared as soon as the page has it (delivered to a listener, or ack({ callId })).
+//
+// v12.2 (Mahmoud 26 Nov, «عايز المكالمات… تظهر لي في اللوج بتاعة الموبايل… يجيب لي نفس الحاجة اللي بنتكلم عليها»):
+// · the calls can be written in the iPhone's own Recents: setRecents({ on }) (kept for the next cold start; off until a page
+//   turns it on, so an app whose page does not know it stays as it was); recentsState() → { on };
+// · the handle kept with every call is readable («name — subject») and ends with the first 8 of the call id;
+// · a tap on such an entry in Recents opens the app with a «start call» activity → event «recentsCall» { handle, video }
+//   (kept until the page listens); the page finds the call, opens its subject and calls the same person again.
 // · Decline sends this phone's VoIP token too, so the server can stop the ringing on the other devices but not this one.
 // · caps() → { keepAlive: true, v: 3, outgoing: true, audio: true } (feature detection; the page also checks the method list).
 //
@@ -54,6 +61,7 @@ import UIKit
 import PushKit
 import CallKit
 import AVFoundation
+import Intents
 import Capacitor
 
 /// started from the AppDelegate by name («NinetyCallsPlugin.NinetyCallBoot», no import needed) so a VoIP push that wakes
@@ -61,6 +69,11 @@ import Capacitor
 public class NinetyCallBoot: NSObject {
     @objc public static func boot() {
         NinetyCallManager.shared.start()
+    }
+
+    /// v12.2: the app was opened from an entry of the iPhone's Recents (called from the AppDelegate by name, «recents:»)
+    @objc public static func recents(_ activity: NSUserActivity) {
+        NinetyCallManager.shared.openedFromRecents(activity)
     }
 }
 
@@ -78,6 +91,20 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     static let ringSeconds: TimeInterval = 46
     static let connectSeconds: TimeInterval = 45      // v8.19: answered → the page must say «connected» within this
     private static let keepAliveKey = "nfcalls.keepAlive"
+    private static let recentsKey = "nfcalls.recents"                // v12.2
+    /// v12.2: write the calls in the iPhone's Recents — off until a page of this app turned it on
+    static var recentsOn: Bool {
+        get { UserDefaults.standard.bool(forKey: recentsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: recentsKey) }
+    }
+    /// the value kept with a call in Recents: readable, and the first 8 of the call id at the end so a tap finds the call again
+    static func handleValue(_ name: String, _ callId: String) -> String {
+        var v = name.isEmpty ? "Ninety" : String(name.prefix(70))
+        let id = callId.lowercased().replacingOccurrences(of: "-", with: "")
+        if id.count >= 8 { v += " · " + String(id.prefix(8)) }
+        return v
+    }
+    private var recentsWaiting: (String, Bool)?
 
     private var registry: PKPushRegistry?
     private let provider: CXProvider
@@ -122,7 +149,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         cfg.maximumCallGroups = 1
         cfg.maximumCallsPerCallGroup = 1
         cfg.supportedHandleTypes = [.generic]
-        cfg.includesCallsInRecents = false
+        cfg.includesCallsInRecents = NinetyCallManager.recentsOn     // v12.2
         provider = CXProvider(configuration: cfg)
         super.init()
         provider.setDelegate(self, queue: nil)
@@ -167,7 +194,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         if kind == "ring" && fresh && !callId.isEmpty && ended[callId] == nil {
             if let old = calls[callId] {
                 /* the caller rings again every few seconds — same call, nothing new to show */
-                provider.reportNewIncomingCall(with: old, update: update(caller, task, s("video") == "1")) { _ in completion() }
+                provider.reportNewIncomingCall(with: old, update: update(caller, task, s("video") == "1", callId)) { _ in completion() }
                 return
             }
             let uuid = UUID()
@@ -177,7 +204,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
             if s("video") == "1" { videoCalls.insert(uuid) }
             let tk = s("t")
             let got = Date().timeIntervalSince1970 * 1000
-            provider.reportNewIncomingCall(with: uuid, update: update(caller, task, s("video") == "1")) { [weak self] err in
+            provider.reportNewIncomingCall(with: uuid, update: update(caller, task, s("video") == "1", callId)) { [weak self] err in
                 if err != nil { self?.forget(uuid) } else { self?.arm(uuid) }
                 /* v12: the phone itself says what happened with the ring (shown / Focus / blocked) */
                 var info: [String: Any] = ["shown": err == nil, "app": NinetyCallManager.appState(), "test": s("test") == "1"]
@@ -192,7 +219,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         }
         /* v12: this phone answered the call itself — a «stop» for it is the server closing the ring on the person's other devices */
         if kind == "stop", nativeOwns(callId), let mine = calls[callId] {
-            provider.reportNewIncomingCall(with: mine, update: update(caller, task, false)) { _ in completion() }
+            provider.reportNewIncomingCall(with: mine, update: update(caller, task, false, callId)) { _ in completion() }
             return
         }
         /* cancelled / answered elsewhere / missed */
@@ -207,18 +234,18 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         }
         /* iOS wants a call shown for every VoIP push — show and end it at once */
         let uuid = UUID()
-        provider.reportNewIncomingCall(with: uuid, update: update(caller, task, false)) { [weak self] _ in
+        provider.reportNewIncomingCall(with: uuid, update: update(caller, task, false, callId)) { [weak self] _ in
             self?.provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
             completion()
         }
     }
 
-    private func update(_ caller: String, _ task: String, _ video: Bool) -> CXCallUpdate {
+    private func update(_ caller: String, _ task: String, _ video: Bool, _ callId: String = "") -> CXCallUpdate {
         let u = CXCallUpdate()
         var name = caller
         if !task.isEmpty { name = caller + " — " + task }
         if name.count > 70 { name = String(name.prefix(70)) + "…" }
-        u.remoteHandle = CXHandle(type: .generic, value: caller)
+        u.remoteHandle = CXHandle(type: .generic, value: NinetyCallManager.handleValue(name, callId))   // v12.2
         u.localizedCallerName = name
         u.hasVideo = video
         u.supportsHolding = false
@@ -301,6 +328,32 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         return true
     }
 
+    /// v12.2: Recents on / off for this phone (the provider takes the new setting for the calls that follow)
+    func setRecents(_ on: Bool) {
+        NinetyCallManager.recentsOn = on
+        let cfg = provider.configuration
+        cfg.includesCallsInRecents = on
+        provider.configuration = cfg
+    }
+
+    /// v12.2: a tap on an entry of Recents → the handle of that call goes to the page (now, or when the plugin is up)
+    func openedFromRecents(_ activity: NSUserActivity) {
+        guard let intent = activity.interaction?.intent as? INStartCallIntent else { return }
+        let value = intent.contacts?.first?.personHandle?.value ?? ""
+        let video = intent.callCapability == .videoCall
+        guard !value.isEmpty else { return }
+        DispatchQueue.main.async {
+            if let p = self.plugin { p.emitRecents(value, video) } else { self.recentsWaiting = (value, video) }
+        }
+    }
+
+    /// the plugin is up: hand over a tap that came before it
+    func flushRecents() {
+        guard let w = recentsWaiting, let p = plugin else { return }
+        recentsWaiting = nil
+        p.emitRecents(w.0, w.1)
+    }
+
     /// v8.29: a call this phone makes → an iPhone (CallKit) outgoing call, so the call owns the audio like a phone call
     func startOutgoing(_ callId: String, _ name: String, _ video: Bool) -> Bool {
         let id = callId.lowercased()
@@ -312,7 +365,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         outgoing.insert(uuid)
         answered.insert(uuid)                          // the red button / mute there go to the page like an answered call
         configureAudio(AVAudioSession.sharedInstance())
-        let handle = CXHandle(type: .generic, value: name.isEmpty ? "Ninety" : String(name.prefix(70)))
+        let handle = CXHandle(type: .generic, value: NinetyCallManager.handleValue(name, id))            // v12.2
         let action = CXStartCallAction(call: uuid, handle: handle)
         action.isVideo = video
         action.contactIdentifier = name
@@ -719,7 +772,9 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "lkSpeaker", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "lkState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "lkStats", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "nativeCall", returnType: CAPPluginReturnPromise)         // v12
+        CAPPluginMethod(name: "nativeCall", returnType: CAPPluginReturnPromise),        // v12
+        CAPPluginMethod(name: "setRecents", returnType: CAPPluginReturnPromise),        // v12.2
+        CAPPluginMethod(name: "recentsState", returnType: CAPPluginReturnPromise)       // v12.2
     ]
 
     override public func load() {
@@ -729,7 +784,25 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
             NinetyRTC.shared.plugin = self                                          // v8.32
             NinetyLK.shared.plugin = self                                           // v8.69
             NinetyRTC.shared.hasCallKitCall = { NinetyCallManager.shared.hasCalls }
+            NinetyCallManager.shared.flushRecents()                                 // v12.2
         }
+    }
+
+    /// v12.2: the app was opened from the iPhone's Recents
+    func emitRecents(_ handle: String, _ video: Bool) {
+        notifyListeners("recentsCall", data: ["handle": handle, "video": video], retainUntilConsumed: true)
+    }
+
+    @objc func setRecents(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? true
+        DispatchQueue.main.async {
+            NinetyCallManager.shared.setRecents(on)
+            call.resolve(["on": on])
+        }
+    }
+
+    @objc func recentsState(_ call: CAPPluginCall) {
+        call.resolve(["on": NinetyCallManager.recentsOn, "v": 1])
     }
 
     func emitToken(_ t: String) {
@@ -819,7 +892,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func caps(_ call: CAPPluginCall) {
-        call.resolve(["keepAlive": true, "v": 6, "outgoing": true, "audio": true, "rtc": true, "lk": true, "native": true])
+        call.resolve(["keepAlive": true, "v": 7, "outgoing": true, "audio": true, "rtc": true, "lk": true, "native": true, "recents": true])
     }
 
     /// v8.29: a call this phone makes shows as an iPhone call (audio priority)

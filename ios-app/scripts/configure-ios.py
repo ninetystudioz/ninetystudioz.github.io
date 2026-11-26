@@ -16,6 +16,8 @@ d.update({
     'NFCReaderUsageDescription': 'Ninety reads the office door NFC sticker to open the door.',
     'ITSAppUsesNonExemptEncryption': False,
     'UIBackgroundModes': ['remote-notification', 'location', 'voip', 'audio'],
+    # v12.2: a tap on a call of the app in the iPhone's Recents opens the app with a «start call» activity
+    'NSUserActivityTypes': ['INStartCallIntent', 'INStartAudioCallIntent', 'INStartVideoCallIntent'],
     'UIRequiredDeviceCapabilities': ['arm64'],
     'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait'],
     # v7.48: the app runs natively on iPad too (Apple Pencil in Concept) — the iPad turns every way, the iPhone stays upright
@@ -74,6 +76,22 @@ if 'NinetyCallBoot' not in a:
         raise SystemExit('AppDelegate: didFinishLaunching not found')
     boot = '(NSClassFromString("NinetyCallsPlugin.NinetyCallBoot") as AnyObject?)?.perform(NSSelectorFromString("boot"))\n        '
     a = a[:j] + boot + a[j:]
+    open(DELEGATE, 'w').write(a)
+# v12.2 calls in the iPhone's Recents: hand the «start call» activity to the calls plugin (by class name, like the boot)
+a = open(DELEGATE).read()
+if 'recents:' not in a:
+    fwd = '(NSClassFromString("NinetyCallsPlugin.NinetyCallBoot") as AnyObject?)?.perform(NSSelectorFromString("recents:"), with: userActivity)\n        '
+    i = a.find('continue userActivity')
+    j = a.find('return ApplicationDelegateProxy.shared.application(application, continue', i) if i >= 0 else -1
+    if j >= 0:
+        a = a[:j] + fwd + a[j:]
+    else:
+        a = a.rstrip().rstrip('}') + """
+    func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+        """ + fwd + """return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    }
+}
+"""
     open(DELEGATE, 'w').write(a)
 # v7.48 (note 5): the Apple Pencil plugin (double-tap / squeeze) is an iOS-only package — added here, on the build Mac, so the
 # Android build (same package.json) never changes because of it; `npx cap sync ios` (next step) picks it up
