@@ -23,6 +23,13 @@
 // · the calls can be written in the iPhone's own Recents: setRecents({ on }) (kept for the next cold start);
 //   v12.3: on unless turned off (the provider starts with it); recentsState() → { on, live, v: 2 };
 //   endCall({ callId, missed: true }) closes a dropped call as «unanswered» = a missed call in Recents; caps v 8, missed.
+//   v12.4 (27 Nov, build 214 on his phone: flag on and read back, a 36 s answered call he made — still nothing in Recents; «ظبطه،
+//   انا محتاجه يظهر عندي»): the one place that was not done the way CallKit asks for. A call closed from OUR side (the page's
+//   red button, the banner of a call this phone answered by itself) was reported with reportCall(endedAt:reason:), which is
+//   meant for an end that comes from outside. It is now closed with an end action through the call controller
+//   (CXEndCallAction), as the iPhone's own red button does; reportCall stays for the ends from outside (the other side hung
+//   up, nobody answered, answered elsewhere, failure) and as the fallback when the action is refused. The outgoing call no
+//   longer carries a contactIdentifier that is not a contact's identifier. caps v 9, userEnd.
 // · the handle kept with every call is readable («name — subject») and ends with the first 8 of the call id;
 // · a tap on such an entry in Recents opens the app with a «start call» activity → event «recentsCall» { handle, video }
 //   (kept until the page listens); the page finds the call, opens its subject and calls the same person again.
@@ -122,6 +129,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
     private var outgoing = Set<UUID>()                 // v8.29
     private var heldAudio = false                      // v8.29: audioPriority activated the session itself
     private var ended: [String: Date] = [:]
+    private var appEnding = Set<UUID>()                // v12.4: end actions this app asked for itself
     public private(set) var token: String = ""
     // v12: the call this phone answered by itself
     private var videoCalls = Set<UUID>()
@@ -319,9 +327,29 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         if let uuid = calls[id], !force, keepAliveNow, answered.contains(uuid), !connected.contains(uuid) { return false }
         ended[id] = Date()
         guard let uuid = calls[id] else { return true }
-        provider.reportCall(with: uuid, endedAt: Date(), reason: answered.contains(uuid) ? .remoteEnded : (missed ? .unanswered : .answeredElsewhere))
+        if answered.contains(uuid) {
+            closeByUs(uuid)                              // v12.4: a call that was taken / made here is closed with an end action
+        } else {
+            provider.reportCall(with: uuid, endedAt: Date(), reason: missed ? .unanswered : .answeredElsewhere)
+        }
         forget(uuid)
         return true
+    }
+
+    /// v12.4: this side closes the call → CallKit is asked with an end action (what its own red button does); the delegate only
+    /// fulfils it (everything else is done by the caller of this). Refused (CallKit no longer knows the call) → the old report.
+    private func closeByUs(_ uuid: UUID) {
+        appEnding.insert(uuid)
+        controller.request(CXTransaction(action: CXEndCallAction(call: uuid))) { [weak self] err in
+            guard let err = err else { return }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                NSLog("[NinetyCalls] end action refused: \(err)")
+                if self.appEnding.remove(uuid) != nil {
+                    self.provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+                }
+            }
+        }
     }
 
     /// v8.19: the in-app call is talking — the call screen stays as the iPhone's own call until endCall
@@ -377,7 +405,6 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         let handle = CXHandle(type: .generic, value: NinetyCallManager.handleValue(name, id))            // v12.2
         let action = CXStartCallAction(call: uuid, handle: handle)
         action.isVideo = video
-        action.contactIdentifier = name
         controller.request(CXTransaction(action: action)) { [weak self] err in
             DispatchQueue.main.async {
                 guard let self = self else { return }
@@ -627,7 +654,7 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
         guard nativeOwns(callId), let uuid = nativeUUID else { return false }
         let id = nativeId
         ended[id] = Date()
-        provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+        closeByUs(uuid)                                  // v12.4 (was reportCall … .remoteEnded)
         forget(uuid, "user")
         return true
     }
@@ -660,6 +687,10 @@ public final class NinetyCallManager: NSObject, PKPushRegistryDelegate, CXProvid
 
     public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         let uuid = action.callUUID
+        if appEnding.remove(uuid) != nil {                   // v12.4: asked by this app itself — its own code already closed the call
+            action.fulfill()
+            return
+        }
         if let id = ids[uuid] {
             ended[id] = Date()
             if nativeUUID == uuid {
@@ -904,7 +935,7 @@ public class NinetyCallsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func caps(_ call: CAPPluginCall) {
-        call.resolve(["keepAlive": true, "v": 8, "outgoing": true, "audio": true, "rtc": true, "lk": true, "native": true, "recents": true, "missed": true])
+        call.resolve(["keepAlive": true, "v": 9, "outgoing": true, "audio": true, "rtc": true, "lk": true, "native": true, "recents": true, "missed": true, "userEnd": true])
     }
 
     /// v8.29: a call this phone makes shows as an iPhone call (audio priority)
