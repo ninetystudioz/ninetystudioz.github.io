@@ -1606,10 +1606,10 @@ ${n} .aih [data-memolink]{order:3;margin-inline-start:0!important}
 ${n} .aih .supfab>span{display:none}
 ${n} .aih .supfab svg,${n} .aih [data-memolink] svg{width:18px!important;height:18px!important}
 ${n} .aih .newc::before{content:"";width:16px;height:16px;background:linear-gradient(currentColor,currentColor) center/100% 1.8px no-repeat,linear-gradient(currentColor,currentColor) center/1.8px 100% no-repeat}}
-${n} .aim{padding:8px 16px 18px;gap:20px}
+${n} .aim{padding:8px 16px 18px;gap:20px;grid-auto-rows:max-content}
 ${n} .aim .msg{max-width:100%;padding:0;background:none;border:0!important;border-radius:0;font-size:15.5px;line-height:1.75;box-shadow:none}
 ${n} .aim .msg.me{justify-self:end;max-width:84%;background:var(--surface-2,#edefec);padding:10px 15px;border-radius:20px;border-end-end-radius:6px}
-${n} .aim .msg.bot{justify-self:stretch;position:relative;padding-inline-start:40px;min-height:28px}
+${n} .aim .msg.bot{justify-self:stretch;position:relative;padding-inline-start:40px;padding-block:1px}
 ${n} .aim .msg.bot::before,${n} .nfat-body .tk-bot::before{content:"";position:absolute;inset-inline-start:0;top:1px;width:28px;height:28px;border-radius:9px;background:var(--ink,#16191b)}
 ${n} .aim .msg.bot::after,${n} .nfat-body .tk-bot::after{content:"";position:absolute;inset-inline-start:6px;top:8px;width:16px;height:14px;${f("var(--bg,#f3f4f2)")}}
 ${n} .aim .msg.bot.nfav-say{box-shadow:none}
@@ -1628,9 +1628,9 @@ ${n} .aii .mic:not(.on),${n} .nfat-in .nfat-mic:not(.on){background:var(--surfac
 ${n} .aii button[type=submit]{width:50px;height:50px;min-width:50px;border-radius:50%;padding:0;background:var(--ink,#16191b)!important;color:var(--bg,#f3f4f2)!important;border-color:transparent!important}
 ${n} #aistat{padding:0 18px 10px!important;text-align:center}
 ${n} .nfat-body{padding:8px 16px 18px;gap:18px}
-${n} .nfat-body .tk-b{max-width:100%;font-size:15.5px;line-height:1.75}
+${n} .nfat-body .tk-b{max-width:100%;font-size:15.5px;line-height:1.75;flex-shrink:0}
 ${n} .nfat-body .tk-me{align-self:flex-end;max-width:84%;background:var(--surface-2,#edefec);color:var(--ink,#16191b);border-radius:20px;border-end-end-radius:6px;padding:10px 15px}
-${n} .nfat-body .tk-bot{align-self:stretch;background:none;border:0;border-radius:0;padding-block:0;padding-inline-start:40px;padding-inline-end:38px;min-height:28px}
+${n} .nfat-body .tk-bot{align-self:stretch;background:none;border:0;border-radius:0;padding-block:0;padding-inline-start:40px;padding-inline-end:38px;padding-block:1px}
 ${n} .nfat-body .tk-owner{align-self:stretch;border-radius:16px}
 ${n} .nfat-body .tk-say{bottom:-4px;inset-inline-end:0}
 ${n} .nfat-body .tk-info{border:1px solid var(--line,#dde1de);border-radius:14px;padding:8px 12px;background:var(--surface,#fff)}
